@@ -1,0 +1,22 @@
+# Config file for Air (https://github.com/cosmtrek/air)
+
+# Root directory to watch
+root = "."
+
+# Watch for changes in Go files
+[build]
+  cmd = "go build -o ./media/app ./cmd/media-manager"
+  bin = "./media/app"
+  full_bin = ""
+  include_ext = [".go"]
+  exclude_dir = ["vendor", "media"]
+  exclude_file = []
+  delay = 1000
+  stop_on_error = true
+
+# Run the binary in the media folder
+[run]
+  cmd = "./app"
+  dir = "media"
+  env = []
+  # Air will kill the previous process and restart on changes
