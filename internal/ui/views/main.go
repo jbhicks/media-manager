@@ -9,6 +9,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 	"github.com/user/media-manager/internal/config"
 	"github.com/user/media-manager/internal/db"
+	previewPkg "github.com/user/media-manager/internal/preview"
 	"github.com/user/media-manager/pkg/models"
 	"os"
 	"os/exec"
@@ -59,6 +60,32 @@ func runCommand(args []string) error {
 		return nil
 	}
 	return exec.Command(args[0], args[1:]...).Run()
+}
+
+type HoverPreview struct {
+	*fyne.Container
+	img     *canvas.Image
+	gifImg  *canvas.Image
+	gifPath string
+}
+
+func NewHoverPreview(img *canvas.Image, gifImg *canvas.Image, gifPath string) *HoverPreview {
+	c := container.NewMax(img)
+	h := &HoverPreview{Container: c, img: img, gifImg: gifImg, gifPath: gifPath}
+	c.Objects = []fyne.CanvasObject{img}
+	return h
+}
+
+func (h *HoverPreview) MouseIn(*fyne.PointEvent) {
+	if _, err := os.Stat(h.gifPath); err == nil {
+		h.Container.Objects = []fyne.CanvasObject{h.gifImg}
+		h.Container.Refresh()
+	}
+}
+
+func (h *HoverPreview) MouseOut() {
+	h.Container.Objects = []fyne.CanvasObject{h.img}
+	h.Container.Refresh()
 }
 
 type MainView struct {
@@ -251,14 +278,22 @@ func (v *MainView) createMediaGrid() fyne.CanvasObject {
 					} else if isVideoFile(file.Name()) {
 						thumbDir := v.config.GetThumbnailDir()
 						thumbPath := filepath.Join(thumbDir, file.Name()+".jpg")
+						gifPath := filepath.Join(thumbDir, file.Name()+".gif")
 						videoPath := filepath.Join(mediaDir, file.Name())
-						fmt.Printf("[DEBUG] Media grid: generating/loading video preview for %s -> %s\n", videoPath, thumbPath)
+						// Generate static thumbnail if needed
 						ensureVideoThumbnail(videoPath, thumbPath)
-						fmt.Printf("[DEBUG] Media grid: displaying video preview %s\n", thumbPath)
+						// Generate GIF preview if needed
+						if _, err := os.Stat(gifPath); err != nil {
+							previewPkg.EnqueueGIFPreview(videoPath, gifPath, 120, 80)
+						}
+
 						img := canvas.NewImageFromFile(thumbPath)
 						img.FillMode = canvas.ImageFillContain
 						img.SetMinSize(fyne.NewSize(100, 80))
-						preview = img
+						gifImg := canvas.NewImageFromFile(gifPath)
+						gifImg.FillMode = canvas.ImageFillContain
+						gifImg.SetMinSize(fyne.NewSize(100, 80))
+						preview = NewHoverPreview(img, gifImg, gifPath)
 					} else {
 						preview = widget.NewIcon(theme.FileIcon())
 					}

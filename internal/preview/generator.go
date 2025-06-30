@@ -1,5 +1,6 @@
 package preview
 
+// GIF generation queue and logic
 import (
 	"crypto/sha256"
 	"fmt"
@@ -9,7 +10,51 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 )
+
+var (
+	gifQueue     = make(chan gifTask, 8) // limit queue size
+	gifQueueOnce sync.Once
+)
+
+type gifTask struct {
+	VideoPath string
+	GifPath   string
+	Width     int
+	Height    int
+}
+
+// StartGIFQueue starts the GIF generation worker pool (call once)
+func StartGIFQueue() {
+	gifQueueOnce.Do(func() {
+		for i := 0; i < 2; i++ { // 2 concurrent ffmpeg workers
+			go func() {
+				for task := range gifQueue {
+					generateGIFPreview(task.VideoPath, task.GifPath, task.Width, task.Height)
+				}
+			}()
+		}
+	})
+}
+
+// EnqueueGIFPreview adds a GIF generation task to the queue
+func EnqueueGIFPreview(videoPath, gifPath string, width, height int) {
+	StartGIFQueue()
+	gifQueue <- gifTask{VideoPath: videoPath, GifPath: gifPath, Width: width, Height: height}
+}
+
+// generateGIFPreview runs ffmpeg to create a GIF preview
+func generateGIFPreview(videoPath, gifPath string, width, height int) {
+	cmd := exec.Command("ffmpeg", "-y", "-i", videoPath, "-vf",
+		fmt.Sprintf("fps=4,scale=%d:%d:flags=lanczos", width, height), "-t", "2", gifPath)
+	err := cmd.Run()
+	if err != nil {
+		fmt.Printf("[DEBUG] ffmpeg GIF error: %v\n", err)
+	} else {
+		fmt.Printf("[DEBUG] ffmpeg GIF generated: %s\n", gifPath)
+	}
+}
 
 type PreviewGenerator struct {
 	config ConfigProvider
