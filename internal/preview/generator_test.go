@@ -1,50 +1,58 @@
 package preview
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 )
 
-type MockConfig struct{}
+func TestGenerateVideoThumbnail(t *testing.T) {
+	tempThumbDir := t.TempDir()
+	videoPath := "media/big_buck_bunny.mp4"
+	thumbnailName := "big_buck_bunny_thumbnail.jpg"
+	thumbnailPath := filepath.Join(tempThumbDir, thumbnailName)
 
-var _ ConfigProvider = (*MockConfig)(nil)
+	fmt.Printf("[DEBUG] Testing thumbnail generation for: %s\n", videoPath)
+	fmt.Printf("[DEBUG] Thumbnail output path: %s\n", thumbnailPath)
 
-func (m *MockConfig) GetThumbnailDir() string {
-	return "./mock_thumbnails"
-}
-
-func (m *MockConfig) GetThumbnailSize() int {
-	return 300
-}
-
-func TestGeneratePreview(t *testing.T) {
-	mockConfig := &MockConfig{}
-	generator := NewPreviewGenerator(mockConfig)
-
-	// Test image file
-	imagePath := "test.jpg"
-	thumbPath, err := generator.GeneratePreview(imagePath)
+	err := GenerateThumbnail(videoPath, thumbnailPath)
 	if err != nil {
-		t.Errorf("Failed to generate preview for image: %v", err)
-	}
-	if filepath.Base(thumbPath) != "test.jpg" {
-		t.Errorf("Unexpected thumbnail path: %s", thumbPath)
+		t.Fatalf("Failed to generate thumbnail for video: %v", err)
 	}
 
-	// Test unsupported file
-	unsupportedPath := "test.txt"
-	_, err = generator.GeneratePreview(unsupportedPath)
-	if err == nil {
-		t.Errorf("Expected error for unsupported file type")
+	if _, err := os.Stat(thumbnailPath); os.IsNotExist(err) {
+		t.Errorf("Thumbnail file not created: %s", thumbnailPath)
 	}
 }
 
-func TestIsImageFile(t *testing.T) {
-	generator := &PreviewGenerator{config: &MockConfig{}}
-	if !generator.isImageFile(".jpg") {
-		t.Errorf("Expected .jpg to be recognized as an image file")
+func TestGenerateImageThumbnail(t *testing.T) {
+	tempThumbDir := t.TempDir()
+	imagePath := "media/big_buck_bunny.jpg"
+	thumbnailName := "big_buck_bunny_thumbnail.jpg"
+	thumbnailPath := filepath.Join(tempThumbDir, thumbnailName)
+
+	fmt.Printf("[DEBUG] Testing thumbnail generation for: %s\n", imagePath)
+	fmt.Printf("[DEBUG] Thumbnail output path: %s\n", thumbnailPath)
+
+	err := GenerateThumbnail(imagePath, thumbnailPath)
+	if err != nil {
+		t.Fatalf("Failed to generate thumbnail for image: %v", err)
 	}
-	if generator.isImageFile(".txt") {
-		t.Errorf("Expected .txt not to be recognized as an image file")
+
+	if _, err := os.Stat(thumbnailPath); os.IsNotExist(err) {
+		t.Errorf("Thumbnail file not created: %s", thumbnailPath)
+	}
+}
+
+
+func TestGenerateThumbnailUnsupportedFile(t *testing.T) {
+	tempThumbDir := t.TempDir()
+	unsupportedPath := "README.md"
+	thumbnailPath := filepath.Join(tempThumbDir, "unsupported.jpg")
+
+	err := GenerateThumbnail(unsupportedPath, thumbnailPath)
+	if err == nil {
+		t.Errorf("Expected error for unsupported file type, got nil")
 	}
 }

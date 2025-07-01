@@ -9,7 +9,8 @@ import (
 	"fyne.io/fyne/v2/widget"
 	"github.com/user/media-manager/internal/config"
 	"github.com/user/media-manager/internal/db"
-	previewPkg "github.com/user/media-manager/internal/preview"
+	"github.com/user/media-manager/internal/preview"
+	"github.com/user/media-manager/internal/ui/components"
 	"github.com/user/media-manager/pkg/models"
 	"os"
 	"os/exec"
@@ -62,32 +63,6 @@ func runCommand(args []string) error {
 	return exec.Command(args[0], args[1:]...).Run()
 }
 
-type HoverPreview struct {
-	*fyne.Container
-	img     *canvas.Image
-	gifImg  *canvas.Image
-	gifPath string
-}
-
-func NewHoverPreview(img *canvas.Image, gifImg *canvas.Image, gifPath string) *HoverPreview {
-	c := container.NewMax(img)
-	h := &HoverPreview{Container: c, img: img, gifImg: gifImg, gifPath: gifPath}
-	c.Objects = []fyne.CanvasObject{img}
-	return h
-}
-
-func (h *HoverPreview) MouseIn(*fyne.PointEvent) {
-	if _, err := os.Stat(h.gifPath); err == nil {
-		h.Container.Objects = []fyne.CanvasObject{h.gifImg}
-		h.Container.Refresh()
-	}
-}
-
-func (h *HoverPreview) MouseOut() {
-	h.Container.Objects = []fyne.CanvasObject{h.img}
-	h.Container.Refresh()
-}
-
 type MainView struct {
 	config             *config.Config
 	database           *db.Database
@@ -116,7 +91,7 @@ func (v *MainView) Build() fyne.CanvasObject {
 	sidebar := v.createSidebar()
 
 	// Create main content area (media grid)
-	v.mediaGridContainer = container.NewVBox(v.createMediaGrid())
+	v.mediaGridContainer = container.NewMax(v.createMediaGrid())
 
 	// Create status bar
 	statusBar := v.createStatusBar()
@@ -269,38 +244,44 @@ func (v *MainView) createMediaGrid() fyne.CanvasObject {
 					if len(name) > 20 {
 						name = name[:17] + "..."
 					}
-					var preview fyne.CanvasObject
+					var previewBox fyne.CanvasObject
 					if isImageFile(file.Name()) {
 						img := canvas.NewImageFromFile(filepath.Join(mediaDir, file.Name()))
 						img.FillMode = canvas.ImageFillContain
 						img.SetMinSize(fyne.NewSize(100, 80))
-						preview = img
+						previewBox = img
 					} else if isVideoFile(file.Name()) {
-						thumbDir := v.config.GetThumbnailDir()
-						thumbPath := filepath.Join(thumbDir, file.Name()+".jpg")
-						gifPath := filepath.Join(thumbDir, file.Name()+".gif")
+						homeDir, _ := os.UserHomeDir()
+						thumbDir := filepath.Join(homeDir, ".media-manager", "thumbnails")
+						staticThumbPath := filepath.Join(thumbDir, file.Name()+".jpg")
+						animatedGifPath := filepath.Join(thumbDir, file.Name()+".gif")
 						videoPath := filepath.Join(mediaDir, file.Name())
-						// Generate static thumbnail if needed
-						ensureVideoThumbnail(videoPath, thumbPath)
-						// Generate GIF preview if needed
-						if _, err := os.Stat(gifPath); err != nil {
-							previewPkg.EnqueueGIFPreview(videoPath, gifPath, 120, 80)
-						}
 
-						img := canvas.NewImageFromFile(thumbPath)
-						img.FillMode = canvas.ImageFillContain
-						img.SetMinSize(fyne.NewSize(100, 80))
-						gifImg := canvas.NewImageFromFile(gifPath)
-						gifImg.FillMode = canvas.ImageFillContain
-						gifImg.SetMinSize(fyne.NewSize(100, 80))
-						preview = NewHoverPreview(img, gifImg, gifPath)
+						if _, err := os.Stat(staticThumbPath); err == nil {
+							// Static thumbnail exists, check for animated GIF
+							if _, err := os.Stat(animatedGifPath); err != nil {
+								// Generate animated GIF if it doesn't exist
+								go preview.GenerateAnimatedPreview(videoPath, animatedGifPath)
+							}
+
+							// Create video preview card with GIF animation support
+							videoCard := components.NewVideoPreviewCard(staticThumbPath, animatedGifPath, name)
+							videoCard.Resize(fyne.NewSize(120, 120))
+							grid.Add(videoCard)
+							continue // Skip the rest of the card creation logic
+						} else {
+							// Static thumbnail doesn't exist, generate it first
+							go ensureVideoThumbnail(videoPath, staticThumbPath)
+							previewBox = widget.NewIcon(theme.FileVideoIcon())
+						}
 					} else {
-						preview = widget.NewIcon(theme.FileIcon())
+						previewBox = widget.NewIcon(theme.FileIcon())
 					}
+					// Create a regular card for non-video files or videos without thumbnails
 					label := widget.NewLabelWithStyle(name, fyne.TextAlignCenter, fyne.TextStyle{})
 					card := container.NewVBox(
-						preview,
-						container.NewMax(label),
+						previewBox,
+						label,
 					)
 					card.Resize(fyne.NewSize(120, 120))
 					grid.Add(card)
@@ -313,7 +294,6 @@ func (v *MainView) createMediaGrid() fyne.CanvasObject {
 		fmt.Printf("[DEBUG] main.go: No media directory set\n")
 	}
 	scroll := container.NewScroll(grid)
-	scroll.SetMinSize(fyne.NewSize(600, 400))
 	return scroll
 }
 

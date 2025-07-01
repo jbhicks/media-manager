@@ -1,8 +1,6 @@
 package preview
 
-// GIF generation queue and logic
 import (
-	"crypto/sha256"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -10,85 +8,44 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 )
 
-var (
-	gifQueue     = make(chan gifTask, 8) // limit queue size
-	gifQueueOnce sync.Once
-)
-
-type gifTask struct {
-	VideoPath string
-	GifPath   string
-	Width     int
-	Height    int
+func fileExists(path string) bool {
+	fmt.Printf("[DEBUG] Checking existence of: %s\n", path)
+	_, err := os.Stat(path)
+	fmt.Printf("[DEBUG] os.Stat error: %v\n", err)
+	return err == nil
 }
 
-// StartGIFQueue starts the GIF generation worker pool (call once)
-func StartGIFQueue() {
-	gifQueueOnce.Do(func() {
-		for i := 0; i < 2; i++ { // 2 concurrent ffmpeg workers
-			go func() {
-				for task := range gifQueue {
-					generateGIFPreview(task.VideoPath, task.GifPath, task.Width, task.Height)
-				}
-			}()
-		}
-	})
-}
-
-// EnqueueGIFPreview adds a GIF generation task to the queue
-func EnqueueGIFPreview(videoPath, gifPath string, width, height int) {
-	StartGIFQueue()
-	gifQueue <- gifTask{VideoPath: videoPath, GifPath: gifPath, Width: width, Height: height}
-}
-
-// generateGIFPreview runs ffmpeg to create a GIF preview
-func generateGIFPreview(videoPath, gifPath string, width, height int) {
-	cmd := exec.Command("ffmpeg", "-y", "-i", videoPath, "-vf",
-		fmt.Sprintf("fps=4,scale=%d:%d:flags=lanczos", width, height), "-t", "2", gifPath)
-	err := cmd.Run()
+func pathWritable(path string) bool {
+	fmt.Printf("[DEBUG] Checking writability of: %s\n", path)
+	file, err := os.Create(path)
 	if err != nil {
-		fmt.Printf("[DEBUG] ffmpeg GIF error: %v\n", err)
-	} else {
-		fmt.Printf("[DEBUG] ffmpeg GIF generated: %s\n", gifPath)
+		return false
 	}
+	file.Close()
+	return true
 }
 
-type PreviewGenerator struct {
-	config ConfigProvider
-}
-
-func NewPreviewGenerator(cfg ConfigProvider) *PreviewGenerator {
-	return &PreviewGenerator{config: cfg}
-}
-
-func (p *PreviewGenerator) GeneratePreview(filePath string) (string, error) {
-	// Generate thumbnail filename based on file path hash
-	hash := sha256.Sum256([]byte(filePath))
-	thumbName := fmt.Sprintf("%x.jpg", hash)
-	thumbPath := filepath.Join(p.config.GetThumbnailDir(), thumbName)
-
-	// Check if thumbnail already exists
-	if _, err := os.Stat(thumbPath); err == nil {
-		return thumbPath, nil
-	}
-
-	// Determine file type and generate appropriate thumbnail
+// GenerateThumbnail creates a thumbnail for the given file path.
+func GenerateThumbnail(filePath, thumbPath string) error {
+	filePath = filepath.Join("/home/josh/media-manager", filePath)
+	thumbPath = filepath.Clean(thumbPath)
+	fmt.Printf("[DEBUG] Generating thumbnail for: %s\n", filePath)
+	fmt.Printf("[DEBUG] Output path: %s\n", thumbPath)
+	// Determine file type
 	ext := strings.ToLower(filepath.Ext(filePath))
 
-	switch {
-	case p.isImageFile(ext):
-		return p.generateImageThumbnail(filePath, thumbPath)
-	case p.isVideoFile(ext):
-		return p.generateVideoThumbnail(filePath, thumbPath)
-	default:
-		return "", fmt.Errorf("unsupported file type: %s", ext)
+	if isImageFile(ext) {
+		return generateImageThumbnail(filePath, thumbPath)
+	} else if isVideoFile(ext) {
+		return generateVideoThumbnail(filePath, thumbPath)
+	} else {
+		return fmt.Errorf("unsupported file type: %s", ext)
 	}
 }
 
-func (p *PreviewGenerator) isImageFile(ext string) bool {
+func isImageFile(ext string) bool {
 	imageExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".tiff", ".bmp"}
 	for _, imgExt := range imageExts {
 		if ext == imgExt {
@@ -98,7 +55,7 @@ func (p *PreviewGenerator) isImageFile(ext string) bool {
 	return false
 }
 
-func (p *PreviewGenerator) isVideoFile(ext string) bool {
+func isVideoFile(ext string) bool {
 	videoExts := []string{".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v"}
 	for _, vidExt := range videoExts {
 		if ext == vidExt {
@@ -108,115 +65,94 @@ func (p *PreviewGenerator) isVideoFile(ext string) bool {
 	return false
 }
 
-func (p *PreviewGenerator) generateImageThumbnail(srcPath, thumbPath string) (string, error) {
+func generateImageThumbnail(srcPath, thumbPath string) error {
 	// Open source image
 	file, err := os.Open(srcPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to open image: %w", err)
+		return fmt.Errorf("failed to open image: %w", err)
 	}
 	defer file.Close()
 
 	// Decode image
 	img, _, err := image.Decode(file)
 	if err != nil {
-		return "", fmt.Errorf("failed to decode image: %w", err)
+		return fmt.Errorf("failed to decode image: %w", err)
 	}
-
-	// Calculate thumbnail dimensions
-	bounds := img.Bounds()
-	width, height := bounds.Dx(), bounds.Dy()
-
-	// Calculate aspect ratio preserving dimensions
-	thumbW, thumbH := p.calculateThumbnailSize(width, height)
-
-	// Create resized image (simple nearest neighbor for now)
-	thumbnail := p.resizeImageOptimized(img, thumbW, thumbH)
 
 	// Save thumbnail
 	outFile, err := os.Create(thumbPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to create thumbnail file: %w", err)
+		return fmt.Errorf("failed to create thumbnail file: %w", err)
 	}
 	defer outFile.Close()
 
-	err = jpeg.Encode(outFile, thumbnail, &jpeg.Options{Quality: 85})
+	err = jpeg.Encode(outFile, img, &jpeg.Options{Quality: 85})
 	if err != nil {
-		return "", fmt.Errorf("failed to encode thumbnail: %w", err)
+		return fmt.Errorf("failed to encode thumbnail: %w", err)
 	}
 
-	return thumbPath, nil
+	return nil
 }
 
-func (p *PreviewGenerator) generateVideoThumbnail(srcPath, thumbPath string) (string, error) {
+func generateVideoThumbnail(srcPath, thumbPath string) error {
 	// Use FFmpeg to extract a frame from the video
+	fmt.Printf("[DEBUG] Running ffmpeg command: ffmpeg -i %s -ss 00:00:01 -vframes 1 -update 1 -y %s\n", srcPath, thumbPath)
+	fmt.Printf("[DEBUG] Source file exists: %v\n", fileExists(srcPath))
+	fmt.Printf("[DEBUG] Thumbnail path writable: %v\n", pathWritable(thumbPath))
 	cmd := exec.Command("ffmpeg",
 		"-i", srcPath,
 		"-ss", "00:00:01", // Extract frame at 1 second
-		"-vframes", "1", // Extract only 1 frame
-		"-vf", fmt.Sprintf("scale=%d:%d", p.config.GetThumbnailSize(), p.config.GetThumbnailSize()),
+		"-vframes", "1", "-update", "1", // Extract only 1 frame
 		"-y", // Overwrite output file
 		thumbPath,
 	)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to generate video thumbnail: %w", err)
+	}
+	if _, err := os.Stat(thumbPath); err != nil {
+		return fmt.Errorf("Thumbnail file missing: %s", thumbPath)
+	}
+	return nil
+}
 
-	err := cmd.Run()
+// GenerateAnimatedPreview creates a single animated GIF for video preview
+func GenerateAnimatedPreview(srcPath, gifPath string) error {
+	fmt.Printf("[DEBUG] Generating animated GIF preview for: %s\n", srcPath)
+
+	// Check if animated preview already exists
+	if _, err := os.Stat(gifPath); err == nil {
+		fmt.Printf("[DEBUG] Animated preview already exists: %s\n", gifPath)
+		return nil
+	}
+
+	// Ensure the output directory exists
+	if err := os.MkdirAll(filepath.Dir(gifPath), 0755); err != nil {
+		return fmt.Errorf("failed to create preview directory: %w", err)
+	}
+
+	// Use simpler FFmpeg command for better compatibility
+	fmt.Printf("[DEBUG] Running simplified ffmpeg command for animated preview: %s\n", gifPath)
+	cmd := exec.Command("ffmpeg",
+		"-i", srcPath,
+		"-ss", "2", // Start at 2 seconds to skip intro
+		"-t", "3", // 3 second duration
+		"-vf", "fps=8,scale=200:-1:flags=lanczos", // 8 FPS, 200px width
+		"-f", "gif", // Force GIF format
+		"-y", // Overwrite existing
+		gifPath,
+	)
+
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		cmd := exec.Command("ffmpeg", "-i", srcPath, "-ss", "00:00:01", "-vframes", "1", "-vf", fmt.Sprintf("scale=%d:%d", p.config.GetThumbnailSize(), p.config.GetThumbnailSize()), "-y", thumbPath)
-		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("failed to generate video thumbnail: %w", err)
-		}
-		return thumbPath, nil
+		fmt.Printf("[DEBUG] Failed to generate animated preview: %v, output: %s\n", err, string(output))
+		return fmt.Errorf("failed to generate animated preview: %w", err)
 	}
 
-	return thumbPath, nil
-}
-
-func (p *PreviewGenerator) calculateThumbnailSize(width, height int) (int, int) {
-	maxSize := p.config.GetThumbnailSize()
-
-	if width <= maxSize && height <= maxSize {
-		return width, height
+	// Verify the GIF was created
+	if _, err := os.Stat(gifPath); err != nil {
+		return fmt.Errorf("animated preview file missing after generation: %s", gifPath)
 	}
 
-	ratio := float64(width) / float64(height)
-
-	if width > height {
-		return maxSize, int(float64(maxSize) / ratio)
-	} else {
-		return int(float64(maxSize) * ratio), maxSize
-	}
-}
-
-// Simple image resizing using nearest neighbor
-func (p *PreviewGenerator) resizeImageOptimized(src image.Image, width, height int) image.Image {
-	// Optimized resizing logic using bilinear interpolation
-	bounds := src.Bounds()
-	srcW, srcH := bounds.Dx(), bounds.Dy()
-	dst := image.NewRGBA(image.Rect(0, 0, width, height))
-
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			srcX := x * srcW / width
-			srcY := y * srcH / height
-			dst.Set(x, y, src.At(srcX, srcY))
-		}
-	}
-
-	return dst
-}
-
-func (p *PreviewGenerator) resizeImage(src image.Image, width, height int) image.Image {
-	bounds := src.Bounds()
-	srcW, srcH := bounds.Dx(), bounds.Dy()
-
-	dst := image.NewRGBA(image.Rect(0, 0, width, height))
-
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			srcX := x * srcW / width
-			srcY := y * srcH / height
-			dst.Set(x, y, src.At(srcX, srcY))
-		}
-	}
-
-	return dst
+	fmt.Printf("[DEBUG] Successfully generated animated preview: %s\n", gifPath)
+	return nil
 }

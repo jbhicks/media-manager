@@ -11,6 +11,7 @@ require (
 require (
 	fyne.io/demo v1.6.0 // indirect
 	fyne.io/systray v1.11.0 // indirect
+	fyne.io/x/fyne v0.0.0-20250418202416-58a230ad1acb // indirect
 	github.com/BurntSushi/toml v1.4.0 // indirect
 	github.com/alecthomas/chroma/v2 v2.15.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect

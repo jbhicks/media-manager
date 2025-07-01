@@ -14,6 +14,46 @@ This is a Go project based on the .gitignore configuration.
 
 ### Important Note
 Agents should never ask for permission to proceed with tasks. Always take action directly unless explicitly instructed otherwise.
+
+### ⚠️ CRITICAL FYNE THREADING WARNING ⚠️
+**NEVER modify Fyne UI elements from goroutines!** This will cause the error:
+```
+*** Error in Fyne call thread, this should have been called in fyne.Do[AndWait] ***
+```
+
+**FORBIDDEN PATTERNS:**
+```go
+// ❌ NEVER DO THIS - Modifying UI from goroutine
+go func() {
+    widget.Refresh()           // CAUSES THREADING ERROR
+    image.File = "new.jpg"     // CAUSES THREADING ERROR  
+    label.SetText("new")       // CAUSES THREADING ERROR
+}()
+
+// ❌ NEVER DO THIS - Using channels to trigger UI updates
+case <-timer.C:
+    widget.Refresh()           // CAUSES THREADING ERROR
+```
+
+**SAFE PATTERNS:**
+```go
+// ✅ Use time.AfterFunc (runs on main thread automatically)
+time.AfterFunc(200*time.Millisecond, func() {
+    widget.Refresh()           // SAFE - main thread
+    image.File = "new.jpg"     // SAFE - main thread
+})
+
+// ✅ Use fyne.CurrentApp().Driver().CanvasForObject() if needed
+canvas := fyne.CurrentApp().Driver().CanvasForObject(widget)
+canvas.Refresh(widget)         // SAFE - proper Fyne API
+```
+
+**ANIMATION GUIDELINES:**
+- Use `time.AfterFunc()` for frame-based animations
+- Never use `time.Ticker` in goroutines for UI updates
+- All `widget.Refresh()`, `image.File = path`, and `label.SetText()` calls MUST be on main thread
+
+### General Go Guidelines
 - Follow standard Go conventions (gofmt, go vet)
 - Use Go modules for dependency management
 - Package names should be lowercase, single words
@@ -51,6 +91,46 @@ Agents should never ask for permission to proceed with tasks. Always take action
 
 - To support dynamic media directories, pass the `dir` argument from main into the app and config layers, and use it for media loading.
 - Add debug logging in main and wherever the media directory is used.
+
+---
+
+## Consolidated Agent-Oriented Content
+
+### Testing Plan
+- Use Go's built-in testing package (`testing`) for unit and integration tests.
+- Leverage the `fyne.io/fyne/v2/test` package for graphical application testing.
+- Structure tests to cover:
+  - Core functionality of the media manager.
+  - Edge cases and error handling.
+  - Performance benchmarks.
+  - GUI interactions using Fyne's testing utilities.
+
+### TODOs for Agents
+- Optimize thumbnail generation for large media libraries.
+- Implement advanced tagging features (bulk tagging, color-coded tags).
+- Develop robust sorting and filtering options (by date, size, tags, etc.).
+- Enhance UI/UX for media browsing.
+- Add support for additional media formats.
+- Improve thumbnail caching mechanism.
+
+### Development Guide Highlights
+- Initialize and run:
+  ```bash
+  go mod tidy
+  go run cmd/media-manager/main.go
+  ```
+- Development commands:
+  ```bash
+  go test ./...                           # Run all tests
+  go test ./internal/scanner              # Test specific package
+  go build -o bin/media-manager cmd/media-manager/main.go
+  ```
+- Key technologies:
+  - **Framework**: Fyne v2 (native desktop GUI)
+  - **Database**: SQLite with GORM ORM
+  - **Thumbnails**: Go image packages, FFmpeg for videos
+  - **File Watching**: fsnotify for real-time updates
+  - **Testing**: Go standard testing, testify for assertions
 
 ---
 
