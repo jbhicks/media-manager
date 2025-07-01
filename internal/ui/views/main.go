@@ -235,7 +235,7 @@ func (v *MainView) refreshMediaGrid() {
 
 func (v *MainView) createMediaGrid() fyne.CanvasObject {
 	// Use GridWrap with fixed cell size instead of GridWithColumns
-	cardSize := fyne.NewSize(180, 180) // Fixed size for each card - twice as big
+	cardSize := fyne.NewSize(180, 220) // Taller for title space
 	grid := container.New(layout.NewGridWrapLayout(cardSize))
 
 	if len(v.config.MediaDirs) > 0 {

@@ -10,10 +10,12 @@ import (
 	"fyne.io/fyne/v2/widget"
 	xwidget "fyne.io/x/fyne/widget"
 	"github.com/user/media-manager/internal/preview"
+	"image/color"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type MediaType int
@@ -45,8 +47,8 @@ type MediaCard struct {
 func NewMediaCard(filePath, fileName string, mediaType MediaType) *MediaCard {
 	// Truncate filename for display - make it shorter
 	displayName := fileName
-	if len(displayName) > 8 { // Much shorter to fit better
-		displayName = displayName[:5] + "..."
+	if len(displayName) > 22 {
+		displayName = displayName[:19] + "..."
 	}
 
 	card := &MediaCard{
@@ -62,15 +64,16 @@ func NewMediaCard(filePath, fileName string, mediaType MediaType) *MediaCard {
 
 	// Create label
 	card.label = widget.NewLabelWithStyle(displayName, fyne.TextAlignCenter, fyne.TextStyle{})
-	card.label.Hide() // Hidden by default, shown on hover
+	// Always visible label for overlay effect
 
 	// Create background rectangle
 	card.background = canvas.NewRectangle(theme.Color(theme.ColorNameInputBackground))
 
 	// Create semi-transparent background for label text
-	labelBgColor := theme.Color(theme.ColorNameShadow)
-	card.labelBackground = canvas.NewRectangle(labelBgColor)
-	card.labelBackground.Hide() // Hidden by default, shown on hover	card.ExtendBaseWidget(card)
+card.labelBackground = canvas.NewLinearGradient(
+	color.NRGBA{0, 0, 0, 0},
+	color.NRGBA{0, 0, 0, 180},
+	90)	card.ExtendBaseWidget(card)
 	return card
 }
 
@@ -91,11 +94,12 @@ func (mc *MediaCard) setupContent() {
 			go func() {
 				err := preview.GenerateThumbnail(mc.filePath, staticThumbPath)
 				if err == nil {
-					// Refresh the card after thumbnail generation
-					mc.staticImage = canvas.NewImageFromFile(staticThumbPath)
-					mc.staticImage.FillMode = canvas.ImageFillContain
-					mc.content = mc.staticImage
-					mc.Refresh()
+					time.AfterFunc(1*time.Millisecond, func() {
+						mc.staticImage = canvas.NewImageFromFile(staticThumbPath)
+						mc.staticImage.FillMode = canvas.ImageFillContain
+						mc.content = mc.staticImage
+						mc.Refresh()
+					})
 				}
 			}()
 			// Use original image as placeholder while generating thumbnail
@@ -122,6 +126,23 @@ func (mc *MediaCard) setupContent() {
 				if gif, err := xwidget.NewAnimatedGif(gifURI); err == nil {
 					mc.animatedGif = gif
 					mc.hasAnimation = true
+				}
+			} else {
+				// Generate animated GIF if it doesn't exist
+				cmd := []string{"ffmpeg", "-y", "-i", mc.filePath, "-vf", "fps=10,scale=200:-1", animatedGifPath}
+				fmt.Printf("[DEBUG] Generating animated GIF: %v\n", cmd)
+				err := mc.runCommand(cmd)
+				if err != nil {
+					fmt.Printf("[DEBUG] GIF ffmpeg error: %v\n", err)
+					fmt.Printf("[DEBUG] GIF failed command: %v\n", cmd)
+				}
+				if _, err := os.Stat(animatedGifPath); err == nil {
+					gifURI := storage.NewFileURI(animatedGifPath)
+					if gif, err := xwidget.NewAnimatedGif(gifURI); err == nil {
+						mc.animatedGif = gif
+						fmt.Println("[DEBUG] Animated GIF successfully loaded")
+						mc.hasAnimation = true
+					}
 				}
 			}
 		} else {
@@ -152,17 +173,15 @@ var _ desktop.Hoverable = (*MediaCard)(nil)
 
 // MouseIn handles hover start
 func (mc *MediaCard) MouseIn(*desktop.MouseEvent) {
+	fmt.Println("[DEBUG] MediaCard MouseIn - hover started")
 	mc.isHovered = true
 	mc.background.FillColor = theme.Color(theme.ColorNameHover)
 	mc.background.Refresh()
 
-	// Show label on hover
-	mc.label.Show()
-	mc.labelBackground.Show()
-
 	// Start animation for videos
 	if mc.mediaType == MediaTypeVideo && mc.hasAnimation && mc.animatedGif != nil {
 		mc.content = mc.animatedGif
+		fmt.Println("[DEBUG] Starting animated GIF")
 		mc.animatedGif.Start()
 		mc.Refresh()
 	}
@@ -173,10 +192,6 @@ func (mc *MediaCard) MouseOut() {
 	mc.isHovered = false
 	mc.background.FillColor = theme.Color(theme.ColorNameInputBackground)
 	mc.background.Refresh()
-
-	// Hide label when not hovering
-	mc.label.Hide()
-	mc.labelBackground.Hide()
 
 	// Stop animation for videos
 	if mc.mediaType == MediaTypeVideo && mc.hasAnimation && mc.animatedGif != nil {
@@ -193,7 +208,7 @@ func (mc *MediaCard) MouseMoved(*desktop.MouseEvent) {
 
 // MinSize returns the fixed size for all cards
 func (mc *MediaCard) MinSize() fyne.Size {
-	return fyne.NewSize(180, 180) // Twice as big - more room for content
+	return fyne.NewSize(180, 220) // Taller for title space
 }
 
 // CreateRenderer creates the renderer for the media card
@@ -230,11 +245,11 @@ func (r *mediaCardRenderer) Layout(size fyne.Size) {
 	// Ensure the content is refreshed to display properly
 	canvas.Refresh(r.content)
 
-	// Label positioned well within the bottom area - only visible on hover
-	labelHeight := float32(12)
-	labelY := size.Height - labelHeight - float32(4) // Well within bounds
-	labelX := padding + float32(2)
-	labelWidth := size.Width - padding*2 - float32(4)
+	// Label and overlay always visible, anchored to bottom
+	labelHeight := float32(22)
+	labelY := size.Height - labelHeight - float32(8)
+	labelX := float32(4)
+	labelWidth := size.Width - float32(8)
 
 	// Label background positioned behind the text
 	r.labelBackground.Resize(fyne.NewSize(labelWidth, labelHeight))
@@ -303,6 +318,7 @@ func (mc *MediaCard) ensureVideoThumbnail(videoPath, thumbPath string) {
 	err := mc.runCommand(cmd)
 	if err != nil {
 		fmt.Printf("[DEBUG] ffmpeg error: %v\n", err)
+		fmt.Printf("[DEBUG] Failed command: %v\n", cmd)
 	} else {
 		fmt.Printf("[DEBUG] ffmpeg thumbnail generated: %s\n", thumbPath)
 	}
