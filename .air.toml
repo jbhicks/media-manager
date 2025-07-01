@@ -6,8 +6,8 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-  # The command to build the application.
-  cmd = "go build -o ./tmp/media-manager ./cmd/media-manager/main.go"
+  # Clear thumbnail cache and build (ensures uniform 200x200 thumbnails after generation changes)
+  cmd = "echo 'Clearing thumbnail cache...' && rm -rf ~/.media-manager/thumbnails/* ./thumbnails/* 2>/dev/null || true && go build -o ./tmp/media-manager ./cmd/media-manager/main.go"
   # The path to the binary to run.
   bin = "tmp/media-manager"
   # The command that will be executed to run the binary.

@@ -60,12 +60,14 @@ go build -o bin/media-manager cmd/media-manager/main.go
 
 The application stores data in `~/.media-manager/`:
 - `media.db` - SQLite database
-- `thumbnails/` - Generated thumbnail cache
+- `thumbnails/` - Generated thumbnail cache (uniform 200×200 images)
 
 Environment variables:
 - `DB_PATH` - Custom database path
 - `THUMBNAIL_DIR` - Custom thumbnail directory  
-- `THUMBNAIL_SIZE` - Thumbnail dimensions (default: 300)
+- `THUMBNAIL_SIZE` - Thumbnail dimensions (default: 200)
+
+**Development Note:** Air automatically clears the thumbnail cache on rebuild to ensure uniform sizing after generation logic changes. Use `make clear-cache` to manually clear thumbnails.
 
 ## Current Status
 

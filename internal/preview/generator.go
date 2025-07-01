@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/nfnt/resize"
 )
 
 func fileExists(path string) bool {
@@ -79,6 +81,9 @@ func generateImageThumbnail(srcPath, thumbPath string) error {
 		return fmt.Errorf("failed to decode image: %w", err)
 	}
 
+	// Resize to uniform dimensions - 200x200 square thumbnails
+	resizedImg := resize.Thumbnail(200, 200, img, resize.Lanczos3)
+
 	// Save thumbnail
 	outFile, err := os.Create(thumbPath)
 	if err != nil {
@@ -86,7 +91,7 @@ func generateImageThumbnail(srcPath, thumbPath string) error {
 	}
 	defer outFile.Close()
 
-	err = jpeg.Encode(outFile, img, &jpeg.Options{Quality: 85})
+	err = jpeg.Encode(outFile, resizedImg, &jpeg.Options{Quality: 85})
 	if err != nil {
 		return fmt.Errorf("failed to encode thumbnail: %w", err)
 	}
@@ -95,14 +100,15 @@ func generateImageThumbnail(srcPath, thumbPath string) error {
 }
 
 func generateVideoThumbnail(srcPath, thumbPath string) error {
-	// Use FFmpeg to extract a frame from the video
-	fmt.Printf("[DEBUG] Running ffmpeg command: ffmpeg -i %s -ss 00:00:01 -vframes 1 -update 1 -y %s\n", srcPath, thumbPath)
+	// Use FFmpeg to extract a frame from the video with uniform dimensions
+	fmt.Printf("[DEBUG] Running ffmpeg command with fixed dimensions: ffmpeg -i %s -ss 00:00:01 -vframes 1 -vf scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2 -y %s\n", srcPath, thumbPath)
 	fmt.Printf("[DEBUG] Source file exists: %v\n", fileExists(srcPath))
 	fmt.Printf("[DEBUG] Thumbnail path writable: %v\n", pathWritable(thumbPath))
 	cmd := exec.Command("ffmpeg",
 		"-i", srcPath,
 		"-ss", "00:00:01", // Extract frame at 1 second
-		"-vframes", "1", "-update", "1", // Extract only 1 frame
+		"-vframes", "1", // Extract only 1 frame
+		"-vf", "scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2", // Force 200x200 with letterboxing
 		"-y", // Overwrite output file
 		thumbPath,
 	)
