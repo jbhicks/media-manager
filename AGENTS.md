@@ -14,46 +14,7 @@ This is a Go project based on the .gitignore configuration.
 
 ### Important Note
 Agents should never ask for permission to proceed with tasks. Always take action directly unless explicitly instructed otherwise.
-
-### ⚠️ CRITICAL FYNE THREADING WARNING ⚠️
-**NEVER modify Fyne UI elements from goroutines!** This will cause the error:
-```
-*** Error in Fyne call thread, this should have been called in fyne.Do[AndWait] ***
-```
-
-**FORBIDDEN PATTERNS:**
-```go
-// ❌ NEVER DO THIS - Modifying UI from goroutine
-go func() {
-    widget.Refresh()           // CAUSES THREADING ERROR
-    image.File = "new.jpg"     // CAUSES THREADING ERROR  
-    label.SetText("new")       // CAUSES THREADING ERROR
-}()
-
-// ❌ NEVER DO THIS - Using channels to trigger UI updates
-case <-timer.C:
-    widget.Refresh()           // CAUSES THREADING ERROR
-```
-
-**SAFE PATTERNS:**
-```go
-// ✅ Use time.AfterFunc (runs on main thread automatically)
-time.AfterFunc(200*time.Millisecond, func() {
-    widget.Refresh()           // SAFE - main thread
-    image.File = "new.jpg"     // SAFE - main thread
-})
-
-// ✅ Use fyne.CurrentApp().Driver().CanvasForObject() if needed
-canvas := fyne.CurrentApp().Driver().CanvasForObject(widget)
-canvas.Refresh(widget)         // SAFE - proper Fyne API
-```
-
-**ANIMATION GUIDELINES:**
-- Use `time.AfterFunc()` for frame-based animations
-- Never use `time.Ticker` in goroutines for UI updates
-- All `widget.Refresh()`, `image.File = path`, and `label.SetText()` calls MUST be on main thread
-
-### General Go Guidelines
+Never run `make dev`. The user has it running in a separate process.
 - Follow standard Go conventions (gofmt, go vet)
 - Use Go modules for dependency management
 - Package names should be lowercase, single words
@@ -64,6 +25,26 @@ canvas.Refresh(widget)         // SAFE - proper Fyne API
 - Add comments for exported functions and types
 - Use `context.Context` for cancellation and timeouts
 - Prefer composition over inheritance
+
+## Fyne GUI Development
+
+When making any changes to the GUI, you must follow these rules to avoid threading issues:
+
+- **All UI updates must run on the main thread.**
+- Use `fyne.CurrentApp().Driver().Do()` to schedule UI operations on the main thread.
+- **Do not use `time.AfterFunc` for UI updates.** This will cause the app to crash.
+
+Incorrect:
+
+`time.AfterFunc(1*time.Millisecond, func() {`
+	`// UI update code here`
+`})`
+
+Correct:
+
+`fyne.CurrentApp().Driver().Do(func() {`
+	`// UI update code here`
+`})`
 
 ## Testing Guidelines
 - Use Go's built-in `testing` package for unit tests.

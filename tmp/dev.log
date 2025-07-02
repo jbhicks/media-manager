@@ -1,0 +1,58 @@
+2025/07/02 08:13:14 Opening directory: ./media
+2025/07/02 08:13:14 [DEBUG] main.go: Passing dir to app: ./media
+[DEBUG] app.go: Received mediaDir: ./media
+[DEBUG] config.go: Received mediaDir: ./media
+[DEBUG] config.go: Config.MediaDirs: [./media]
+[DEBUG] main.go: MainView using MediaDirs: [./media]
+[DEBUG] main.go: Loading media from: ./media
+[DEBUG] Checking for video thumbnail: /home/josh/.media-manager/thumbnails/GoneNutty.avi.jpg
+[DEBUG] Thumbnail not found, generating for: media/GoneNutty.avi
+[DEBUG] Generating uniform video thumbnail: [ffmpeg -y -i media/GoneNutty.avi -ss 00:00:01.000 -vframes 1 -vf scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2 /home/josh/.media-manager/thumbnails/GoneNutty.avi.jpg]
+[DEBUG] Checking for video thumbnail: /home/josh/.media-manager/thumbnails/Sample_V_mpeg1_A_mpeg1Layer2.mp4.jpg
+[DEBUG] Thumbnail not found, generating for: media/Sample_V_mpeg1_A_mpeg1Layer2.mp4
+[DEBUG] Generating uniform video thumbnail: [ffmpeg -y -i media/Sample_V_mpeg1_A_mpeg1Layer2.mp4 -ss 00:00:01.000 -vframes 1 -vf scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2 /home/josh/.media-manager/thumbnails/Sample_V_mpeg1_A_mpeg1Layer2.mp4.jpg]
+[DEBUG] Generating thumbnail for: /home/josh/media-manager/media/big_buck_bunny.jpg
+[DEBUG] Output path: /home/josh/.media-manager/thumbnails/big_buck_bunny.jpg.jpg
+[DEBUG] Checking for video thumbnail: /home/josh/.media-manager/thumbnails/big_buck_bunny.mp4.jpg
+[DEBUG] Thumbnail not found, generating for: media/big_buck_bunny.mp4
+[DEBUG] Generating uniform video thumbnail: [ffmpeg -y -i media/big_buck_bunny.mp4 -ss 00:00:01.000 -vframes 1 -vf scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2 /home/josh/.media-manager/thumbnails/big_buck_bunny.mp4.jpg]
+[DEBUG] Checking for video thumbnail: /home/josh/.media-manager/thumbnails/big_buck_bunny.webm.jpg
+[DEBUG] Thumbnail not found, generating for: media/big_buck_bunny.webm
+[DEBUG] Generating uniform video thumbnail: [ffmpeg -y -i media/big_buck_bunny.webm -ss 00:00:01.000 -vframes 1 -vf scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2 /home/josh/.media-manager/thumbnails/big_buck_bunny.webm.jpg]
+[DEBUG] Generating thumbnail for: /home/josh/media-manager/media/big_buck_bunny_thumbnail.jpg
+[DEBUG] Output path: /home/josh/.media-manager/thumbnails/big_buck_bunny_thumbnail.jpg.jpg
+[DEBUG] Checking for video thumbnail: /home/josh/.media-manager/thumbnails/guqin.flv.jpg
+[DEBUG] Thumbnail not found, generating for: media/guqin.flv
+[DEBUG] Generating uniform video thumbnail: [ffmpeg -y -i media/guqin.flv -ss 00:00:01.000 -vframes 1 -vf scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2 /home/josh/.media-manager/thumbnails/guqin.flv.jpg]
+[DEBUG] Checking for video thumbnail: /home/josh/.media-manager/thumbnails/packetsize0.ogv.jpg
+[DEBUG] Thumbnail not found, generating for: media/packetsize0.ogv
+[DEBUG] Generating uniform video thumbnail: [ffmpeg -y -i media/packetsize0.ogv -ss 00:00:01.000 -vframes 1 -vf scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2 /home/josh/.media-manager/thumbnails/packetsize0.ogv.jpg]
+[DEBUG] Checking for video thumbnail: /home/josh/.media-manager/thumbnails/quicktime.mov.jpg
+[DEBUG] Thumbnail not found, generating for: media/quicktime.mov
+[DEBUG] Generating uniform video thumbnail: [ffmpeg -y -i media/quicktime.mov -ss 00:00:01.000 -vframes 1 -vf scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2 /home/josh/.media-manager/thumbnails/quicktime.mov.jpg]
+[DEBUG] Generating thumbnail for: /home/josh/media-manager/media/test_thumbnail.jpg
+[DEBUG] Output path: /home/josh/.media-manager/thumbnails/test_thumbnail.jpg.jpg
+[DEBUG] Checking for video thumbnail: /home/josh/.media-manager/thumbnails/zelda.flv.jpg
+[DEBUG] Thumbnail not found, generating for: media/zelda.flv
+[DEBUG] Generating uniform video thumbnail: [ffmpeg -y -i media/zelda.flv -ss 00:00:01.000 -vframes 1 -vf scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2 /home/josh/.media-manager/thumbnails/zelda.flv.jpg]
+[DEBUG] ffmpeg thumbnail generated: /home/josh/.media-manager/thumbnails/zelda.flv.jpg
+[DEBUG] ffmpeg thumbnail generated: /home/josh/.media-manager/thumbnails/Sample_V_mpeg1_A_mpeg1Layer2.mp4.jpg
+[DEBUG] ffmpeg thumbnail generated: /home/josh/.media-manager/thumbnails/GoneNutty.avi.jpg
+[DEBUG] ffmpeg thumbnail generated: /home/josh/.media-manager/thumbnails/big_buck_bunny.webm.jpg
+[DEBUG] ffmpeg thumbnail generated: /home/josh/.media-manager/thumbnails/packetsize0.ogv.jpg
+[DEBUG] ffmpeg thumbnail generated: /home/josh/.media-manager/thumbnails/big_buck_bunny.mp4.jpg
+[DEBUG] ffmpeg thumbnail generated: /home/josh/.media-manager/thumbnails/quicktime.mov.jpg
+[DEBUG] ffmpeg thumbnail generated: /home/josh/.media-manager/thumbnails/guqin.flv.jpg
+2025/07/02 08:13:14 *** Error in Fyne call thread, this should have been called in fyne.Do[AndWait] ***
+2025/07/02 08:13:14   From: /home/josh/media-manager/internal/ui/components/media_card.go:273
+2025/07/02 08:13:14 *** Error in Fyne call thread, this should have been called in fyne.Do[AndWait] ***
+2025/07/02 08:13:14   From: /home/josh/media-manager/internal/ui/components/media_card.go:275
+2025/07/02 08:13:14 *** Error in Fyne call thread, this should have been called in fyne.Do[AndWait] ***
+2025/07/02 08:13:14   From: /home/josh/media-manager/internal/ui/components/media_card.go:276
+[DEBUG] MediaCard MouseIn - hover started
+[DEBUG] MediaCard MouseIn - hover started
+[DEBUG] MediaCard MouseIn - hover started
+[DEBUG] MediaCard MouseIn - hover started
+[DEBUG] MediaCard MouseIn - hover started
+[DEBUG] MediaCard MouseIn - hover started
+[DEBUG] MediaCard MouseIn - hover started

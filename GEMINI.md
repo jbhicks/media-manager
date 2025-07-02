@@ -26,6 +26,26 @@ Never run `make dev`. The user has it running in a separate process.
 - Use `context.Context` for cancellation and timeouts
 - Prefer composition over inheritance
 
+## Fyne GUI Development
+
+When making any changes to the GUI, you must follow these rules to avoid threading issues:
+
+- **All UI updates must run on the main thread.**
+- Use `fyne.CurrentApp().Driver().Do()` to schedule UI operations on the main thread.
+- **Do not use `time.AfterFunc` for UI updates.** This will cause the app to crash.
+
+Incorrect:
+
+`time.AfterFunc(1*time.Millisecond, func() {`
+	`// UI update code here`
+`})`
+
+Correct:
+
+`fyne.CurrentApp().Driver().Do(func() {`
+	`// UI update code here`
+`})`
+
 ## Testing Guidelines
 - Use Go's built-in `testing` package for unit tests.
 - Leverage `fyne.io/fyne/v2/test` for testing graphical components.
