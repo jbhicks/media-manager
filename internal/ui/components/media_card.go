@@ -36,7 +36,7 @@ type MediaCard struct {
 	animatedGif     *xwidget.AnimatedGif
 	icon            *widget.Icon
 	label           *widget.Label
-	labelBackground *canvas.Rectangle
+	labelBackground fyne.CanvasObject
 	background      *canvas.Rectangle
 	content         fyne.CanvasObject
 	isHovered       bool
@@ -70,10 +70,12 @@ func NewMediaCard(filePath, fileName string, mediaType MediaType) *MediaCard {
 	card.background = canvas.NewRectangle(theme.Color(theme.ColorNameInputBackground))
 
 	// Create semi-transparent background for label text
-card.labelBackground = canvas.NewLinearGradient(
-	color.NRGBA{0, 0, 0, 0},
-	color.NRGBA{0, 0, 0, 180},
-	90)	card.ExtendBaseWidget(card)
+	card.labelBackground = canvas.NewLinearGradient(
+		color.NRGBA{0, 0, 0, 0},
+		color.NRGBA{0, 0, 0, 180},
+		90,
+	)
+	card.ExtendBaseWidget(card)
 	return card
 }
 
@@ -227,7 +229,7 @@ type mediaCardRenderer struct {
 	card            *MediaCard
 	background      *canvas.Rectangle
 	content         fyne.CanvasObject
-	labelBackground *canvas.Rectangle
+	labelBackground fyne.CanvasObject
 	label           *widget.Label
 }
 
