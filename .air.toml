@@ -7,11 +7,11 @@ tmp_dir = "tmp"
 
 [build]
   # Clear thumbnail cache and build (ensures uniform 200x200 thumbnails after generation changes)
-  cmd = "echo 'Clearing thumbnail cache...' && rm -rf ~/.media-manager/thumbnails/* ./thumbnails/* 2>/dev/null || true && go build -o ./tmp/media-manager ./cmd/media-manager/main.go"
+  cmd = "echo 'Clearing thumbnail cache...' && rm -rf ~/.media-manager/thumbnails/* ./thumbnails/* 2>/dev/null || true && go build -o ./tmp/media-manager ./cmd/media-manager/main.go 2>&1 | tee tmp/build.log"
   # The path to the binary to run.
   bin = "tmp/media-manager"
   # The command that will be executed to run the binary.
-  full_bin = "APP_ENV=dev ./tmp/media-manager ./media 2>&1 | tee tmp/dev.log"
+  full_bin = "APP_ENV=dev ./tmp/media-manager ./media 2>&1 | tee -a tmp/build.log"
 
   # File extensions to watch.
   include_ext = ["go", "tpl", "tmpl", "html"]

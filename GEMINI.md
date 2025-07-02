@@ -10,6 +10,10 @@ This is a Go project based on the .gitignore configuration.
 - **Lint**: `go vet ./...` or use `golangci-lint run` if available
 - **Format**: `go fmt ./...`
 
+## Build Process
+When `air` is running for auto-reloading, build messages are logged to `tmp/build.log`. Agents should examine this file for build output and errors.
+- **Build Output**: Check `tmp/build.log` for build messages and errors.
+
 ## Code Style
 
 ### Important Note

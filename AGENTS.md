@@ -4,6 +4,9 @@ This is a Go project based on the .gitignore configuration.
 
 ## Commands
 - **Build**: `go build`
+
+## Build Process
+When `air` is running for auto-reloading, build messages are logged to `tmp/build.log`. Agents should examine this file for build output and errors.
 - **Test**: `go test ./...`
 - **Test single package**: `go test ./path/to/package`
 - **Test with coverage**: `go test -cover ./...`

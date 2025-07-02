@@ -45,7 +45,6 @@ func TestGenerateImageThumbnail(t *testing.T) {
 	}
 }
 
-
 func TestGenerateThumbnailUnsupportedFile(t *testing.T) {
 	tempThumbDir := t.TempDir()
 	unsupportedPath := "README.md"

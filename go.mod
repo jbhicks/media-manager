@@ -4,20 +4,18 @@ go 1.24.4
 
 require (
 	fyne.io/fyne/v2 v2.6.1
+	fyne.io/x/fyne v0.0.0-20250418202416-58a230ad1acb
+	github.com/fsnotify/fsnotify v1.9.0
+	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
 	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.25.12
 )
 
 require (
-	fyne.io/demo v1.6.0 // indirect
 	fyne.io/systray v1.11.0 // indirect
-	fyne.io/x/fyne v0.0.0-20250418202416-58a230ad1acb // indirect
 	github.com/BurntSushi/toml v1.4.0 // indirect
-	github.com/alecthomas/chroma/v2 v2.15.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/dlclark/regexp2 v1.11.4 // indirect
 	github.com/fredbi/uri v1.1.0 // indirect
-	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/fyne-io/gl-js v0.1.0 // indirect
 	github.com/fyne-io/glfw-js v0.2.0 // indirect
 	github.com/fyne-io/image v0.1.1 // indirect
@@ -33,9 +31,7 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 // indirect
-	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-sqlite3 v1.14.24 // indirect
-	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.5.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rymdport/portal v0.4.1 // indirect

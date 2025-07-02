@@ -45,11 +45,11 @@ func ensureVideoThumbnail(videoPath, thumbPath string) {
 	fmt.Printf("[DEBUG] Thumbnail not found, generating for: %s\n", videoPath)
 	_ = os.MkdirAll(filepath.Dir(thumbPath), 0755)
 
-	// Use uniform 200x200 thumbnail generation
+	// Use 200px wide thumbnail generation (no padding)
 	cmd := []string{"ffmpeg", "-y", "-i", videoPath, "-ss", "00:00:01.000", "-vframes", "1",
-		"-vf", "scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2",
+		"-vf", "scale=200:200:force_original_aspect_ratio=increase,crop=200:200",
 		thumbPath}
-	fmt.Printf("[DEBUG] Generating uniform video thumbnail: %v\n", cmd)
+	fmt.Printf("[DEBUG] Generating 200px wide video thumbnail: %v\n", cmd)
 	err := runCommand(cmd)
 	if err != nil {
 		fmt.Printf("[DEBUG] ffmpeg error: %v\n", err)
@@ -69,61 +69,40 @@ type MainView struct {
 	config             *config.Config
 	database           *db.Database
 	mediaGridContainer *fyne.Container
+	window             fyne.Window
 }
 
-func NewMainView(cfg *config.Config, database *db.Database) *MainView {
+func (v *MainView) GetMediaGridContainer() *fyne.Container {
+	return v.mediaGridContainer
+}
+
+func NewMainView(cfg *config.Config, database *db.Database, win fyne.Window) *MainView {
 	fmt.Printf("[DEBUG] main.go: MainView using MediaDirs: %v\n", cfg.MediaDirs)
 	return &MainView{
 		config:   cfg,
 		database: database,
+		window:   win,
 	}
 }
 
 func (v *MainView) Build() fyne.CanvasObject {
-	// Check ffmpeg availability
-	ffmpegMissing := false
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		ffmpegMissing = true
-	}
-
-	// Create toolbar
 	toolbar := v.createToolbar()
-
-	// Create sidebar
 	sidebar := v.createSidebar()
-
-	// Create main content area (media grid)
-	v.mediaGridContainer = container.NewMax(v.createMediaGrid())
-
-	// Create status bar
 	statusBar := v.createStatusBar()
+	grid := v.createMediaGrid()
 
-	// Optional ffmpeg warning banner
-	var content fyne.CanvasObject
-	if ffmpegMissing {
-		banner := widget.NewLabel("Warning: ffmpeg not found. Video previews are disabled.")
-		bannerContainer := container.NewVBox(banner, widget.NewSeparator())
-		content = container.NewVBox(bannerContainer, container.NewBorder(
-			toolbar,   // top
-			statusBar, // bottom
-			nil,       // left
-			nil,       // right
-			container.NewHSplit(sidebar, v.mediaGridContainer), // center
-		))
-	} else {
-		mainContent := container.NewHSplit(sidebar, v.mediaGridContainer)
-		mainContent.SetOffset(0.25)
-		content = container.NewBorder(
-			toolbar,     // top
-			statusBar,   // bottom
-			nil,         // left
-			nil,         // right
-			mainContent, // center
-		)
-	}
+	mainContent := container.NewHSplit(sidebar, grid)
+	mainContent.SetOffset(0.25)
+
+	content := container.NewBorder(
+		toolbar,     // top
+		statusBar,   // bottom
+		nil,         // left
+		nil,         // right
+		mainContent, // center
+	)
 	return content
 }
-
 func (v *MainView) createToolbar() fyne.CanvasObject {
 	searchEntry := widget.NewEntry()
 	searchEntry.OnChanged = func(input string) {
@@ -131,7 +110,7 @@ func (v *MainView) createToolbar() fyne.CanvasObject {
 	}
 
 	refreshBtn := widget.NewButton("Refresh", func() {
-		v.refreshMediaGrid()
+		v.RefreshMediaGrid()
 	})
 
 	addFolderBtn := widget.NewButton("Add Folder", func() {
@@ -193,7 +172,7 @@ func (v *MainView) createSidebar() fyne.CanvasObject {
 	foldersTree.Root = root
 	foldersTree.OnSelected = func(uid string) {
 		v.config.MediaDirs = []string{uid}
-		v.refreshMediaGrid()
+		v.RefreshMediaGrid()
 	}
 	foldersScroll := container.NewVScroll(foldersTree)
 	foldersScroll.SetMinSize(fyne.NewSize(0, 120))
@@ -225,20 +204,64 @@ func (v *MainView) filterMediaFiles(input string) {
 	fmt.Printf("Filtering media files with input: %s\n", input)
 }
 
-func (v *MainView) refreshMediaGrid() {
+func (v *MainView) RefreshMediaGrid() {
+	fmt.Println("[DEBUG] views/main.go: RefreshMediaGrid called.")
 	if v.mediaGridContainer != nil {
-		v.mediaGridContainer.Objects = []fyne.CanvasObject{v.createMediaGrid()}
+		newGrid := v.createMediaGrid()
+		v.mediaGridContainer.Objects = newGrid.Objects
 		v.mediaGridContainer.Refresh()
 	}
 	fmt.Println("Media grid refreshed")
 }
 
-func (v *MainView) createMediaGrid() fyne.CanvasObject {
-	// Use GridWrap with fixed cell size instead of GridWithColumns
-	cardSize := fyne.NewSize(180, 220) // Taller for title space
-	grid := container.New(layout.NewGridWrapLayout(cardSize))
-
+func (v *MainView) createMediaGrid() *fyne.Container {
+	cardSize := fyne.NewSize(192, 192)
+	var cards []fyne.CanvasObject
 	if len(v.config.MediaDirs) > 0 {
+		mediaDir := v.config.MediaDirs[0]
+		files, err := os.ReadDir(mediaDir)
+		if err == nil {
+			for _, file := range files {
+				if !file.IsDir() {
+					filePath := filepath.Join(mediaDir, file.Name())
+					mediaType := components.GetMediaType(file.Name())
+					card := components.NewMediaCard(filePath, file.Name(), mediaType)
+					cards = append(cards, card)
+				}
+			}
+		}
+	}
+	return container.New(layout.NewGridWrapLayout(cardSize), cards...)
+}
+			}
+		}
+	}
+	return container.New(layout.NewGridWrapLayout(cardSize), cards...)
+
+	cardSize := fyne.NewSize(192, 192)
+	grid := container.New(layout.NewGridWrapLayout(cardSize))
+	if len(v.config.MediaDirs) > 0 {
+		mediaDir := v.config.MediaDirs[0]
+		files, err := os.ReadDir(mediaDir)
+		if err == nil {
+			for _, file := range files {
+				if !file.IsDir() {
+					filePath := filepath.Join(mediaDir, file.Name())
+					mediaType := components.GetMediaType(file.Name())
+					card := components.NewMediaCard(filePath, file.Name(), mediaType)
+					grid.Add(card)
+				}
+			}
+		}
+	}
+	return grid
+
+	// Use GridWrap with fixed cell size instead of GridWithColumns
+	cardSize := fyne.NewSize(192, 192) // Modern card size
+grid := container.New(layout.NewGridWrapLayout(cardSize))
+gridBox := container.New(layout.NewCenterLayout(), grid)
+padded := container.NewPadded(gridBox)
+return padded	if len(v.config.MediaDirs) > 0 {
 		mediaDir := v.config.MediaDirs[0]
 		fmt.Printf("[DEBUG] main.go: Loading media from: %s\n", mediaDir)
 		files, err := os.ReadDir(mediaDir)
@@ -260,8 +283,7 @@ func (v *MainView) createMediaGrid() fyne.CanvasObject {
 		fmt.Printf("[DEBUG] main.go: No media directory set\n")
 	}
 
-	scroll := container.NewScroll(grid)
-	return scroll
+	return grid
 }
 func (v *MainView) createStatusBar() fyne.CanvasObject {
 	statusLabel := widget.NewLabel("Ready")

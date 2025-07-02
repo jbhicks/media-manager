@@ -16,6 +16,7 @@ type MediaManagerApp struct {
 	window  fyne.Window
 	config  *config.Config
 	db      *db.Database
+	mainView *views.MainView
 }
 
 func NewMediaManagerApp(mediaDir string) (*MediaManagerApp, error) {
@@ -47,8 +48,8 @@ func (app *MediaManagerApp) Run() {
 }
 
 func (app *MediaManagerApp) setupUI() {
-	// Create main views
-	mainView := views.NewMainView(app.config, app.db)
+	mainView := views.NewMainView(app.config, app.db, app.window)
+	app.mainView = mainView
 
 	// Create menu bar
 	app.setupMenuBar()
@@ -74,7 +75,7 @@ func (app *MediaManagerApp) setupMenuBar() {
 
 	viewMenu := fyne.NewMenu("View",
 		fyne.NewMenuItem("Refresh", func() {
-			// TODO: Implement refresh functionality
+			app.RescanMediaDirectory()
 		}),
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Small Thumbnails", nil),
@@ -90,4 +91,10 @@ func (app *MediaManagerApp) setupMenuBar() {
 
 	mainMenu := fyne.NewMainMenu(fileMenu, viewMenu, helpMenu)
 	app.window.SetMainMenu(mainMenu)
+}
+
+func (app *MediaManagerApp) RescanMediaDirectory() {
+	fmt.Println("[DEBUG] app.go: Rescanning media directory...")
+	app.mainView.RefreshMediaGrid()
+	fmt.Println("[DEBUG] app.go: RescanMediaDirectory finished.")
 }

@@ -1,0 +1,36 @@
+ffmpeg version n7.1.1 Copyright (c) 2000-2025 the FFmpeg developers
+  built with gcc 15.1.1 (GCC) 20250425
+  configuration: --prefix=/usr --disable-debug --disable-static --disable-stripping --enable-amf --enable-avisynth --enable-cuda-llvm --enable-lto --enable-fontconfig --enable-frei0r --enable-gmp --enable-gnutls --enable-gpl --enable-ladspa --enable-libaom --enable-libass --enable-libbluray --enable-libbs2b --enable-libdav1d --enable-libdrm --enable-libdvdnav --enable-libdvdread --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgsm --enable-libharfbuzz --enable-libiec61883 --enable-libjack --enable-libjxl --enable-libmodplug --enable-libmp3lame --enable-libopencore_amrnb --enable-libopencore_amrwb --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-libplacebo --enable-libpulse --enable-librav1e --enable-librsvg --enable-librubberband --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtheora --enable-libv4l2 --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpl --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxcb --enable-libxml2 --enable-libxvid --enable-libzimg --enable-libzmq --enable-nvdec --enable-nvenc --enable-opencl --enable-opengl --enable-shared --enable-vapoursynth --enable-version3 --enable-vulkan
+  libavutil      59. 39.100 / 59. 39.100
+  libavcodec     61. 19.101 / 61. 19.101
+  libavformat    61.  7.100 / 61.  7.100
+  libavdevice    61.  3.100 / 61.  3.100
+  libavfilter    10.  4.100 / 10.  4.100
+  libswscale      8.  3.100 /  8.  3.100
+  libswresample   5.  3.100 /  5.  3.100
+  libpostproc    58.  3.100 / 58.  3.100
+Input #0, ogg, from 'media/packetsize0.ogv':
+  Duration: 00:00:21.08, start: 59.000000, bitrate: 2157 kb/s
+  Stream #0:0: Data: none
+  Stream #0:1: Video: theora, yuv420p, 720x576 [SAR 64:45 DAR 16:9], 25 fps, 25 tbr, 25 tbn
+      Metadata:
+        ENCODER         : ffmpeg2theora-0.26
+        SOURCE_OSHASH   : 21a986ebffe248bd
+Stream mapping:
+  Stream #0:1 -> #0:0 (theora (native) -> gif (native))
+Press [q] to stop, [?] for help
+[vist#0:1/theora @ 0x55f4c6effc40] timestamp discontinuity (stream id=1): 59040000, new offset= -40000
+[ogg @ 0x55f4c6efd5c0] Broken file, keyframe not correctly marked.
+[vf#0:0 @ 0x55f4c6f02e80] No filtered frames for output stream, trying to initialize anyway.
+Output #0, gif, to '/home/josh/.media-manager/thumbnails/packetsize0.ogv.gif':
+  Metadata:
+    encoder         : Lavf61.7.100
+  Stream #0:0: Video: gif, bgr8(progressive), 200x160 [SAR 64:45 DAR 16:9], q=2-31, 200 kb/s, 10 fps, 100 tbn
+      Metadata:
+        SOURCE_OSHASH   : 21a986ebffe248bd
+        encoder         : Lavc61.19.101 gif
+[out#0/gif @ 0x55f4c6effdc0] Error writing trailer: Invalid argument
+[out#0/gif @ 0x55f4c6effdc0] video:0KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+[out#0/gif @ 0x55f4c6effdc0] Output file is empty, nothing was encoded(check -ss / -t / -frames parameters if used)
+frame=    0 fps=0.0 q=0.0 Lsize=       0KiB time=N/A bitrate=N/A speed=N/A    
+Conversion failed!

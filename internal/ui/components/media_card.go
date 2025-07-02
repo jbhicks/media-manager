@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
@@ -31,7 +32,6 @@ type MediaCard struct {
 	mediaType       MediaType
 	filePath        string
 	fileName        string
-	staticImage     *canvas.Image
 	animatedGif     *xwidget.AnimatedGif
 	icon            *widget.Icon
 	label           *widget.Label
@@ -88,7 +88,9 @@ func (mc *MediaCard) setupContent() {
 
 		if _, err := os.Stat(staticThumbPath); err == nil {
 			// Use existing thumbnail
-			mc.staticImage = canvas.NewImageFromFile(staticThumbPath)
+			img := canvas.NewImageFromFile(staticThumbPath)
+			img.FillMode = canvas.ImageFillContain
+			mc.content = container.NewCenter(img)
 		} else {
 			// Generate thumbnail for image in background
 			_ = os.MkdirAll(thumbDir, 0755)
@@ -96,46 +98,23 @@ func (mc *MediaCard) setupContent() {
 				err := preview.GenerateThumbnail(mc.filePath, staticThumbPath)
 				if err == nil {
 					fyne.Do(func() {
-						mc.staticImage = canvas.NewImageFromFile(staticThumbPath)
-						mc.staticImage.FillMode = canvas.ImageFillContain
-						mc.content = mc.staticImage
-						mc.Refresh()
+						img := canvas.NewImageFromFile(staticThumbPath)
+						img.FillMode = canvas.ImageFillContain
+						mc.content = container.NewCenter(img)
+						mc.content.Refresh()
 					})
 				}
 			}()
 			// Use original image as placeholder while generating thumbnail
-			mc.staticImage = canvas.NewImageFromFile(mc.filePath)
+			mc.content = widget.NewIcon(theme.FileImageIcon())
 		}
-		mc.staticImage.FillMode = canvas.ImageFillContain
-		mc.content = mc.staticImage
+		mc.content.Refresh()
 
 	case MediaTypeVideo:
 		// Setup video thumbnail
 		homeDir, _ := os.UserHomeDir()
 		thumbDir := filepath.Join(homeDir, ".media-manager", "thumbnails")
-		staticThumbPath := filepath.Join(thumbDir, mc.fileName+".jpg")
 		animatedGifPath := filepath.Join(thumbDir, mc.fileName+".gif")
-
-		// Ensure static thumbnail exists
-		if _, err := os.Stat(staticThumbPath); err != nil {
-			mc.icon = widget.NewIcon(theme.FileVideoIcon())
-			mc.content = mc.icon
-			go func() {
-				mc.ensureVideoThumbnail(mc.filePath, staticThumbPath)
-				fyne.Do(func() {
-						if _, err := os.Stat(staticThumbPath); err == nil {
-							mc.staticImage = canvas.NewImageFromFile(staticThumbPath)
-							mc.staticImage.FillMode = canvas.ImageFillContain
-							mc.content = mc.staticImage
-							mc.Refresh()
-						}
-					})
-			}()
-		} else {
-			mc.staticImage = canvas.NewImageFromFile(staticThumbPath)
-			mc.staticImage.FillMode = canvas.ImageFillContain
-			mc.content = mc.staticImage
-		}
 
 		// Always check for and generate animated GIF
 		fmt.Printf("[DEBUG] Checking for animated GIF: %s\n", animatedGifPath)
@@ -145,19 +124,16 @@ func (mc *MediaCard) setupContent() {
 			if gif, err := xwidget.NewAnimatedGif(gifURI); err == nil {
 				mc.animatedGif = gif
 				mc.hasAnimation = true
+				mc.content = mc.animatedGif // Set content to animated GIF directly
 				fmt.Println("[DEBUG] Animated GIF successfully loaded and hasAnimation set to true.")
 			} else {
 				fmt.Printf("[DEBUG] Error loading animated GIF: %v\n", err)
 			}
 		} else {
 			fmt.Println("[DEBUG] Animated GIF does not exist, generating...")
-			// Generate animated GIF if it doesn't exist
-			cmd := []string{"ffmpeg", "-y", "-i", mc.filePath, "-vf", "fps=10,scale=200:-1", animatedGifPath}
-			fmt.Printf("[DEBUG] Generating animated GIF: %v\n", cmd)
-			err := mc.runCommand(cmd)
+			err := preview.GenerateAnimatedPreview(mc.filePath, animatedGifPath)
 			if err != nil {
-				fmt.Printf("[DEBUG] GIF ffmpeg error: %v\n", err)
-				fmt.Printf("[DEBUG] GIF failed command: %v\n", cmd)
+				fmt.Printf("[DEBUG] GIF generation failed: %v\n", err)
 			} else {
 				fmt.Println("[DEBUG] Animated GIF generation command executed.")
 				// Check if the file exists and its size after generation
@@ -174,6 +150,8 @@ func (mc *MediaCard) setupContent() {
 					mc.animatedGif = gif
 					fmt.Println("[DEBUG] Animated GIF successfully loaded after generation")
 					mc.hasAnimation = true
+					mc.animatedGif.SetMinSize(fyne.NewSize(200, 0)) // Set min width to 200, height auto
+					mc.content = mc.animatedGif                     // Set content to animated GIF directly
 				} else {
 					fmt.Printf("[DEBUG] Error loading animated GIF after generation: %v\n", err)
 				}
@@ -181,7 +159,6 @@ func (mc *MediaCard) setupContent() {
 				fmt.Println("[DEBUG] Animated GIF still does not exist after generation attempt.")
 			}
 		}
-
 
 	default: // MediaTypeFile
 		mc.icon = widget.NewIcon(theme.FileIcon())
@@ -220,7 +197,7 @@ func (mc *MediaCard) MouseOut() {
 	// Stop animation for videos
 	if mc.mediaType == MediaTypeVideo && mc.hasAnimation && mc.animatedGif != nil {
 		mc.animatedGif.Stop()
-		mc.content = mc.staticImage
+		mc.content = mc.animatedGif // Revert to the animated GIF (which shows its first frame when stopped)
 		mc.Refresh()
 	}
 }
@@ -232,7 +209,7 @@ func (mc *MediaCard) MouseMoved(*desktop.MouseEvent) {
 
 // MinSize returns the fixed size for all cards
 func (mc *MediaCard) MinSize() fyne.Size {
-	return fyne.NewSize(180, 220) // Taller for title space
+	return fyne.NewSize(96, 64) // Clamp to icon and label
 }
 
 // CreateRenderer creates the renderer for the media card
@@ -260,29 +237,37 @@ func (r *mediaCardRenderer) Layout(size fyne.Size) {
 	r.background.Resize(size)
 	r.background.Move(fyne.NewPos(0, 0))
 
-	// Content fills almost the entire card - this is crucial for image display
 	padding := float32(2)
-	contentSize := fyne.NewSize(size.Width-padding*2, size.Height-padding*2)
-	r.content.Resize(contentSize)
-	r.content.Move(fyne.NewPos(padding, padding))
+	labelAreaHeight := r.label.MinSize().Height + float32(8)
+	contentAvailableHeight := size.Height - padding*2 - labelAreaHeight
+	contentAvailableWidth := size.Width - padding*2
 
-	// Ensure the content is refreshed to display properly
+	// Center content using its MinSize, do not stretch
+	contentMin := r.content.MinSize()
+	contentX := padding + (contentAvailableWidth-contentMin.Width)/2
+	contentY := padding + (contentAvailableHeight-contentMin.Height)/2
+	r.content.Resize(contentMin)
+	r.content.Move(fyne.NewPos(contentX, contentY))
 	canvas.Refresh(r.content)
 
 	// Label and overlay always visible, anchored to bottom
-	labelHeight := float32(22)
-	labelY := size.Height - labelHeight - float32(8)
-	labelX := float32(4)
+	labelMinHeight := float32(22)
 	labelWidth := size.Width - float32(8)
+	labelX := float32(4)
+	labelTextSize := r.label.MinSize()
+	labelHeight := labelTextSize.Height
+	if labelHeight < labelMinHeight {
+		labelHeight = labelMinHeight
+	}
+	labelY := size.Height - labelHeight - float32(8)
 
-	// Label background positioned behind the text
 	r.labelBackground.Resize(fyne.NewSize(labelWidth, labelHeight))
 	r.labelBackground.Move(fyne.NewPos(labelX, labelY))
 
-	// Label positioned over the background
 	r.label.Resize(fyne.NewSize(labelWidth, labelHeight))
 	r.label.Move(fyne.NewPos(labelX, labelY))
 }
+
 func (r *mediaCardRenderer) MinSize() fyne.Size {
 	return fyne.NewSize(180, 180)
 }
@@ -317,34 +302,10 @@ func GetMediaType(filename string) MediaType {
 	switch ext {
 	case ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp":
 		return MediaTypeImage
-	case ".mp4", ".webm", ".ogv", ".flv", ".mov", ".avi", ".mkv":
+	case ".mp4", ".webm", ".ogv", ".flv", ".mov", ".avi", ".mkv", ".ts", ".3gp":
 		return MediaTypeVideo
 	default:
 		return MediaTypeFile
-	}
-}
-
-// ensureVideoThumbnail generates a video thumbnail if it doesn't exist
-func (mc *MediaCard) ensureVideoThumbnail(videoPath, thumbPath string) {
-	fmt.Printf("[DEBUG] Checking for video thumbnail: %s\n", thumbPath)
-	if _, err := os.Stat(thumbPath); err == nil {
-		fmt.Printf("[DEBUG] Thumbnail already exists: %s\n", thumbPath)
-		return // thumbnail exists
-	}
-	fmt.Printf("[DEBUG] Thumbnail not found, generating for: %s\n", videoPath)
-	_ = os.MkdirAll(filepath.Dir(thumbPath), 0755)
-
-	// Use uniform 200x200 thumbnail generation
-	cmd := []string{"ffmpeg", "-y", "-i", videoPath, "-ss", "00:00:01.000", "-vframes", "1",
-		"-vf", "scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2",
-		thumbPath}
-	fmt.Printf("[DEBUG] Generating uniform video thumbnail: %v\n", cmd)
-	err := mc.runCommand(cmd)
-	if err != nil {
-		fmt.Printf("[DEBUG] ffmpeg error: %v\n", err)
-		fmt.Printf("[DEBUG] Failed command: %v\n", cmd)
-	} else {
-		fmt.Printf("[DEBUG] ffmpeg thumbnail generated: %s\n", thumbPath)
 	}
 }
 

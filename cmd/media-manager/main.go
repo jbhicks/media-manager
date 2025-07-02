@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/user/media-manager/internal/app"
 )
 
@@ -26,4 +27,41 @@ func main() {
 		log.Fatalf("Failed to create application!: %v", err)
 	}
 	application.Run()
+
+	// Setup file watcher
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer watcher.Close()
+
+	go func() {
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					log.Println("Watcher events channel closed.")
+					return
+				}
+				log.Printf("FSNotify Event: Name=%s, Op=%s", event.Name, event.Op)
+				if event.Has(fsnotify.Create) || event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) || event.Has(fsnotify.Write) {
+					log.Printf("Detected relevant file system change for %s, triggering rescan.", event.Name)
+					application.RescanMediaDirectory()
+				}
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				log.Println("error:", err)
+			}
+		}
+	}()
+
+	err = watcher.Add(dir)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Keep main goroutine alive
+	<-make(chan struct{})
 }

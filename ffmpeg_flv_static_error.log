@@ -1,0 +1,57 @@
+ffmpeg version n7.1.1 Copyright (c) 2000-2025 the FFmpeg developers
+  built with gcc 15.1.1 (GCC) 20250425
+  configuration: --prefix=/usr --disable-debug --disable-static --disable-stripping --enable-amf --enable-avisynth --enable-cuda-llvm --enable-lto --enable-fontconfig --enable-frei0r --enable-gmp --enable-gnutls --enable-gpl --enable-ladspa --enable-libaom --enable-libass --enable-libbluray --enable-libbs2b --enable-libdav1d --enable-libdrm --enable-libdvdnav --enable-libdvdread --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgsm --enable-libharfbuzz --enable-libiec61883 --enable-libjack --enable-libjxl --enable-libmodplug --enable-libmp3lame --enable-libopencore_amrnb --enable-libopencore_amrwb --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-libplacebo --enable-libpulse --enable-librav1e --enable-librsvg --enable-librubberband --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtheora --enable-libv4l2 --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpl --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxcb --enable-libxml2 --enable-libxvid --enable-libzimg --enable-libzmq --enable-nvdec --enable-nvenc --enable-opencl --enable-opengl --enable-shared --enable-vapoursynth --enable-version3 --enable-vulkan
+  libavutil      59. 39.100 / 59. 39.100
+  libavcodec     61. 19.101 / 61. 19.101
+  libavformat    61.  7.100 / 61.  7.100
+  libavdevice    61.  3.100 / 61.  3.100
+  libavfilter    10.  4.100 / 10.  4.100
+  libswscale      8.  3.100 /  8.  3.100
+  libswresample   5.  3.100 /  5.  3.100
+  libpostproc    58.  3.100 / 58.  3.100
+Input #0, flv, from 'media/guqin.flv':
+  Metadata:
+    creator         : Coded by New Bilibili Transcoder v1.2
+    metadatacreator : Yet Another Metadata Injector for FLV - Version 1.9
+    hasKeyframes    : true
+    hasVideo        : true
+    hasAudio        : true
+    hasMetadata     : true
+    canSeekToEnd    : true
+    datasize        : 62125814
+    videosize       : 55740075
+    audiosize       : 6312107
+    lasttimestamp   : 256
+    lastkeyframetimestamp: 256
+    lastkeyframelocation: 62127104
+  Duration: 00:04:16.04, start: 0.040000, bitrate: 1941 kb/s
+  Stream #0:0: Video: h264 (High), yuv420p(progressive), 1920x1080 [SAR 1:1 DAR 16:9], 1739 kb/s, 25 fps, 25 tbr, 1k tbn
+  Stream #0:1: Audio: aac (LC), 48000 Hz, stereo, fltp, 193 kb/s
+Stream mapping:
+  Stream #0:0 -> #0:0 (h264 (native) -> mjpeg (native))
+Press [q] to stop, [?] for help
+Output #0, image2, to '/home/josh/.media-manager/thumbnails/guqin.flv.jpg':
+  Metadata:
+    creator         : Coded by New Bilibili Transcoder v1.2
+    metadatacreator : Yet Another Metadata Injector for FLV - Version 1.9
+    hasKeyframes    : true
+    hasVideo        : true
+    hasAudio        : true
+    hasMetadata     : true
+    canSeekToEnd    : true
+    datasize        : 62125814
+    videosize       : 55740075
+    audiosize       : 6312107
+    lasttimestamp   : 256
+    lastkeyframetimestamp: 256
+    lastkeyframelocation: 62127104
+    encoder         : Lavf61.7.100
+  Stream #0:0: Video: mjpeg, yuv420p(pc, progressive), 180x101 [SAR 404:405 DAR 16:9], q=2-31, 200 kb/s, 25 fps, 25 tbn
+      Metadata:
+        encoder         : Lavc61.19.101 mjpeg
+      Side data:
+        cpb: bitrate max/min/avg: 0/0/200000 buffer size: 0 vbv_delay: N/A
+[image2 @ 0x562bb61ccf40] The specified filename '/home/josh/.media-manager/thumbnails/guqin.flv.jpg' does not contain an image sequence pattern or a pattern is invalid.
+[image2 @ 0x562bb61ccf40] Use a pattern such as %03d for an image sequence or use the -update option (with -frames:v 1 if needed) to write a single image.
+[out#0/image2 @ 0x562bb5896100] video:4KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+frame=    1 fps=0.0 q=3.1 Lsize=N/A time=00:00:00.04 bitrate=N/A speed=0.705x    

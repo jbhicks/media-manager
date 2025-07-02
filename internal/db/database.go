@@ -55,3 +55,11 @@ func (d *Database) CreateFolder(folder *models.Folder) error {
 func (d *Database) CreateTag(tag *models.Tag) error {
 	return d.db.Create(tag).Error
 }
+
+func (d *Database) Close() error {
+	db, err := d.db.DB()
+	if err != nil {
+		return err
+	}
+	return db.Close()
+}

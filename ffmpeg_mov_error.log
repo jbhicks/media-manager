@@ -1,0 +1,80 @@
+ffmpeg version n7.1.1 Copyright (c) 2000-2025 the FFmpeg developers
+  built with gcc 15.1.1 (GCC) 20250425
+  configuration: --prefix=/usr --disable-debug --disable-static --disable-stripping --enable-amf --enable-avisynth --enable-cuda-llvm --enable-lto --enable-fontconfig --enable-frei0r --enable-gmp --enable-gnutls --enable-gpl --enable-ladspa --enable-libaom --enable-libass --enable-libbluray --enable-libbs2b --enable-libdav1d --enable-libdrm --enable-libdvdnav --enable-libdvdread --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgsm --enable-libharfbuzz --enable-libiec61883 --enable-libjack --enable-libjxl --enable-libmodplug --enable-libmp3lame --enable-libopencore_amrnb --enable-libopencore_amrwb --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-libplacebo --enable-libpulse --enable-librav1e --enable-librsvg --enable-librubberband --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtheora --enable-libv4l2 --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpl --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxcb --enable-libxml2 --enable-libxvid --enable-libzimg --enable-libzmq --enable-nvdec --enable-nvenc --enable-opencl --enable-opengl --enable-shared --enable-vapoursynth --enable-version3 --enable-vulkan
+  libavutil      59. 39.100 / 59. 39.100
+  libavcodec     61. 19.101 / 61. 19.101
+  libavformat    61.  7.100 / 61.  7.100
+  libavdevice    61.  3.100 / 61.  3.100
+  libavfilter    10.  4.100 / 10.  4.100
+  libswscale      8.  3.100 /  8.  3.100
+  libswresample   5.  3.100 /  5.  3.100
+  libpostproc    58.  3.100 / 58.  3.100
+Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'media/quicktime.mov':
+  Metadata:
+    major_brand     : qt  
+    minor_version   : 537199360
+    compatible_brands: qt  
+    creation_time   : 2013-03-13T15:47:17.000000Z
+    com.apple.quicktime.album: Performance U! Winter school
+    com.apple.quicktime.displayname: Snabb Switch
+    com.apple.quicktime.description: 
+    com.apple.quicktime.artist: Luke Gorrie
+    com.apple.quicktime.software: SWITCHcast - http://www.switch.ch/cast
+    com.apple.quicktime.year: 13.03.2013 14:00, SWITCH Zürich
+  Duration: 00:27:25.02, start: 0.000000, bitrate: 1264 kb/s
+  Stream #0:0[0x1](eng): Video: mjpeg (Baseline) (jpeg / 0x6765706A), yuvj420p(pc, bt470bg/unknown/unknown), 1022x601 [SAR 72:72 DAR 1022:601], 0 kb/s, 0.0001 fps, 0.0001 tbr, 600 tbn (default)
+      Metadata:
+        creation_time   : 2013-03-13T15:47:17.000000Z
+        handler_name    : Apple Video Media Handler
+        vendor_id       : appl
+        encoder         : Photo - JPEG
+  Stream #0:1[0x2](eng): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, stereo, fltp, 114 kb/s (default)
+      Metadata:
+        creation_time   : 2013-03-13T15:47:17.000000Z
+        handler_name    : Apple Sound Media Handler
+        vendor_id       : [0][0][0][0]
+  Stream #0:2[0x3](eng): Video: h264 (Main) (avc1 / 0x31637661), yuv420p(tv, smpte170m/smpte170m/bt709, progressive), 320x240, 190 kb/s, 24 fps, 24 tbr, 50k tbn (default)
+      Metadata:
+        creation_time   : 2013-03-13T15:47:17.000000Z
+        handler_name    : Apple Video Media Handler
+        vendor_id       : appl
+        encoder         : H.264
+      Side data:
+        displaymatrix: rotation of -0.00 degrees
+  Stream #0:3[0x4](eng): Video: h264 (Main) (avc1 / 0x31637661), yuv420p(tv, bt709, progressive), 1024x768, 1053 kb/s, 23.81 fps, 23.81 tbr, 1k tbn (default)
+      Metadata:
+        creation_time   : 2013-03-13T15:47:17.000000Z
+        handler_name    : Apple Video Media Handler
+        vendor_id       : appl
+        encoder         : H.264
+      Side data:
+        displaymatrix: rotation of -0.00 degrees
+Stream mapping:
+  Stream #0:3 -> #0:0 (h264 (native) -> gif (native))
+Press [q] to stop, [?] for help
+Output #0, gif, to '/home/josh/.media-manager/thumbnails/quicktime.mov.gif':
+  Metadata:
+    major_brand     : qt  
+    minor_version   : 537199360
+    compatible_brands: qt  
+    com.apple.quicktime.year: 13.03.2013 14:00, SWITCH Zürich
+    com.apple.quicktime.album: Performance U! Winter school
+    com.apple.quicktime.displayname: Snabb Switch
+    com.apple.quicktime.description: 
+    com.apple.quicktime.artist: Luke Gorrie
+    com.apple.quicktime.software: SWITCHcast - http://www.switch.ch/cast
+    encoder         : Lavf61.7.100
+  Stream #0:0(eng): Video: gif, bgr8(pc, gbr/bt709/bt709, progressive), 200x150, q=2-31, 200 kb/s, 10 fps, 100 tbn (default)
+      Metadata:
+        creation_time   : 2013-03-13T15:47:17.000000Z
+        handler_name    : Apple Video Media Handler
+        vendor_id       : appl
+        encoder         : Lavc61.19.101 gif
+frame= 1389 fps=0.0 q=-0.0 size=     248KiB time=00:02:18.90 bitrate=  14.6kbits/s speed= 278x    frame= 2889 fps=2888 q=-0.0 size=     256KiB time=00:04:48.90 bitrate=   7.3kbits/s speed= 289x    frame= 4054 fps=2702 q=-0.0 size=     256KiB time=00:06:45.40 bitrate=   5.2kbits/s speed= 270x    frame= 5219 fps=2609 q=-0.0 size=     512KiB time=00:08:41.90 bitrate=   8.0kbits/s speed= 261x    frame= 6378 fps=2550 q=-0.0 size=     512KiB time=00:10:37.80 bitrate=   6.6kbits/s speed= 255x    frame= 7538 fps=2512 q=-0.0 size=     768KiB time=00:12:33.80 bitrate=   8.3kbits/s speed= 251x    frame= 8703 fps=2486 q=-0.0 size=     768KiB time=00:14:30.30 bitrate=   7.2kbits/s speed= 249x    frame= 9872 fps=2467 q=-0.0 size=     768KiB time=00:16:27.20 bitrate=   6.4kbits/s speed= 247x    frame=11306 fps=2512 q=-0.0 size=    1024KiB time=00:18:50.70 bitrate=   7.4kbits/s speed= 251x    frame=12671 fps=2533 q=-0.0 size=    1280KiB time=00:21:07.10 bitrate=   8.3kbits/s speed= 253x    [mov,mp4,m4a,3gp,3g2,mj2 @ 0x558a54ccf5c0] Packet corrupt (stream = 3, dts = 1408638).
+[in#0/mov,mp4,m4a,3gp,3g2,mj2 @ 0x558a54ccf300] corrupt input packet in stream 3
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x558a54ccf5c0] stream 3, offset 0xf8037c1: partial file
+[h264 @ 0x558a54d76200] Invalid NAL unit size (7207 > 3309).
+[h264 @ 0x558a54d76200] Error splitting the input into NAL units.
+[vist#0:3/h264 @ 0x558a54d883c0] [dec:h264 @ 0x558a55d84b00] Decoding error: Invalid data found when processing input
+[out#0/gif @ 0x558a55f7f980] video:1426KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.001370%
+frame=14087 fps=2579 q=-0.0 Lsize=    1426KiB time=00:23:28.70 bitrate=   8.3kbits/s speed= 258x    

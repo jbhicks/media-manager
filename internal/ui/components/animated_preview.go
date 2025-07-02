@@ -67,7 +67,7 @@ func (hvc *HoverableVideoCard) Tapped(*fyne.PointEvent) {
 
 // MinSize returns the minimum size
 func (hvc *HoverableVideoCard) MinSize() fyne.Size {
-	return fyne.NewSize(120, 120)
+	return fyne.NewSize(200, 200)
 }
 
 // CreateRenderer creates the renderer

@@ -7,7 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/nfnt/resize"
 )
@@ -81,8 +83,9 @@ func generateImageThumbnail(srcPath, thumbPath string) error {
 		return fmt.Errorf("failed to decode image: %w", err)
 	}
 
-	// Resize to uniform dimensions - 200x200 square thumbnails
-	resizedImg := resize.Thumbnail(200, 200, img, resize.Lanczos3)
+	// Resize the image to a fixed width (200px) while maintaining aspect ratio
+	newWidth := uint(200)
+	resizedImg := resize.Resize(newWidth, 0, img, resize.Lanczos3)
 
 	// Save thumbnail
 	outFile, err := os.Create(thumbPath)
@@ -108,7 +111,7 @@ func generateVideoThumbnail(srcPath, thumbPath string) error {
 		"-i", srcPath,
 		"-ss", "00:00:01", // Extract frame at 1 second
 		"-vframes", "1", // Extract only 1 frame
-		"-vf", "scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2", // Force 200x200 with letterboxing
+		"-vf", "scale=180:-1", // Scale to 180px wide, preserve aspect ratio
 		"-y", // Overwrite output file
 		thumbPath,
 	)
@@ -121,8 +124,30 @@ func generateVideoThumbnail(srcPath, thumbPath string) error {
 	return nil
 }
 
+func getVideoDuration(filePath string) (time.Duration, error) {
+	cmd := exec.Command("ffprobe",
+		"-v", "error",
+		"-show_entries", "format=duration",
+		"-of", "default=noprint_wrappers=1:nokey=1",
+		filePath,
+	)
+
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get video duration for %s: %w", filePath, err)
+	}
+
+	durationStr := strings.TrimSpace(string(output))
+	durationFloat, err := strconv.ParseFloat(durationStr, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse duration %s: %w", durationStr, err)
+	}
+
+	return time.Duration(durationFloat * float64(time.Second)), nil
+}
+
 // GenerateAnimatedPreview creates a single animated GIF for video preview
-func GenerateAnimatedPreview(srcPath, gifPath string) error {
+func GenerateAnimatedPreviewCPU(srcPath, gifPath string) error {
 	fmt.Printf("[DEBUG] Generating animated GIF preview for: %s\n", srcPath)
 
 	// Check if animated preview already exists
@@ -136,13 +161,20 @@ func GenerateAnimatedPreview(srcPath, gifPath string) error {
 		return fmt.Errorf("failed to create preview directory: %w", err)
 	}
 
-	// Use simpler FFmpeg command for better compatibility
-	fmt.Printf("[DEBUG] Running simplified ffmpeg command for animated preview: %s\n", gifPath)
+	// Get video duration
+	duration, err := getVideoDuration(srcPath)
+	if err != nil {
+		return fmt.Errorf("failed to get video duration: %w", err)
+	}
+
+	// Calculate interval for 10 evenly distributed frames
+	numFrames := 10
+	frameInterval := int(duration.Seconds() * 25 / float64(numFrames)) // Assuming 25fps
+	filterComplex := fmt.Sprintf("select='not(mod(n,%d))',setpts=N/FRAME_RATE/TB,fps=8,scale=200:-1", frameInterval)
+
 	cmd := exec.Command("ffmpeg",
 		"-i", srcPath,
-		"-ss", "2", // Start at 2 seconds to skip intro
-		"-t", "3", // 3 second duration
-		"-vf", "fps=8,scale=200:-1:flags=lanczos", // 8 FPS, 200px width
+		"-vf", filterComplex,
 		"-f", "gif", // Force GIF format
 		"-y", // Overwrite existing
 		gifPath,
@@ -150,8 +182,7 @@ func GenerateAnimatedPreview(srcPath, gifPath string) error {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Printf("[DEBUG] Failed to generate animated preview: %v, output: %s\n", err, string(output))
-		return fmt.Errorf("failed to generate animated preview: %w", err)
+		return fmt.Errorf("failed to generate animated preview: %v, output: %s\n", err, string(output))
 	}
 
 	// Verify the GIF was created
@@ -160,5 +191,114 @@ func GenerateAnimatedPreview(srcPath, gifPath string) error {
 	}
 
 	fmt.Printf("[DEBUG] Successfully generated animated preview: %s\n", gifPath)
+	return nil
+}
+
+// GetFFmpegHardwareAccelerations returns a list of supported hardware accelerations by ffmpeg.
+func GetFFmpegHardwareAccelerations() ([]string, error) {
+	cmd := exec.Command("ffmpeg", "-hwaccels")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run ffmpeg -hwaccels: %w\n%s", err, string(output))
+	}
+
+	lines := strings.Split(string(output), "\n")
+	var hwaccels []string
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue // Skip header line
+		}
+		fields := strings.Fields(line)
+		if len(fields) > 0 {
+			hwaccels = append(hwaccels, fields[0])
+		}
+	}
+	return hwaccels, nil
+}
+
+func GenerateAnimatedPreview(srcPath, gifPath string) error {
+	// Temporarily disable GPU acceleration for debugging
+	return GenerateAnimatedPreviewCPU(srcPath, gifPath)
+}
+
+func GenerateAnimatedPreviewGPU(srcPath, gifPath, hwaccel string) error {
+	fmt.Printf("[DEBUG] Generating animated GIF preview with GPU (%s) for: %s\n", hwaccel, srcPath)
+
+	// Check if animated preview already exists
+	if _, err := os.Stat(gifPath); err == nil {
+		fmt.Printf("[DEBUG] Animated preview already exists: %s\n", gifPath)
+		return nil
+	}
+
+	// Ensure the output directory exists
+	if err := os.MkdirAll(filepath.Dir(gifPath), 0755); err != nil {
+		return fmt.Errorf("failed to create preview directory: %w", err)
+	}
+
+	// Get video duration
+	duration, err := getVideoDuration(srcPath)
+	if err != nil {
+		return fmt.Errorf("failed to get video duration: %w", err)
+	}
+
+	// Calculate timestamps for 10 evenly distributed frames
+	numFrames := 10
+	interval := duration / time.Duration(numFrames+1)
+	var selectFilters []string
+	for i := 1; i <= numFrames; i++ {
+		seekTime := interval * time.Duration(i)
+		selectFilters = append(selectFilters, fmt.Sprintf("eq(n,\"%d\")", int(seekTime.Seconds()*25))) // Assuming 25fps for frame selection
+	}
+
+	var cmdArgs []string
+	filterComplex := fmt.Sprintf("select='%s',setpts=N/FRAME_RATE/TB,fps=8,scale=200:200:force_original_aspect_ratio=increase,crop=200:200", strings.Join(selectFilters, "+"))
+
+	switch hwaccel {
+	case "cuda":
+		cmdArgs = []string{
+			"-hwaccel", "cuda",
+			"-c:v", "h264_cuvid", // Assuming H.264 input, adjust as needed
+			"-i", srcPath,
+			"-vf", "hwupload_cuda," + filterComplex,
+			"-f", "gif",
+			"-y",
+			gifPath,
+		}
+	case "vaapi":
+		cmdArgs = []string{
+			"-hwaccel", "vaapi",
+			"-i", srcPath,
+			"-vf", "format=nv12,hwupload,scale_vaapi=w=200:h=200:force_original_aspect_ratio=increase,crop=200:200,hwdownload,format=bgr0", // Example VAAPI filter
+			"-f", "gif",
+			"-y",
+			gifPath,
+		}
+	case "nvenc":
+		// NVENC is primarily an encoder, so decoding might still be CPU-bound or require specific decoders
+		// For simplicity, we'll use a generic GPU filter here, but a real implementation might need more specific handling
+		cmdArgs = []string{
+			"-i", srcPath,
+			"-vf", "scale=200:-1", // Use the same filter as CPU for now, as NVENC is for encoding
+			"-f", "gif",
+			"-y",
+			gifPath,
+		}
+	default:
+		return fmt.Errorf("unsupported hardware acceleration: %s", hwaccel)
+	}
+
+	cmd := exec.Command("ffmpeg", cmdArgs...)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to generate animated preview with GPU (%s): %v, output: %s\n", hwaccel, err, string(output))
+	}
+
+	// Verify the GIF was created
+	if _, err := os.Stat(gifPath); err != nil {
+		return fmt.Errorf("animated preview file missing after GPU generation: %s", gifPath)
+	}
+
+	fmt.Printf("[DEBUG] Successfully generated animated preview with GPU (%s): %s\n", hwaccel, gifPath)
 	return nil
 }
