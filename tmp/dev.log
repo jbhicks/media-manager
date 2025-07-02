@@ -1,5 +1,5 @@
-2025/07/02 08:13:14 Opening directory: ./media
-2025/07/02 08:13:14 [DEBUG] main.go: Passing dir to app: ./media
+2025/07/02 08:17:22 Opening directory: ./media
+2025/07/02 08:17:22 [DEBUG] main.go: Passing dir to app: ./media
 [DEBUG] app.go: Received mediaDir: ./media
 [DEBUG] config.go: Received mediaDir: ./media
 [DEBUG] config.go: Config.MediaDirs: [./media]
@@ -21,38 +21,11 @@
 [DEBUG] Generating uniform video thumbnail: [ffmpeg -y -i media/big_buck_bunny.webm -ss 00:00:01.000 -vframes 1 -vf scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2 /home/josh/.media-manager/thumbnails/big_buck_bunny.webm.jpg]
 [DEBUG] Generating thumbnail for: /home/josh/media-manager/media/big_buck_bunny_thumbnail.jpg
 [DEBUG] Output path: /home/josh/.media-manager/thumbnails/big_buck_bunny_thumbnail.jpg.jpg
-[DEBUG] Checking for video thumbnail: /home/josh/.media-manager/thumbnails/guqin.flv.jpg
-[DEBUG] Thumbnail not found, generating for: media/guqin.flv
-[DEBUG] Generating uniform video thumbnail: [ffmpeg -y -i media/guqin.flv -ss 00:00:01.000 -vframes 1 -vf scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2 /home/josh/.media-manager/thumbnails/guqin.flv.jpg]
-[DEBUG] Checking for video thumbnail: /home/josh/.media-manager/thumbnails/packetsize0.ogv.jpg
-[DEBUG] Thumbnail not found, generating for: media/packetsize0.ogv
-[DEBUG] Generating uniform video thumbnail: [ffmpeg -y -i media/packetsize0.ogv -ss 00:00:01.000 -vframes 1 -vf scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2 /home/josh/.media-manager/thumbnails/packetsize0.ogv.jpg]
-[DEBUG] Checking for video thumbnail: /home/josh/.media-manager/thumbnails/quicktime.mov.jpg
-[DEBUG] Thumbnail not found, generating for: media/quicktime.mov
-[DEBUG] Generating uniform video thumbnail: [ffmpeg -y -i media/quicktime.mov -ss 00:00:01.000 -vframes 1 -vf scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2 /home/josh/.media-manager/thumbnails/quicktime.mov.jpg]
-[DEBUG] Generating thumbnail for: /home/josh/media-manager/media/test_thumbnail.jpg
-[DEBUG] Output path: /home/josh/.media-manager/thumbnails/test_thumbnail.jpg.jpg
-[DEBUG] Checking for video thumbnail: /home/josh/.media-manager/thumbnails/zelda.flv.jpg
-[DEBUG] Thumbnail not found, generating for: media/zelda.flv
-[DEBUG] Generating uniform video thumbnail: [ffmpeg -y -i media/zelda.flv -ss 00:00:01.000 -vframes 1 -vf scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2 /home/josh/.media-manager/thumbnails/zelda.flv.jpg]
-[DEBUG] ffmpeg thumbnail generated: /home/josh/.media-manager/thumbnails/zelda.flv.jpg
-[DEBUG] ffmpeg thumbnail generated: /home/josh/.media-manager/thumbnails/Sample_V_mpeg1_A_mpeg1Layer2.mp4.jpg
-[DEBUG] ffmpeg thumbnail generated: /home/josh/.media-manager/thumbnails/GoneNutty.avi.jpg
-[DEBUG] ffmpeg thumbnail generated: /home/josh/.media-manager/thumbnails/big_buck_bunny.webm.jpg
-[DEBUG] ffmpeg thumbnail generated: /home/josh/.media-manager/thumbnails/packetsize0.ogv.jpg
-[DEBUG] ffmpeg thumbnail generated: /home/josh/.media-manager/thumbnails/big_buck_bunny.mp4.jpg
-[DEBUG] ffmpeg thumbnail generated: /home/josh/.media-manager/thumbnails/quicktime.mov.jpg
-[DEBUG] ffmpeg thumbnail generated: /home/josh/.media-manager/thumbnails/guqin.flv.jpg
-2025/07/02 08:13:14 *** Error in Fyne call thread, this should have been called in fyne.Do[AndWait] ***
-2025/07/02 08:13:14   From: /home/josh/media-manager/internal/ui/components/media_card.go:273
-2025/07/02 08:13:14 *** Error in Fyne call thread, this should have been called in fyne.Do[AndWait] ***
-2025/07/02 08:13:14   From: /home/josh/media-manager/internal/ui/components/media_card.go:275
-2025/07/02 08:13:14 *** Error in Fyne call thread, this should have been called in fyne.Do[AndWait] ***
-2025/07/02 08:13:14   From: /home/josh/media-manager/internal/ui/components/media_card.go:276
-[DEBUG] MediaCard MouseIn - hover started
-[DEBUG] MediaCard MouseIn - hover started
-[DEBUG] MediaCard MouseIn - hover started
-[DEBUG] MediaCard MouseIn - hover started
-[DEBUG] MediaCard MouseIn - hover started
-[DEBUG] MediaCard MouseIn - hover started
-[DEBUG] MediaCard MouseIn - hover started
+panic: runtime error: invalid memory address or nil pointer dereference
+[signal SIGSEGV: segmentation violation code=0x1 addr=0x78 pc=0xbf6cda]
+
+goroutine 53 [running]:
+github.com/user/media-manager/internal/ui/components.(*MediaCard).setupContent.func1()
+	/home/josh/media-manager/internal/ui/components/media_card.go:98 +0x5a
+created by github.com/user/media-manager/internal/ui/components.(*MediaCard).setupContent in goroutine 1
+	/home/josh/media-manager/internal/ui/components/media_card.go:95 +0x868

@@ -15,7 +15,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 type MediaType int
@@ -96,12 +95,7 @@ func (mc *MediaCard) setupContent() {
 			go func() {
 				err := preview.GenerateThumbnail(mc.filePath, staticThumbPath)
 				if err == nil {
-					fyne.CurrentApp().Driver().Do(func() {
-						mc.staticImage = canvas.NewImageFromFile(staticThumbPath)
-						mc.staticImage.FillMode = canvas.ImageFillContain
-						mc.content = mc.staticImage
-						mc.Refresh()
-					})
+					fyne.CurrentApp().Driver().CanvasForObject(mc).Refresh(mc)
 				}
 			}()
 			// Use original image as placeholder while generating thumbnail
@@ -155,14 +149,7 @@ func (mc *MediaCard) setupContent() {
 			go func() {
 				mc.ensureVideoThumbnail(mc.filePath, staticThumbPath)
 				// After generation, update the card
-				fyne.CurrentApp().Driver().Do(func() {
-					if _, err := os.Stat(staticThumbPath); err == nil {
-						mc.staticImage = canvas.NewImageFromFile(staticThumbPath)
-						mc.staticImage.FillMode = canvas.ImageFillContain
-						mc.content = mc.staticImage
-						mc.Refresh()
-					}
-				})
+				fyne.CurrentApp().Driver().CanvasForObject(mc).Refresh(mc)
 			}()
 		}
 
