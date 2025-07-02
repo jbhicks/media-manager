@@ -116,44 +116,12 @@ func (mc *MediaCard) setupContent() {
 		staticThumbPath := filepath.Join(thumbDir, mc.fileName+".jpg")
 		animatedGifPath := filepath.Join(thumbDir, mc.fileName+".gif")
 
-		if _, err := os.Stat(staticThumbPath); err == nil {
-			mc.staticImage = canvas.NewImageFromFile(staticThumbPath)
-			mc.staticImage.FillMode = canvas.ImageFillContain
-			mc.content = mc.staticImage
-
-			// Check for animated GIF
-			if _, err := os.Stat(animatedGifPath); err == nil {
-				gifURI := storage.NewFileURI(animatedGifPath)
-				if gif, err := xwidget.NewAnimatedGif(gifURI); err == nil {
-					mc.animatedGif = gif
-					mc.hasAnimation = true
-				}
-			} else {
-				// Generate animated GIF if it doesn't exist
-				cmd := []string{"ffmpeg", "-y", "-i", mc.filePath, "-vf", "fps=10,scale=200:-1", animatedGifPath}
-				fmt.Printf("[DEBUG] Generating animated GIF: %v\n", cmd)
-				err := mc.runCommand(cmd)
-				if err != nil {
-					fmt.Printf("[DEBUG] GIF ffmpeg error: %v\n", err)
-					fmt.Printf("[DEBUG] GIF failed command: %v\n", cmd)
-				}
-				if _, err := os.Stat(animatedGifPath); err == nil {
-					gifURI := storage.NewFileURI(animatedGifPath)
-					if gif, err := xwidget.NewAnimatedGif(gifURI); err == nil {
-						mc.animatedGif = gif
-						fmt.Println("[DEBUG] Animated GIF successfully loaded")
-						mc.hasAnimation = true
-					}
-				}
-			}
-		} else {
-			// Generate video thumbnail if it doesn't exist
+		// Ensure static thumbnail exists
+		if _, err := os.Stat(staticThumbPath); err != nil {
 			mc.icon = widget.NewIcon(theme.FileVideoIcon())
 			mc.content = mc.icon
-
 			go func() {
 				mc.ensureVideoThumbnail(mc.filePath, staticThumbPath)
-				// After generation, update the card
 				fyne.Do(func() {
 						if _, err := os.Stat(staticThumbPath); err == nil {
 							mc.staticImage = canvas.NewImageFromFile(staticThumbPath)
@@ -163,7 +131,57 @@ func (mc *MediaCard) setupContent() {
 						}
 					})
 			}()
+		} else {
+			mc.staticImage = canvas.NewImageFromFile(staticThumbPath)
+			mc.staticImage.FillMode = canvas.ImageFillContain
+			mc.content = mc.staticImage
 		}
+
+		// Always check for and generate animated GIF
+		fmt.Printf("[DEBUG] Checking for animated GIF: %s\n", animatedGifPath)
+		if _, err := os.Stat(animatedGifPath); err == nil {
+			fmt.Println("[DEBUG] Animated GIF exists.")
+			gifURI := storage.NewFileURI(animatedGifPath)
+			if gif, err := xwidget.NewAnimatedGif(gifURI); err == nil {
+				mc.animatedGif = gif
+				mc.hasAnimation = true
+				fmt.Println("[DEBUG] Animated GIF successfully loaded and hasAnimation set to true.")
+			} else {
+				fmt.Printf("[DEBUG] Error loading animated GIF: %v\n", err)
+			}
+		} else {
+			fmt.Println("[DEBUG] Animated GIF does not exist, generating...")
+			// Generate animated GIF if it doesn't exist
+			cmd := []string{"ffmpeg", "-y", "-i", mc.filePath, "-vf", "fps=10,scale=200:-1", animatedGifPath}
+			fmt.Printf("[DEBUG] Generating animated GIF: %v\n", cmd)
+			err := mc.runCommand(cmd)
+			if err != nil {
+				fmt.Printf("[DEBUG] GIF ffmpeg error: %v\n", err)
+				fmt.Printf("[DEBUG] GIF failed command: %v\n", cmd)
+			} else {
+				fmt.Println("[DEBUG] Animated GIF generation command executed.")
+				// Check if the file exists and its size after generation
+				if fileInfo, err := os.Stat(animatedGifPath); err == nil {
+					fmt.Printf("[DEBUG] Generated GIF file exists: %s, size: %d bytes\n", animatedGifPath, fileInfo.Size())
+				} else {
+					fmt.Printf("[DEBUG] Generated GIF file does not exist or error stating: %v\n", err)
+				}
+			}
+			if _, err := os.Stat(animatedGifPath); err == nil {
+				gifURI := storage.NewFileURI(animatedGifPath)
+				fmt.Printf("[DEBUG] Attempting to load animated GIF from URI: %s\n", gifURI.String())
+				if gif, err := xwidget.NewAnimatedGif(gifURI); err == nil {
+					mc.animatedGif = gif
+					fmt.Println("[DEBUG] Animated GIF successfully loaded after generation")
+					mc.hasAnimation = true
+				} else {
+					fmt.Printf("[DEBUG] Error loading animated GIF after generation: %v\n", err)
+				}
+			} else {
+				fmt.Println("[DEBUG] Animated GIF still does not exist after generation attempt.")
+			}
+		}
+
 
 	default: // MediaTypeFile
 		mc.icon = widget.NewIcon(theme.FileIcon())
@@ -181,6 +199,7 @@ func (mc *MediaCard) MouseIn(*desktop.MouseEvent) {
 	mc.background.FillColor = theme.Color(theme.ColorNameHover)
 	mc.background.Refresh()
 
+	fmt.Printf("[DEBUG] MouseIn: mediaType=%v, hasAnimation=%v, animatedGif=%v\n", mc.mediaType, mc.hasAnimation, mc.animatedGif != nil)
 	// Start animation for videos
 	if mc.mediaType == MediaTypeVideo && mc.hasAnimation && mc.animatedGif != nil {
 		mc.content = mc.animatedGif
@@ -192,10 +211,12 @@ func (mc *MediaCard) MouseIn(*desktop.MouseEvent) {
 
 // MouseOut handles hover end
 func (mc *MediaCard) MouseOut() {
+	fmt.Println("[DEBUG] MediaCard MouseOut - hover ended")
 	mc.isHovered = false
 	mc.background.FillColor = theme.Color(theme.ColorNameInputBackground)
 	mc.background.Refresh()
 
+	fmt.Printf("[DEBUG] MouseOut: mediaType=%v, hasAnimation=%v, animatedGif=%v\n", mc.mediaType, mc.hasAnimation, mc.animatedGif != nil)
 	// Stop animation for videos
 	if mc.mediaType == MediaTypeVideo && mc.hasAnimation && mc.animatedGif != nil {
 		mc.animatedGif.Stop()
