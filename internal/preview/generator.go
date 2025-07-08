@@ -33,23 +33,33 @@ func pathWritable(path string) bool {
 
 // GenerateThumbnail creates a thumbnail for the given file path.
 func GenerateThumbnail(filePath, thumbPath string) error {
-	filePath = filepath.Join("/home/josh/media-manager", filePath)
-	thumbPath = filepath.Clean(thumbPath)
+	// Check if the source file exists
 	fmt.Printf("[DEBUG] Generating thumbnail for: %s\n", filePath)
 	fmt.Printf("[DEBUG] Output path: %s\n", thumbPath)
-	// Determine file type
-	ext := strings.ToLower(filepath.Ext(filePath))
 
-	if isImageFile(ext) {
+	// Ensure the thumbnail directory exists
+	if err := os.MkdirAll(filepath.Dir(thumbPath), 0755); err != nil {
+		return fmt.Errorf("failed to create thumbnail directory: %w", err)
+	}
+
+	// Check if the source file exists before attempting to generate a thumbnail
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return fmt.Errorf("source file does not exist: %s", filePath)
+	}
+
+	fileExt := strings.ToLower(filepath.Ext(filePath))
+	switch {
+	case isImageFile(fileExt):
 		return generateImageThumbnail(filePath, thumbPath)
-	} else if isVideoFile(ext) {
+	case isVideoFile(fileExt):
 		return generateVideoThumbnail(filePath, thumbPath)
-	} else {
-		return fmt.Errorf("unsupported file type: %s", ext)
+	default:
+		return fmt.Errorf("unsupported file type: %s", fileExt)
 	}
 }
 
 func isImageFile(ext string) bool {
+
 	imageExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".tiff", ".bmp"}
 	for _, imgExt := range imageExts {
 		if ext == imgExt {

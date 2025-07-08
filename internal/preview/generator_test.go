@@ -2,16 +2,27 @@ package preview
 
 import (
 	"fmt"
+	"image"
+	"image/png"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
 
 func TestGenerateVideoThumbnail(t *testing.T) {
-	tempThumbDir := t.TempDir()
-	videoPath := "media/big_buck_bunny.mp4"
-	thumbnailName := "big_buck_bunny_thumbnail.jpg"
-	thumbnailPath := filepath.Join(tempThumbDir, thumbnailName)
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not found, skipping test")
+	}
+
+	tempDir := t.TempDir()
+	videoPath := filepath.Join(tempDir, "test.mp4")
+	thumbnailPath := filepath.Join(tempDir, "thumbnail.jpg")
+
+	// Create a dummy video file
+	if err := os.WriteFile(videoPath, []byte("dummy"), 0644); err != nil {
+		t.Fatalf("Failed to create dummy video file: %v", err)
+	}
 
 	fmt.Printf("[DEBUG] Testing thumbnail generation for: %s\n", videoPath)
 	fmt.Printf("[DEBUG] Thumbnail output path: %s\n", thumbnailPath)
@@ -27,15 +38,25 @@ func TestGenerateVideoThumbnail(t *testing.T) {
 }
 
 func TestGenerateImageThumbnail(t *testing.T) {
-	tempThumbDir := t.TempDir()
-	imagePath := "media/big_buck_bunny.jpg"
-	thumbnailName := "big_buck_bunny_thumbnail.jpg"
-	thumbnailPath := filepath.Join(tempThumbDir, thumbnailName)
+	tempDir := t.TempDir()
+	imagePath := filepath.Join(tempDir, "test.png")
+	thumbnailPath := filepath.Join(tempDir, "thumbnail.jpg")
+
+	// Create a dummy png file
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	f, err := os.Create(imagePath)
+	if err != nil {
+		t.Fatalf("Failed to create dummy image file: %v", err)
+	}
+	defer f.Close()
+	if err := png.Encode(f, img); err != nil {
+		t.Fatalf("Failed to encode dummy image: %v", err)
+	}
 
 	fmt.Printf("[DEBUG] Testing thumbnail generation for: %s\n", imagePath)
 	fmt.Printf("[DEBUG] Thumbnail output path: %s\n", thumbnailPath)
 
-	err := GenerateThumbnail(imagePath, thumbnailPath)
+	err = GenerateThumbnail(imagePath, thumbnailPath)
 	if err != nil {
 		t.Fatalf("Failed to generate thumbnail for image: %v", err)
 	}
@@ -46,9 +67,14 @@ func TestGenerateImageThumbnail(t *testing.T) {
 }
 
 func TestGenerateThumbnailUnsupportedFile(t *testing.T) {
-	tempThumbDir := t.TempDir()
-	unsupportedPath := "README.md"
-	thumbnailPath := filepath.Join(tempThumbDir, "unsupported.jpg")
+	tempDir := t.TempDir()
+	unsupportedPath := filepath.Join(tempDir, "unsupported.txt")
+	thumbnailPath := filepath.Join(tempDir, "unsupported.jpg")
+
+	// Create a dummy unsupported file
+	if err := os.WriteFile(unsupportedPath, []byte("dummy"), 0644); err != nil {
+		t.Fatalf("Failed to create dummy unsupported file: %v", err)
+	}
 
 	err := GenerateThumbnail(unsupportedPath, thumbnailPath)
 	if err == nil {

@@ -31,8 +31,10 @@ func NewMediaScanner(database *db.Database) (*MediaScanner, error) {
 }
 
 func (s *MediaScanner) ScanDirectory(dirPath string) error {
+	fmt.Printf("[DEBUG] Scanning directory: %s\n", dirPath)
 	return filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
+			fmt.Printf("[DEBUG] Error walking path %s: %v\n", path, err)
 			return err
 		}
 
@@ -43,20 +45,22 @@ func (s *MediaScanner) ScanDirectory(dirPath string) error {
 
 		// Check if file is a supported media type
 		if !s.isMediaFile(path) {
+			fmt.Printf("[DEBUG] Skipping non-media file: %s\n", path)
 			return nil
 		}
 
 		// Create media file entry
 		mediaFile := &models.MediaFile{
-			Path:     path,
+			Path:		 path,
 			Filename: info.Name(),
-			Size:     info.Size(),
-			ModTime:  info.ModTime(),
+			Size:		 info.Size(),
+			ModTime:	 info.ModTime(),
 			FileType: s.getFileType(path),
 			MimeType: s.getMimeType(path),
 		}
 
 		// Save to database
+		fmt.Printf("[DEBUG] Saving media file to DB: %s\n", path)
 		err = s.database.CreateMediaFile(mediaFile)
 		if err != nil {
 			fmt.Printf("Error saving file %s: %v\n", path, err)

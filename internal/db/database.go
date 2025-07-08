@@ -56,6 +56,10 @@ func (d *Database) CreateTag(tag *models.Tag) error {
 	return d.db.Create(tag).Error
 }
 
+func (d *Database) DeleteMediaFilesByDirectory(dirPath string) error {
+	return d.db.Where("path LIKE ?", dirPath+"%").Delete(&models.MediaFile{}).Error
+}
+
 func (d *Database) Close() error {
 	db, err := d.db.DB()
 	if err != nil {

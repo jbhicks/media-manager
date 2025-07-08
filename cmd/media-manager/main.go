@@ -3,24 +3,41 @@ package main
 import (
 	"log"
 	"os"
+	"strings"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/user/media-manager/internal/app"
 )
 
 func main() {
-	args := os.Args
-	var dir string
-	if len(args) > 1 {
-		dir = args[1]
-	} else {
-		cwd, err := os.Getwd()
-		if err != nil {
-			log.Fatalf("Failed to get current directory: %v", err)
-		}
-		dir = cwd
-	}
+	run(runApp)
+}
+
+func run(runner func(string)) {
+	dir := getDirectoryFromArgs()
 	log.Printf("Opening directory: %s", dir)
+	if runner != nil {
+		runner(dir)
+	}
+}
+
+func getDirectoryFromArgs() string {
+	if len(os.Args) > 1 {
+		for _, arg := range os.Args[1:] {
+			if !strings.HasPrefix(arg, "-") {
+				return arg
+			}
+		}
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("Failed to get current directory: %v", err)
+	}
+	return cwd
+}
+
+func runApp(dir string) {
 	log.Printf("[DEBUG] main.go: Passing dir to app: %s", dir)
 	application, err := app.NewMediaManagerApp(dir)
 	if err != nil {

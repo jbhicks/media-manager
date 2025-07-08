@@ -2,6 +2,11 @@ package views
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
@@ -10,10 +15,6 @@ import (
 	"github.com/user/media-manager/internal/db"
 	"github.com/user/media-manager/internal/ui/components"
 	"github.com/user/media-manager/pkg/models"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 )
 
 func isImageFile(name string) bool {
@@ -46,9 +47,11 @@ func ensureVideoThumbnail(videoPath, thumbPath string) {
 	_ = os.MkdirAll(filepath.Dir(thumbPath), 0755)
 
 	// Use 200px wide thumbnail generation (no padding)
-	cmd := []string{"ffmpeg", "-y", "-i", videoPath, "-ss", "00:00:01.000", "-vframes", "1",
+	cmd := []string{
+		"ffmpeg", "-y", "-i", videoPath, "-ss", "00:00:01.000", "-vframes", "1",
 		"-vf", "scale=200:200:force_original_aspect_ratio=increase,crop=200:200",
-		thumbPath}
+		thumbPath,
+	}
 	fmt.Printf("[DEBUG] Generating 200px wide video thumbnail: %v\n", cmd)
 	err := runCommand(cmd)
 	if err != nil {
@@ -70,20 +73,24 @@ type MainView struct {
 	database           *db.Database
 	mediaGridContainer *fyne.Container
 	window             fyne.Window
+	mediaDir           string
+	foldersTree        *widget.Tree
 }
 
 func (v *MainView) GetMediaGridContainer() *fyne.Container {
 	return v.mediaGridContainer
 }
 
-func NewMainView(cfg *config.Config, database *db.Database, win fyne.Window) *MainView {
+func NewMainView(cfg *config.Config, database *db.Database, win fyne.Window, mediaDir string) *MainView {
 	fmt.Printf("[DEBUG] main.go: MainView using MediaDirs: %v\n", cfg.MediaDirs)
 	return &MainView{
 		config:   cfg,
 		database: database,
 		window:   win,
+		mediaDir: filepath.Clean(mediaDir),
 	}
 }
+
 
 func (v *MainView) Build() fyne.CanvasObject {
 	toolbar := v.createToolbar()
@@ -101,8 +108,10 @@ func (v *MainView) Build() fyne.CanvasObject {
 		nil,         // right
 		mainContent, // center
 	)
+
 	return content
 }
+
 func (v *MainView) createToolbar() fyne.CanvasObject {
 	searchEntry := widget.NewEntry()
 	searchEntry.OnChanged = func(input string) {
@@ -131,12 +140,8 @@ func (v *MainView) createSidebar() fyne.CanvasObject {
 	// Folders section
 	foldersLabel := widget.NewRichTextFromMarkdown("**Folders**")
 
-	current := ""
-	root := ""
-	if len(v.config.MediaDirs) > 0 {
-		root = v.config.MediaDirs[0]
-		current = root
-	}
+	root := v.mediaDir
+
 	// Build folder tree
 	getChildren := func(uid string) []string {
 		entries, err := os.ReadDir(uid)
@@ -151,31 +156,34 @@ func (v *MainView) createSidebar() fyne.CanvasObject {
 		}
 		return children
 	}
-	createNode := func(branch bool) fyne.CanvasObject {
-		return widget.NewLabel("")
+	func (v *MainView) createNode(branch bool) fyne.CanvasObject {
+	return widget.NewLabel("")
+}
+
+func (v *MainView) updateNode(uid string, branch bool, obj fyne.CanvasObject) {
+	label := obj.(*widget.Label)
+	label.SetText(filepath.Base(uid))
+	if uid == v.mediaDir {
+		label.TextStyle = fyne.TextStyle{Bold: true}
+	} else {
+		label.TextStyle = fyne.TextStyle{}
 	}
-	updateNode := func(uid string, branch bool, obj fyne.CanvasObject) {
-		label := obj.(*widget.Label)
-		label.SetText(filepath.Base(uid))
-		if uid == current {
-			label.TextStyle = fyne.TextStyle{Bold: true}
-		} else {
-			label.TextStyle = fyne.TextStyle{}
-		}
-	}
+}
 	foldersTree := widget.NewTree(
 		func(uid string) []string { return getChildren(uid) },
 		func(uid string) bool { return len(getChildren(uid)) > 0 },
-		createNode,
-		updateNode,
+		v.createNode,
+		v.updateNode,
 	)
+	v.foldersTree = foldersTree // Assign to the struct field
 	foldersTree.Root = root
 	foldersTree.OnSelected = func(uid string) {
-		v.config.MediaDirs = []string{uid}
+		v.mediaDir = filepath.Clean(uid)
 		v.RefreshMediaGrid()
 	}
 	foldersScroll := container.NewVScroll(foldersTree)
 	foldersScroll.SetMinSize(fyne.NewSize(0, 120))
+}
 
 	// Tags section
 	tagsLabel := widget.NewRichTextFromMarkdown("**Tags**")
@@ -196,7 +204,6 @@ func (v *MainView) createSidebar() fyne.CanvasObject {
 	)
 	split.SetOffset(0.95)
 	return split
-
 }
 
 func (v *MainView) filterMediaFiles(input string) {
@@ -217,74 +224,22 @@ func (v *MainView) RefreshMediaGrid() {
 func (v *MainView) createMediaGrid() *fyne.Container {
 	cardSize := fyne.NewSize(192, 192)
 	var cards []fyne.CanvasObject
-	if len(v.config.MediaDirs) > 0 {
-		mediaDir := v.config.MediaDirs[0]
-		files, err := os.ReadDir(mediaDir)
-		if err == nil {
-			for _, file := range files {
-				if !file.IsDir() {
-					filePath := filepath.Join(mediaDir, file.Name())
-					mediaType := components.GetMediaType(file.Name())
-					card := components.NewMediaCard(filePath, file.Name(), mediaType)
-					cards = append(cards, card)
-				}
-			}
-		}
+
+	// Fetch media files from the database
+	mediaFiles, err := v.database.GetMediaFiles(-1, -1) // Fetch all for now
+	if err != nil {
+		fmt.Printf("Error fetching media files: %v\n", err)
+		return container.New(layout.NewGridWrapLayout(cardSize))
 	}
+
+	for _, mediaFile := range mediaFiles {
+		card := components.NewMediaCard(mediaFile.Path, mediaFile.Filename, components.GetMediaType(mediaFile.Filename))
+		cards = append(cards, card)
+	}
+
 	return container.New(layout.NewGridWrapLayout(cardSize), cards...)
 }
-			}
-		}
-	}
-	return container.New(layout.NewGridWrapLayout(cardSize), cards...)
 
-	cardSize := fyne.NewSize(192, 192)
-	grid := container.New(layout.NewGridWrapLayout(cardSize))
-	if len(v.config.MediaDirs) > 0 {
-		mediaDir := v.config.MediaDirs[0]
-		files, err := os.ReadDir(mediaDir)
-		if err == nil {
-			for _, file := range files {
-				if !file.IsDir() {
-					filePath := filepath.Join(mediaDir, file.Name())
-					mediaType := components.GetMediaType(file.Name())
-					card := components.NewMediaCard(filePath, file.Name(), mediaType)
-					grid.Add(card)
-				}
-			}
-		}
-	}
-	return grid
-
-	// Use GridWrap with fixed cell size instead of GridWithColumns
-	cardSize := fyne.NewSize(192, 192) // Modern card size
-grid := container.New(layout.NewGridWrapLayout(cardSize))
-gridBox := container.New(layout.NewCenterLayout(), grid)
-padded := container.NewPadded(gridBox)
-return padded	if len(v.config.MediaDirs) > 0 {
-		mediaDir := v.config.MediaDirs[0]
-		fmt.Printf("[DEBUG] main.go: Loading media from: %s\n", mediaDir)
-		files, err := os.ReadDir(mediaDir)
-		if err == nil {
-			for _, file := range files {
-				if !file.IsDir() {
-					filePath := filepath.Join(mediaDir, file.Name())
-					mediaType := components.GetMediaType(file.Name())
-
-					// Create uniform media card
-					card := components.NewMediaCard(filePath, file.Name(), mediaType)
-					grid.Add(card)
-				}
-			}
-		} else {
-			fmt.Printf("[DEBUG] main.go: Failed to read media dir: %v\n", err)
-		}
-	} else {
-		fmt.Printf("[DEBUG] main.go: No media directory set\n")
-	}
-
-	return grid
-}
 func (v *MainView) createStatusBar() fyne.CanvasObject {
 	statusLabel := widget.NewLabel("Ready")
 	fileCountLabel := widget.NewLabel("0 files")

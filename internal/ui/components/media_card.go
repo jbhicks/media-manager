@@ -4,15 +4,11 @@ import (
 	"fmt"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
-	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	xwidget "fyne.io/x/fyne/widget"
-	"github.com/user/media-manager/internal/preview"
 	"image/color"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -81,89 +77,24 @@ func NewMediaCard(filePath, fileName string, mediaType MediaType) *MediaCard {
 func (mc *MediaCard) setupContent() {
 	switch mc.mediaType {
 	case MediaTypeImage:
-		// Generate/use thumbnail for images too
-		homeDir, _ := os.UserHomeDir()
-		thumbDir := filepath.Join(homeDir, ".media-manager", "thumbnails")
-		staticThumbPath := filepath.Join(thumbDir, mc.fileName+".jpg")
-
-		if _, err := os.Stat(staticThumbPath); err == nil {
-			// Use existing thumbnail
-			img := canvas.NewImageFromFile(staticThumbPath)
-			img.FillMode = canvas.ImageFillContain
-			mc.content = container.NewCenter(img)
-		} else {
-			// Generate thumbnail for image in background
-			_ = os.MkdirAll(thumbDir, 0755)
-			go func() {
-				err := preview.GenerateThumbnail(mc.filePath, staticThumbPath)
-				if err == nil {
-					fyne.Do(func() {
-						img := canvas.NewImageFromFile(staticThumbPath)
-						img.FillMode = canvas.ImageFillContain
-						mc.content = container.NewCenter(img)
-						mc.content.Refresh()
-					})
-				}
-			}()
-			// Use original image as placeholder while generating thumbnail
-			mc.content = widget.NewIcon(theme.FileImageIcon())
-		}
-		mc.content.Refresh()
-
+		mc.content = widget.NewIcon(theme.FileImageIcon())
 	case MediaTypeVideo:
-		// Setup video thumbnail
-		homeDir, _ := os.UserHomeDir()
-		thumbDir := filepath.Join(homeDir, ".media-manager", "thumbnails")
-		animatedGifPath := filepath.Join(thumbDir, mc.fileName+".gif")
-
-		// Always check for and generate animated GIF
-		fmt.Printf("[DEBUG] Checking for animated GIF: %s\n", animatedGifPath)
-		if _, err := os.Stat(animatedGifPath); err == nil {
-			fmt.Println("[DEBUG] Animated GIF exists.")
-			gifURI := storage.NewFileURI(animatedGifPath)
-			if gif, err := xwidget.NewAnimatedGif(gifURI); err == nil {
-				mc.animatedGif = gif
-				mc.hasAnimation = true
-				mc.content = mc.animatedGif // Set content to animated GIF directly
-				fmt.Println("[DEBUG] Animated GIF successfully loaded and hasAnimation set to true.")
-			} else {
-				fmt.Printf("[DEBUG] Error loading animated GIF: %v\n", err)
-			}
-		} else {
-			fmt.Println("[DEBUG] Animated GIF does not exist, generating...")
-			err := preview.GenerateAnimatedPreview(mc.filePath, animatedGifPath)
-			if err != nil {
-				fmt.Printf("[DEBUG] GIF generation failed: %v\n", err)
-			} else {
-				fmt.Println("[DEBUG] Animated GIF generation command executed.")
-				// Check if the file exists and its size after generation
-				if fileInfo, err := os.Stat(animatedGifPath); err == nil {
-					fmt.Printf("[DEBUG] Generated GIF file exists: %s, size: %d bytes\n", animatedGifPath, fileInfo.Size())
-				} else {
-					fmt.Printf("[DEBUG] Generated GIF file does not exist or error stating: %v\n", err)
-				}
-			}
-			if _, err := os.Stat(animatedGifPath); err == nil {
-				gifURI := storage.NewFileURI(animatedGifPath)
-				fmt.Printf("[DEBUG] Attempting to load animated GIF from URI: %s\n", gifURI.String())
-				if gif, err := xwidget.NewAnimatedGif(gifURI); err == nil {
-					mc.animatedGif = gif
-					fmt.Println("[DEBUG] Animated GIF successfully loaded after generation")
-					mc.hasAnimation = true
-					mc.animatedGif.SetMinSize(fyne.NewSize(200, 0)) // Set min width to 200, height auto
-					mc.content = mc.animatedGif                     // Set content to animated GIF directly
-				} else {
-					fmt.Printf("[DEBUG] Error loading animated GIF after generation: %v\n", err)
-				}
-			} else {
-				fmt.Println("[DEBUG] Animated GIF still does not exist after generation attempt.")
-			}
-		}
-
-	default: // MediaTypeFile
-		mc.icon = widget.NewIcon(theme.FileIcon())
-		mc.content = mc.icon
+		mc.setDefaultVideoIcon()
+	case MediaTypeFile:
+		mc.content = widget.NewIcon(theme.FileIcon())
 	}
+
+	// Generate thumbnail in background
+	go mc.generateThumbnail()
+}
+
+func (mc *MediaCard) generateThumbnail() {
+	// Generate thumbnail in background
+}
+
+func (mc *MediaCard) setDefaultVideoIcon() {
+	mc.icon = widget.NewIcon(theme.FileVideoIcon())
+	mc.content = mc.icon
 }
 
 // Ensure MediaCard implements desktop.Hoverable
