@@ -8,7 +8,25 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"runtime"
 )
+
+func getProjectRoot() (string, error) {
+	_, b, _, _ := runtime.Caller(0)
+	// dir is the directory of the current file (generator_test.go)
+	dir := filepath.Dir(b)
+
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir { // Reached root
+			return "", fmt.Errorf("go.mod not found")
+		}
+		dir = parent
+	}
+}
 
 func TestGenerateVideoThumbnail(t *testing.T) {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
@@ -27,12 +45,12 @@ func TestGenerateVideoThumbnail(t *testing.T) {
 	fmt.Printf("[DEBUG] Testing thumbnail generation for: %s\n", videoPath)
 	fmt.Printf("[DEBUG] Thumbnail output path: %s\n", thumbnailPath)
 
-	err := GenerateThumbnail(videoPath, thumbnailPath)
+	err = GenerateThumbnail(videoPath, thumbnailPath)
 	if err != nil {
 		t.Fatalf("Failed to generate thumbnail for video: %v", err)
 	}
 
-	if _, err := os.Stat(thumbnailPath); os.IsNotExist(err) {
+	if _, err = os.Stat(thumbnailPath); os.IsNotExist(err) {
 		t.Errorf("Thumbnail file not created: %s", thumbnailPath)
 	}
 }
@@ -61,7 +79,7 @@ func TestGenerateImageThumbnail(t *testing.T) {
 		t.Fatalf("Failed to generate thumbnail for image: %v", err)
 	}
 
-	if _, err := os.Stat(thumbnailPath); os.IsNotExist(err) {
+	if _, err = os.Stat(thumbnailPath); os.IsNotExist(err) {
 		t.Errorf("Thumbnail file not created: %s", thumbnailPath)
 	}
 }

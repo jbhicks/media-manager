@@ -9,6 +9,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	"github.com/user/media-manager/internal/config"
@@ -98,15 +99,18 @@ func (v *MainView) Build() fyne.CanvasObject {
 	statusBar := v.createStatusBar()
 	grid := v.createMediaGrid()
 
-	mainContent := container.NewHSplit(sidebar, grid)
-	mainContent.SetOffset(0.25)
+	v.mainContentSplit = container.NewHSplit(sidebar, grid)
+	v.mainContentSplit.SetOffset(float64(v.config.MainContentSplitOffset))
+	// v.mainContentSplit.OnChanged = func(f float32) {
+	// 	v.config.MainContentSplitOffset = f
+	// }
 
 	content := container.NewBorder(
-		toolbar,     // top
-		statusBar,   // bottom
-		nil,         // left
-		nil,         // right
-		mainContent, // center
+		toolbar,            // top
+		statusBar,          // bottom
+		nil,                // left
+		nil,                // right
+		v.mainContentSplit, // center
 	)
 
 	return content
@@ -123,13 +127,38 @@ func (v *MainView) createToolbar() fyne.CanvasObject {
 	})
 
 	addFolderBtn := widget.NewButton("Add Folder", func() {
-		v.database.CreateFolder(&models.Folder{Path: "/path/to/new/folder", Name: "New Folder"})
+		fmt.Println("[DEBUG] Add Folder button clicked.")
+		picker := dialogs.NewFolderPickerDialog(func(selectedPath string) {
+			fmt.Printf("[DEBUG] Selected folder path from custom dialog: %s\n", selectedPath)
+			// Add to config.MediaDirs if not already present
+			found := false
+			for _, dir := range v.config.MediaDirs {
+				if dir == selectedPath {
+					found = true
+					break
+				}
+			}
+			if !found {
+				v.config.MediaDirs = append(v.config.MediaDirs, selectedPath)
+				fmt.Printf("[DEBUG] Added %s to MediaDirs. New MediaDirs: %v\n", selectedPath, v.config.MediaDirs)
+			} else {
+				fmt.Printf("[DEBUG] %s already in MediaDirs.\n", selectedPath)
+			}
+			// Refresh the media grid with the new directory
+			fmt.Println("[DEBUG] Refreshing media grid...")
+			v.RefreshMediaGrid()
+
+			// Update the sidebar tree to show and select the new folder
+			fmt.Printf("[DEBUG] Updating sidebar tree with root: %s\n", selectedPath)
+			v.foldersTree.Root = selectedPath
+			v.foldersTree.Select(selectedPath)
+			v.foldersTree.Refresh()
+			fmt.Println("[DEBUG] Sidebar tree refreshed.")
+		}, v.window)
+		picker.Show()
 	})
 
 	searchEntry.SetPlaceHolder("Filter...")
-	searchEntry.Wrapping = fyne.TextTruncate
-	searchEntry.SetPlaceHolder("Filter...")
-	searchEntry.Wrapping = fyne.TextTruncate
 	return container.NewBorder(nil, nil, nil,
 		container.NewHBox(refreshBtn, addFolderBtn),
 		searchEntry,
@@ -177,6 +206,7 @@ func (v *MainView) updateNode(uid string, branch bool, obj fyne.CanvasObject) {
 	)
 	v.foldersTree = foldersTree // Assign to the struct field
 	foldersTree.Root = root
+	foldersTree.Select(root)
 	foldersTree.OnSelected = func(uid string) {
 		v.mediaDir = filepath.Clean(uid)
 		v.RefreshMediaGrid()
@@ -198,7 +228,7 @@ func (v *MainView) updateNode(uid string, branch bool, obj fyne.CanvasObject) {
 	)
 
 	tagsSection := container.NewVBox(tagsLabel, tagsList)
-	split := container.NewVSplit(
+	v.sidebarSplit = container.NewVSplit(
 		container.NewBorder(foldersLabel, nil, nil, nil, container.NewVScroll(foldersTree)),
 		tagsSection,
 	)
@@ -214,8 +244,25 @@ func (v *MainView) filterMediaFiles(input string) {
 func (v *MainView) RefreshMediaGrid() {
 	fmt.Println("[DEBUG] views/main.go: RefreshMediaGrid called.")
 	if v.mediaGridContainer != nil {
-		newGrid := v.createMediaGrid()
-		v.mediaGridContainer.Objects = newGrid.Objects
+		// First clear all existing cards
+		v.mediaGridContainer.Objects = []fyne.CanvasObject{}
+
+		// Then add new cards
+		if len(v.config.MediaDirs) > 0 {
+			mediaDir := v.config.MediaDirs[0]
+			files, err := os.ReadDir(mediaDir)
+			if err == nil {
+				for _, file := range files {
+					if !file.IsDir() {
+						filePath := filepath.Join(mediaDir, file.Name())
+						mediaType := components.GetMediaType(file.Name())
+						card := components.NewMediaCard(filePath, file.Name(), mediaType)
+						v.mediaGridContainer.Add(card)
+					}
+				}
+			}
+		}
+
 		v.mediaGridContainer.Refresh()
 	}
 	fmt.Println("Media grid refreshed")
