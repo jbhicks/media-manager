@@ -3,7 +3,6 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -37,7 +36,7 @@ func NewConfig(mediaDir string) *Config {
 
 	// Ensure config directory exists
 	os.MkdirAll(configDir, 0755)
-	os.MkdirAll(filepath.Join(configDir, "thumbnails"), 0755)
+	// os.MkdirAll(filepath.Join(configDir, "thumbnails"), 0755) // No longer needed for videos
 
 	cfg := &Config{
 		DatabasePath:           filepath.Join(configDir, "media.db"),
@@ -102,7 +101,7 @@ func LoadConfig(mediaDir string) (*Config, error) {
 		WindowY:                0, // Initialize with 0, meaning no saved position
 	}
 
-	data, err := ioutil.ReadFile(configFilePath)
+	data, err := os.ReadFile(configFilePath)
 	if err != nil {
 		// If file doesn't exist, return default config
 		if os.IsNotExist(err) {
@@ -151,7 +150,7 @@ func SaveConfig(cfg *Config) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	err = ioutil.WriteFile(configFilePath, data, 0644)
+	err = os.WriteFile(configFilePath, data, 0644)
 	if err != nil {
 		fmt.Printf("[DEBUG] Failed to write config file: %v\n", err)
 		return fmt.Errorf("failed to write config file: %w", err)

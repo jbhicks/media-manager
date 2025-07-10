@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -42,55 +43,36 @@ func GenerateThumbnail(filePath, thumbPath string) error {
 	fmt.Printf("[DEBUG] Generating thumbnail for: %s\n", filePath)
 	fmt.Printf("[DEBUG] Output path: %s\n", thumbPath)
 
-	// Ensure the output directory exists
-	thumbDir := filepath.Dir(thumbPath)
-	if err := os.MkdirAll(thumbDir, 0755); err != nil {
-		return fmt.Errorf("failed to create thumbnail directory: %w", err)
-	}
-
-	// Determine file type
-	ext := strings.ToLower(filepath.Ext(filePath))
-
-	// Ensure the thumbnail directory exists
-	if err := os.MkdirAll(filepath.Dir(thumbPath), 0755); err != nil {
-		return fmt.Errorf("failed to create thumbnail directory: %w", err)
-	}
-
-	// Check if the source file exists before attempting to generate a thumbnail
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		return fmt.Errorf("source file does not exist: %s", filePath)
-	}
-
+	// Only generate static thumbnails for images
 	fileExt := strings.ToLower(filepath.Ext(filePath))
 	switch {
 	case isImageFile(fileExt):
+		// Ensure the output directory exists
+		thumbDir := filepath.Dir(thumbPath)
+		if err := os.MkdirAll(thumbDir, 0755); err != nil {
+			return fmt.Errorf("failed to create thumbnail directory: %w", err)
+		}
+		// Check if the source file exists before attempting to generate a thumbnail
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			return fmt.Errorf("source file does not exist: %s", filePath)
+		}
 		return generateImageThumbnail(filePath, thumbPath)
 	case isVideoFile(fileExt):
-		return generateVideoThumbnail(filePath, thumbPath)
+		// No longer generate static thumbnails for videos
+		return nil
 	default:
 		return fmt.Errorf("unsupported file type: %s", fileExt)
 	}
 }
 
 func isImageFile(ext string) bool {
-
 	imageExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".tiff", ".bmp"}
-	for _, imgExt := range imageExts {
-		if ext == imgExt {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(imageExts, ext)
 }
 
 func isVideoFile(ext string) bool {
 	videoExts := []string{".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v"}
-	for _, vidExt := range videoExts {
-		if ext == vidExt {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(videoExts, ext)
 }
 
 func generateImageThumbnail(srcPath, thumbPath string) error {
@@ -178,7 +160,7 @@ func generateImageThumbnail(srcPath, thumbPath string) error {
 
 func generateVideoThumbnail(srcPath, thumbPath string) error {
 	// Use FFmpeg to extract a frame from the video with uniform dimensions
-	fmt.Printf("[DEBUG] Running ffmpeg command with fixed dimensions: ffmpeg -i %s -ss 00:00:01 -vframes 1 -vf scale=200:200:force_original_aspect_ratio=decrease,pad=200:200:(ow-iw)/2:(oh-ih)/2 -y %s\n", srcPath, thumbPath)
+	fmt.Printf("[DEBUG] Running ffmpeg command: ffmpeg -i %s -ss 00:00:01 -vframes 1 -vf scale=180:180:force_original_aspect_ratio=increase,crop=180:180 -y %s\n", srcPath, thumbPath)
 	fmt.Printf("[DEBUG] Source file exists: %v\n", fileExists(srcPath))
 	fmt.Printf("[DEBUG] Thumbnail path writable: %v\n", pathWritable(thumbPath))
 	cmd := exec.Command("ffmpeg",
@@ -245,7 +227,8 @@ func GenerateAnimatedPreviewCPU(srcPath, gifPath string) error {
 	// Calculate interval for 24 evenly distributed frames
 	numFrames := getUserConfig("numFrames", 24)
 	frameInterval := int(duration.Seconds() * 25 / float64(numFrames)) // Assuming 25fps
-	filterComplex := fmt.Sprintf("select='not(mod(n,%d))',setpts=N/FRAME_RATE/TB,fps=8,scale=180:180:force_original_aspect_ratio=increase,crop=180:180", frameInterval)
+	// Scale to fit within 180x180, preserving aspect ratio (no crop)
+	filterComplex := fmt.Sprintf("select='not(mod(n,%d))',setpts=N/FRAME_RATE/TB,fps=8,scale=180:-1:force_original_aspect_ratio=decrease", frameInterval)
 
 	cmd := exec.Command("ffmpeg",
 		"-i", srcPath,
@@ -335,7 +318,7 @@ func ExtractGifFrames(gifPath, outputDir string) ([]string, error) {
 	// A more robust solution would be to parse ffmpeg output or use ffprobe.
 	// For now, we'll assume a reasonable number of frames and check existence.
 	// Look for frames up to a reasonable number
-	for i := 0; i < 24; i++ { // Look for up to 24 frames
+	for i := range [24]int{} {
 		framePath := filepath.Join(outputDir, fmt.Sprintf("frame_%d.jpg", i))
 		if _, err := os.Stat(framePath); err == nil {
 			framePaths = append(framePaths, framePath)

@@ -3,13 +3,13 @@ module github.com/user/media-manager
 go 1.24.4
 
 require (
-	fyne.io/fyne/v2 v2.6.1
+	fyne.io/fyne/v2 v2.6.0
 	fyne.io/x/fyne v0.0.0-20250418202416-58a230ad1acb
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
 	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.25.12
-	
+
 )
 
 require (

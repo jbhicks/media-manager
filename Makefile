@@ -17,8 +17,10 @@ CMD_PATH=./cmd/media-manager
 all: dev
 
 dev:
+	$(GOBUILD) -o bin/clear-previews ./cmd/clear-previews/main.go
+	bin/clear-previews
 	mkdir -p tmp
-	air
+	CLEAR_DB_ON_START=true air
 
 build:
 	$(GOBUILD) -o bin/$(BINARY_NAME) $(CMD_PATH)/main.go

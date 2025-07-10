@@ -29,6 +29,7 @@ func getProjectRoot() (string, error) {
 }
 
 func TestGenerateVideoThumbnail(t *testing.T) {
+	var err error
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		t.Skip("ffmpeg not found, skipping test")
 	}
@@ -37,9 +38,10 @@ func TestGenerateVideoThumbnail(t *testing.T) {
 	videoPath := filepath.Join(tempDir, "test.mp4")
 	thumbnailPath := filepath.Join(tempDir, "thumbnail.jpg")
 
-	// Create a dummy video file
-	if err := os.WriteFile(videoPath, []byte("dummy"), 0644); err != nil {
-		t.Fatalf("Failed to create dummy video file: %v", err)
+	// Create a minimal valid video file using ffmpeg
+	cmd := exec.Command("ffmpeg", "-f", "lavfi", "-i", "color=c=black:s=320x240:d=2", "-c:v", "libx264", "-t", "2", videoPath)
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to create test video file with ffmpeg: %v", err)
 	}
 
 	fmt.Printf("[DEBUG] Testing thumbnail generation for: %s\n", videoPath)
@@ -47,15 +49,16 @@ func TestGenerateVideoThumbnail(t *testing.T) {
 
 	err = GenerateThumbnail(videoPath, thumbnailPath)
 	if err != nil {
-		t.Fatalf("Failed to generate thumbnail for video: %v", err)
+		t.Fatalf("GenerateThumbnail for video returned error: %v", err)
 	}
 
-	if _, err = os.Stat(thumbnailPath); os.IsNotExist(err) {
-		t.Errorf("Thumbnail file not created: %s", thumbnailPath)
+	if _, err = os.Stat(thumbnailPath); err == nil {
+		t.Errorf("Thumbnail file should NOT be created for video: %s", thumbnailPath)
 	}
 }
 
 func TestGenerateImageThumbnail(t *testing.T) {
+	var err error
 	tempDir := t.TempDir()
 	imagePath := filepath.Join(tempDir, "test.png")
 	thumbnailPath := filepath.Join(tempDir, "thumbnail.jpg")

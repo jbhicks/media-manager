@@ -2,6 +2,7 @@ package db
 
 import (
 	"fmt"
+	"log"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -39,7 +40,7 @@ func (d *Database) GetMediaFiles(limit, offset int) ([]models.MediaFile, error) 
 }
 
 func (d *Database) CreateMediaFile(file *models.MediaFile) error {
-	return d.db.Create(file).Error
+	return d.db.FirstOrCreate(file, models.MediaFile{Path: file.Path}).Error
 }
 
 func (d *Database) GetTags() ([]models.Tag, error) {
@@ -50,6 +51,23 @@ func (d *Database) GetTags() ([]models.Tag, error) {
 
 func (d *Database) CreateFolder(folder *models.Folder) error {
 	return d.db.Create(folder).Error
+}
+
+// ClearAllPreviews sets PreviewPath to "" for all MediaFile records and logs the number of records updated.
+func (d *Database) ClearAllPreviews() error {
+	result := d.db.Model(&models.MediaFile{}).Where("preview_path != ''").Update("preview_path", "")
+	if result.Error != nil {
+		return result.Error
+	}
+	log.Printf("[INFO] Cleared previews: %d records updated.", result.RowsAffected)
+	return nil
+}
+
+// GetFolders returns all folders in the database
+func (d *Database) GetFolders() ([]models.Folder, error) {
+	var folders []models.Folder
+	err := d.db.Find(&folders).Error
+	return folders, err
 }
 
 func (d *Database) CreateTag(tag *models.Tag) error {

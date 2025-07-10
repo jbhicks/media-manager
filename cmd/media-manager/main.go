@@ -7,6 +7,8 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/user/media-manager/internal/app"
+	"github.com/user/media-manager/internal/config"
+	"github.com/user/media-manager/internal/db"
 )
 
 func main() {
@@ -38,6 +40,23 @@ func getDirectoryFromArgs() string {
 }
 
 func runApp(dir string) {
+	if os.Getenv("CLEAR_DB_ON_START") == "true" {
+		// Load config to get the correct database path
+		cfg, err := config.LoadConfig(dir)
+		if err != nil {
+			log.Fatalf("Failed to load config for clearing previews: %v", err)
+		}
+		database, err := db.NewDatabase(cfg.DatabasePath)
+		if err != nil {
+			log.Fatalf("Failed to open database for clearing previews: %v", err)
+		}
+		if err := database.ClearAllPreviews(); err != nil {
+			log.Fatalf("Failed to clear previews: %v", err)
+		}
+		if err := database.Close(); err != nil {
+			log.Printf("Warning: failed to close database: %v", err)
+		}
+	}
 	log.Printf("[DEBUG] main.go: Passing dir to app: %s", dir)
 	application, err := app.NewMediaManagerApp(dir)
 	if err != nil {

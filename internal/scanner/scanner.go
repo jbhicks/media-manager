@@ -5,6 +5,7 @@ import (
 	"mime"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/fsnotify/fsnotify"
@@ -49,22 +50,22 @@ func (s *MediaScanner) ScanDirectory(dirPath string) error {
 			return nil
 		}
 
-		// Create media file entry
-		mediaFile := &models.MediaFile{
-			Path:		 path,
-			Filename: info.Name(),
-			Size:		 info.Size(),
-			ModTime:	 info.ModTime(),
-			FileType: s.getFileType(path),
-			MimeType: s.getMimeType(path),
-		}
+		// (Removed) Create media file entry
+		// mediaFile := &models.MediaFile{
+		// 	Path:		 path,
+		// 	Filename: info.Name(),
+		// 	Size:		 info.Size(),
+		// 	ModTime:	 info.ModTime(),
+		// 	FileType: s.getFileType(path),
+		// 	MimeType: s.getMimeType(path),
+		// }
 
-		// Save to database
-		fmt.Printf("[DEBUG] Saving media file to DB: %s\n", path)
-		err = s.database.CreateMediaFile(mediaFile)
-		if err != nil {
-			fmt.Printf("Error saving file %s: %v\n", path, err)
-		}
+		// (Removed) Save to database
+		// fmt.Printf("[DEBUG] Saving media file to DB: %s\n", path)
+		// err = s.database.CreateMediaFile(mediaFile)
+		// if err != nil {
+		// 	fmt.Printf("Error saving file %s: %v\n", path, err)
+		// }
 
 		return nil
 	})
@@ -73,42 +74,22 @@ func (s *MediaScanner) ScanDirectory(dirPath string) error {
 func (s *MediaScanner) isMediaFile(filePath string) bool {
 	ext := strings.ToLower(filepath.Ext(filePath))
 
-	// Supported image formats
 	imageExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".tiff", ".bmp"}
-	for _, imgExt := range imageExts {
-		if ext == imgExt {
-			return true
-		}
-	}
-
-	// Supported video formats
 	videoExts := []string{".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v"}
-	for _, vidExt := range videoExts {
-		if ext == vidExt {
-			return true
-		}
-	}
 
-	return false
+	return slices.Contains(imageExts, ext) || slices.Contains(videoExts, ext)
 }
 
 func (s *MediaScanner) getFileType(filePath string) string {
 	ext := strings.ToLower(filepath.Ext(filePath))
-
 	imageExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".tiff", ".bmp"}
-	for _, imgExt := range imageExts {
-		if ext == imgExt {
-			return "image"
-		}
-	}
-
 	videoExts := []string{".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v"}
-	for _, vidExt := range videoExts {
-		if ext == vidExt {
-			return "video"
-		}
+	if slices.Contains(imageExts, ext) {
+		return "image"
 	}
-
+	if slices.Contains(videoExts, ext) {
+		return "video"
+	}
 	return "unknown"
 }
 

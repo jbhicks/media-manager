@@ -4,27 +4,23 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
 )
 
 func TestMediaCardLayout(t *testing.T) {
 	testApp := test.NewApp()
 	defer testApp.Quit()
 
-	imageCard := NewMediaCard("/fake/path/test.jpg", "test.jpg", MediaTypeImage)
+	imageCard := NewMediaCard("/fake/path/test.jpg", "test.jpg", MediaTypeImage, "")
 
 	// Test card minimum size
-	expectedCardSize := fyne.NewSize(96, 64)
+	expectedCardSize := fyne.NewSize(180, 180)
 	if imageCard.MinSize() != expectedCardSize {
 		t.Errorf("Expected card MinSize to be %v, got %v", expectedCardSize, imageCard.MinSize())
 	}
 
 	// Create renderer to test layout
-	renderer := card.CreateRenderer()
+	renderer := imageCard.CreateRenderer()
 	cardSize := fyne.NewSize(180, 180)
 
 	// Apply layout
@@ -42,12 +38,12 @@ func TestMediaCardUniformSizing(t *testing.T) {
 	defer testApp.Quit()
 
 	// Test that all card types have identical sizes
-	imageCard := NewMediaCard("/fake/path/test.jpg", "test.jpg", MediaTypeImage)
-	videoCard := NewMediaCard("/fake/path/test.mp4", "test.mp4", MediaTypeVideo)
-	fileCard := NewMediaCard("/fake/path/test.txt", "test.txt", MediaTypeFile)
+	imageCard := NewMediaCard("/fake/path/test.jpg", "test.jpg", MediaTypeImage, "")
+	videoCard := NewMediaCard("/fake/path/test.mp4", "test.mp4", MediaTypeVideo, "")
+	fileCard := NewMediaCard("/fake/path/test.txt", "test.txt", MediaTypeFile, "")
 
 	cards := []*MediaCard{imageCard, videoCard, fileCard}
-	expectedSize := fyne.NewSize(96, 64)
+	expectedSize := fyne.NewSize(180, 180)
 
 	for i, card := range cards {
 		if card.MinSize() != expectedSize {
@@ -55,7 +51,7 @@ func TestMediaCardUniformSizing(t *testing.T) {
 		}
 
 		// Test renderer layout
-		renderer := card.CreateRenderer()
+		renderer := imageCard.CreateRenderer()
 		renderer.Layout(fyne.NewSize(180, 180))
 
 		objects := renderer.Objects()

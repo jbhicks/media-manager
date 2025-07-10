@@ -7,7 +7,7 @@ tmp_dir = "tmp"
 
 [build]
   # Clear thumbnail cache and build (ensures uniform 200x200 thumbnails after generation changes)
-  cmd = "echo 'Clearing thumbnail cache...' && rm -rf ~/.media-manager/thumbnails/* ./thumbnails/* 2>/dev/null || true && go build -o ./tmp/media-manager ./cmd/media-manager/main.go 2>&1 | tee tmp/build.log"
+  cmd = "mkdir -p tmp && echo 'Clearing thumbnail cache...' && rm -rf ~/.media-manager/thumbnails/* ./thumbnails/* 2>/dev/null || true && go build -o ./tmp/media-manager ./cmd/media-manager/main.go 2>&1 | tee tmp/build.log"
   # The path to the binary to run.
   bin = "tmp/media-manager"
   # The command that will be executed to run the binary.
