@@ -55,11 +55,15 @@ func (d *Database) CreateFolder(folder *models.Folder) error {
 
 // ClearAllPreviews sets PreviewPath to "" for all MediaFile records and logs the number of records updated.
 func (d *Database) ClearAllPreviews() error {
+	var countBefore int64
+	d.db.Model(&models.MediaFile{}).Where("preview_path != ''").Count(&countBefore)
 	result := d.db.Model(&models.MediaFile{}).Where("preview_path != ''").Update("preview_path", "")
 	if result.Error != nil {
 		return result.Error
 	}
-	log.Printf("[INFO] Cleared previews: %d records updated.", result.RowsAffected)
+	var countAfter int64
+	d.db.Model(&models.MediaFile{}).Where("preview_path != ''").Count(&countAfter)
+	log.Printf("[INFO] Cleared previews: %d records updated. Before: %d, After: %d", result.RowsAffected, countBefore, countAfter)
 	return nil
 }
 

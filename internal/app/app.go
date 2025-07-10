@@ -118,6 +118,7 @@ func (app *MediaManagerApp) RebuildMissingPreviews() {
 	var videos []models.MediaFile
 	db := app.db.GetDB()
 	db.Where("file_type = ? AND (preview_path = '' OR preview_path IS NULL)", "video").Find(&videos)
+	fmt.Printf("[DEBUG] Found %d videos with missing previews.\n", len(videos))
 	if len(videos) == 0 {
 		fmt.Println("[DEBUG] No missing previews to rebuild.")
 		return

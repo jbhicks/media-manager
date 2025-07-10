@@ -18,6 +18,12 @@ func main() {
 func run(runner func(string)) {
 	dir := getDirectoryFromArgs()
 	log.Printf("Opening directory: %s", dir)
+	cfg, _ := config.LoadConfig(dir)
+	if cfg != nil {
+		log.Printf("[DEBUG] main.go: Using DB path: %s", cfg.DatabasePath)
+	} else {
+		log.Printf("[DEBUG] main.go: Could not load config, DB path unknown.")
+	}
 	if runner != nil {
 		runner(dir)
 	}

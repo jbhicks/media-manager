@@ -50,15 +50,19 @@ func (s *MediaScanner) ScanDirectory(dirPath string) error {
 			return nil
 		}
 
-		// (Removed) Create media file entry
-		// mediaFile := &models.MediaFile{
-		// 	Path:		 path,
-		// 	Filename: info.Name(),
-		// 	Size:		 info.Size(),
-		// 	ModTime:	 info.ModTime(),
-		// 	FileType: s.getFileType(path),
-		// 	MimeType: s.getMimeType(path),
-		// }
+		mediaFile := &models.MediaFile{
+			Path:     path,
+			Filename: info.Name(),
+			Size:     info.Size(),
+			ModTime:  info.ModTime(),
+			FileType: s.getFileType(path),
+			MimeType: s.getMimeType(path),
+		}
+		fmt.Printf("[DEBUG] Saving media file to DB: %s\n", path)
+		err = s.database.CreateMediaFile(mediaFile)
+		if err != nil {
+			fmt.Printf("Error saving file %s: %v\n", path, err)
+		}
 
 		// (Removed) Save to database
 		// fmt.Printf("[DEBUG] Saving media file to DB: %s\n", path)
@@ -75,7 +79,7 @@ func (s *MediaScanner) isMediaFile(filePath string) bool {
 	ext := strings.ToLower(filepath.Ext(filePath))
 
 	imageExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".tiff", ".bmp"}
-	videoExts := []string{".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v"}
+	videoExts := []string{".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v", ".3gp"}
 
 	return slices.Contains(imageExts, ext) || slices.Contains(videoExts, ext)
 }
@@ -83,7 +87,7 @@ func (s *MediaScanner) isMediaFile(filePath string) bool {
 func (s *MediaScanner) getFileType(filePath string) string {
 	ext := strings.ToLower(filepath.Ext(filePath))
 	imageExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".tiff", ".bmp"}
-	videoExts := []string{".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v"}
+	videoExts := []string{".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v", ".3gp"}
 	if slices.Contains(imageExts, ext) {
 		return "image"
 	}

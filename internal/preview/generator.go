@@ -71,7 +71,7 @@ func isImageFile(ext string) bool {
 }
 
 func isVideoFile(ext string) bool {
-	videoExts := []string{".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v"}
+	videoExts := []string{".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v", ".3gp"}
 	return slices.Contains(videoExts, ext)
 }
 
@@ -167,7 +167,7 @@ func generateVideoThumbnail(srcPath, thumbPath string) error {
 		"-i", srcPath,
 		"-ss", "00:00:01", // Extract frame at 1 second
 		"-vframes", "1", // Extract only 1 frame
-		"-vf", "scale=180:180:force_original_aspect_ratio=increase,crop=180:180", // Scale to fill 180x180 and crop
+		"-vf", "scale=180:101:force_original_aspect_ratio=increase,crop=180:101", // Scale and crop to 180x101
 		"-y", // Overwrite output file
 		thumbPath,
 	)
@@ -224,11 +224,13 @@ func GenerateAnimatedPreviewCPU(srcPath, gifPath string) error {
 		return fmt.Errorf("failed to get video duration: %w", err)
 	}
 
-	// Calculate interval for 24 evenly distributed frames
-	numFrames := getUserConfig("numFrames", 24)
-	frameInterval := int(duration.Seconds() * 25 / float64(numFrames)) // Assuming 25fps
-	// Scale to fit within 180x180, preserving aspect ratio (no crop)
-	filterComplex := fmt.Sprintf("select='not(mod(n,%d))',setpts=N/FRAME_RATE/TB,fps=8,scale=180:-1:force_original_aspect_ratio=decrease", frameInterval)
+	// Generate a GIF preview that summarizes the entire video in about 10 seconds
+	targetGifDuration := 10.0 // seconds
+	targetGifFps := 12.0      // frames per second
+	numFrames := int(targetGifDuration * targetGifFps)
+	interval := duration.Seconds() / float64(numFrames)
+	// Use select filter to sample frames at regular time intervals
+	filterComplex := fmt.Sprintf("select='not(mod(t,%.6f))',setpts=N/FRAME_RATE/TB,fps=%.0f,scale=180:101:force_original_aspect_ratio=increase,crop=180:101", interval, targetGifFps)
 
 	cmd := exec.Command("ffmpeg",
 		"-i", srcPath,
@@ -284,6 +286,32 @@ func GenerateAnimatedPreview(srcPath, gifPath string) error {
 }
 
 // ExtractGifFrames extracts all frames from a GIF into a sequence of PNG images.
+// remove1x1Frames removes any images in framePaths that are 1x1 pixels and returns the filtered list.
+func remove1x1Frames(framePaths []string) ([]string, error) {
+	var filtered []string
+	for _, path := range framePaths {
+		file, err := os.Open(path)
+		if err != nil {
+			fmt.Printf("[DEBUG] Could not open frame %s: %v\n", path, err)
+			continue
+		}
+		img, _, err := image.Decode(file)
+		file.Close()
+		if err != nil {
+			fmt.Printf("[DEBUG] Could not decode frame %s: %v\n", path, err)
+			continue
+		}
+		bounds := img.Bounds()
+		if bounds.Dx() == 1 && bounds.Dy() == 1 {
+			fmt.Printf("[DEBUG] Removing 1x1 frame: %s\n", path)
+			os.Remove(path)
+			continue
+		}
+		filtered = append(filtered, path)
+	}
+	return filtered, nil
+}
+
 func ExtractGifFrames(gifPath, outputDir string) ([]string, error) {
 	fmt.Printf("[DEBUG] Extracting frames from GIF: %s to %s\n", gifPath, outputDir)
 
@@ -334,7 +362,12 @@ func ExtractGifFrames(gifPath, outputDir string) ([]string, error) {
 	}
 
 	fmt.Printf("[DEBUG] Successfully extracted %d frames.\n", len(framePaths))
-	return framePaths, nil
+	// Remove 1x1 frames as post-processing
+	filtered, err := remove1x1Frames(framePaths)
+	if err != nil {
+		fmt.Printf("[DEBUG] Error during 1x1 frame removal: %v\n", err)
+	}
+	return filtered, nil
 }
 
 func GenerateAnimatedPreviewGPU(srcPath, gifPath, hwaccel string) error {

@@ -1,7 +1,6 @@
 package components
 
 import (
-	"fmt"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
@@ -26,12 +25,13 @@ type VideoPreviewCard struct {
 
 // NewVideoPreviewCard creates a new video preview card using the Fyne-X AnimatedGif widget
 func NewVideoPreviewCard(staticImagePath, animatedGifPath, labelText string) *VideoPreviewCard {
-	fmt.Printf("[DEBUG] NewVideoPreviewCard called - static: %s, animated: %s\n", staticImagePath, animatedGifPath)
+	// [DEBUG] NewVideoPreviewCard called - static: %s, animated: %s\n", staticImagePath, animatedGifPath)
 
 	// Load static thumbnail
 	staticImg := canvas.NewImageFromFile(staticImagePath)
 	staticImg.FillMode = canvas.ImageFillContain
 	staticImg.SetMinSize(fyne.NewSize(100, 80))
+	staticImg.Resize(fyne.NewSize(100, 80))
 
 	// Try to load animated GIF using Fyne-X widget
 	var animatedGif *xwidget.AnimatedGif
@@ -43,21 +43,24 @@ func NewVideoPreviewCard(staticImagePath, animatedGifPath, labelText string) *Vi
 		gif, err := xwidget.NewAnimatedGif(gifURI)
 		if err == nil {
 			gif.SetMinSize(fyne.NewSize(100, 80))
+			gif.Resize(fyne.NewSize(100, 80))
 			animatedGif = gif
 			hasAnimation = true
-			fmt.Printf("[DEBUG] Successfully loaded animated GIF: %s\n", animatedGifPath)
+			// [DEBUG] Successfully loaded animated GIF: %s\n", animatedGifPath)
 		} else {
-			fmt.Printf("[DEBUG] Failed to load animated GIF: %v\n", err)
+			// [DEBUG] Failed to load animated GIF: %v\n", err)
 		}
 	} else {
-		fmt.Printf("[DEBUG] No animated GIF found: %s\n", animatedGifPath)
+		// [DEBUG] No animated GIF found: %s\n", animatedGifPath)
 	}
 
 	label := widget.NewLabelWithStyle(labelText, fyne.TextAlignCenter, fyne.TextStyle{})
 
 	// Create container with static image initially
-	cont := container.NewVBox(staticImg, label)
+	imgContainer := container.NewGridWrap(fyne.NewSize(100, 80), staticImg)
+	cont := container.NewVBox(imgContainer, label)
 
+	// Store the image container for reuse in MouseOut
 	card := &VideoPreviewCard{
 		staticImage:     staticImg,
 		animatedGif:     animatedGif,
@@ -80,11 +83,12 @@ func (vpc *VideoPreviewCard) MouseIn(*desktop.MouseEvent) {
 		return
 	}
 
-	fmt.Println("[DEBUG] VideoPreviewCard MouseIn - starting animated GIF")
+	// [DEBUG] VideoPreviewCard MouseIn - starting animated GIF
 	vpc.isHovered = true
 
 	// Replace the static image with animated GIF
-	vpc.container.Objects[0] = vpc.animatedGif
+	gifContainer := container.NewGridWrap(fyne.NewSize(100, 80), vpc.animatedGif)
+	vpc.container.Objects[0] = gifContainer
 	vpc.container.Refresh()
 }
 
@@ -94,12 +98,13 @@ func (vpc *VideoPreviewCard) MouseOut() {
 		return
 	}
 
-	fmt.Println("[DEBUG] VideoPreviewCard MouseOut - stopping animated GIF")
+	// [DEBUG] VideoPreviewCard MouseOut - stopping animated GIF
 	vpc.isHovered = false
 
 	// Stop animation and replace with static image
 	vpc.animatedGif.Stop()
-	vpc.container.Objects[0] = vpc.staticImage
+	imgContainer := container.NewGridWrap(fyne.NewSize(100, 80), vpc.staticImage)
+	vpc.container.Objects[0] = imgContainer
 	vpc.container.Refresh()
 }
 
@@ -114,7 +119,7 @@ func (vpc *VideoPreviewCard) Tapped(*fyne.PointEvent) {
 		return
 	}
 
-	fmt.Println("[DEBUG] VideoPreviewCard tapped - toggling animation")
+	// [DEBUG] VideoPreviewCard tapped - toggling animation
 
 	if vpc.isHovered {
 		vpc.MouseOut()

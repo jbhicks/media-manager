@@ -3,6 +3,7 @@ package preview
 import (
 	"fmt"
 	"image"
+	"image/jpeg"
 	"image/png"
 	"os"
 	"os/exec"
@@ -100,5 +101,51 @@ func TestGenerateThumbnailUnsupportedFile(t *testing.T) {
 	err := GenerateThumbnail(unsupportedPath, thumbnailPath)
 	if err == nil {
 		t.Errorf("Expected error for unsupported file type, got nil")
+	}
+}
+
+func TestRemove1x1Frames(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create a 1x1 JPEG frame
+	frame1x1Path := filepath.Join(tempDir, "frame_1.jpg")
+	img1x1 := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	f1, err := os.Create(frame1x1Path)
+	if err != nil {
+		t.Fatalf("Failed to create 1x1 frame: %v", err)
+	}
+	if err := jpeg.Encode(f1, img1x1, nil); err != nil {
+		f1.Close()
+		t.Fatalf("Failed to encode 1x1 frame: %v", err)
+	}
+	f1.Close()
+
+	// Create a 10x10 JPEG frame
+	frame10x10Path := filepath.Join(tempDir, "frame_2.jpg")
+	img10x10 := image.NewRGBA(image.Rect(0, 0, 10, 10))
+	f2, err := os.Create(frame10x10Path)
+	if err != nil {
+		t.Fatalf("Failed to create 10x10 frame: %v", err)
+	}
+	if err := jpeg.Encode(f2, img10x10, nil); err != nil {
+		f2.Close()
+		t.Fatalf("Failed to encode 10x10 frame: %v", err)
+	}
+	f2.Close()
+
+	framePaths := []string{frame1x1Path, frame10x10Path}
+	filtered, err := remove1x1Frames(framePaths)
+	if err != nil {
+		t.Fatalf("remove1x1Frames returned error: %v", err)
+	}
+
+	if len(filtered) != 1 {
+		t.Fatalf("Expected 1 frame after removal, got %d", len(filtered))
+	}
+	if filtered[0] != frame10x10Path {
+		t.Errorf("Expected remaining frame to be %s, got %s", frame10x10Path, filtered[0])
+	}
+	if _, err := os.Stat(frame1x1Path); !os.IsNotExist(err) {
+		t.Errorf("1x1 frame was not deleted")
 	}
 }

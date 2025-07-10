@@ -19,7 +19,7 @@ type HoverableCard struct {
 
 // NewHoverableCard creates a card that contains a hoverable image and label
 func NewHoverableCard(gifPath, labelText string) *HoverableCard {
-	fmt.Println("[DEBUG] NewHoverableCard called")
+	// [DEBUG] NewHoverableCard called
 
 	uri, err := storage.ParseURI(fmt.Sprintf("file://%s", gifPath))
 	if err != nil {
@@ -49,7 +49,7 @@ var _ desktop.Hoverable = (*HoverableCard)(nil)
 
 // MouseIn is called when the mouse enters the card area.
 func (hc *HoverableCard) MouseIn(*desktop.MouseEvent) {
-	fmt.Println("[DEBUG] !!!! HoverableCard MouseIn event triggered !!!!")
+	// [DEBUG] !!!! HoverableCard MouseIn event triggered !!!!
 	hc.isHovered = true
 	if hc.animatedGif != nil {
 		hc.animatedGif.Start()
@@ -59,7 +59,7 @@ func (hc *HoverableCard) MouseIn(*desktop.MouseEvent) {
 
 // MouseOut is called when the mouse leaves the card area.
 func (hc *HoverableCard) MouseOut() {
-	fmt.Println("[DEBUG] !!!! HoverableCard MouseOut event triggered !!!!")
+	// [DEBUG] !!!! HoverableCard MouseOut event triggered !!!!
 	hc.isHovered = false
 	if hc.animatedGif != nil {
 		hc.animatedGif.Stop()

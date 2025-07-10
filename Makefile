@@ -12,7 +12,7 @@ GORUN=$(GOCMD) run
 BINARY_NAME=media-manager
 CMD_PATH=./cmd/media-manager
 
-.PHONY: all dev build clean clear-cache
+.PHONY: all dev build clean clear-cache test
 
 all: dev
 
@@ -30,6 +30,9 @@ clean:
 	rm -f bin/$(BINARY_NAME)
 
 clear-cache:
-	@echo "Clearing thumbnail cache..."
-	@rm -rf ~/.media-manager/thumbnails/* ./thumbnails/* 2>/dev/null || true
-	@echo "Thumbnail cache cleared!"
+	@echo "Clearing all media-manager cache..."
+	@rm -rf ~/.media-manager/thumbnails/* ~/.media-manager/previews/* ~/.media-manager/video_previews/* ./thumbnails/* 2>/dev/null || true
+	@echo "All media-manager cache cleared!"
+
+test:
+	$(GOTEST) ./...
