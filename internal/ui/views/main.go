@@ -9,7 +9,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	
+
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	"github.com/user/media-manager/internal/config"
@@ -70,6 +70,7 @@ func runCommand(args []string) error {
 }
 
 type MainView struct {
+	widget.BaseWidget  // Embed BaseWidget
 	config             *config.Config
 	database           *db.Database
 	mediaGridContainer *fyne.Container
@@ -78,18 +79,107 @@ type MainView struct {
 	foldersTree        *widget.Tree
 }
 
+// CreateRenderer returns a new renderer for the MainView.
+func (v *MainView) CreateRenderer() fyne.WidgetRenderer {
+	return &mainViewRenderer{
+		mainView:                   v,
+		mainContentSplit:           v.mainContentSplit,
+		sidebarSplit:               v.sidebarSplit,
+		lastMainContentSplitOffset: float32(v.mainContentSplit.Offset),
+		lastSidebarSplitOffset:     float32(v.sidebarSplit.Offset),
+	}
+}
+
+type mainViewRenderer struct {
+	fyne.WidgetRenderer
+	mainView                   *MainView
+	mainContentSplit           *container.Split
+	sidebarSplit               *container.Split
+	lastMainContentSplitOffset float32
+	lastSidebarSplitOffset     float32
+}
+
+func (r *mainViewRenderer) Layout(size fyne.Size) {
+	// Perform the default layout for the main content split
+	r.mainContentSplit.Resize(size)
+	r.mainContentSplit.Move(fyne.NewPos(0, 0))
+
+	// Check for changes in mainContentSplit offset
+	if float32(r.mainContentSplit.Offset) != r.lastMainContentSplitOffset {
+		fmt.Printf("[DEBUG] views/main.go: MainContentSplit offset changed from %f to %f\n", r.lastMainContentSplitOffset, float32(r.mainContentSplit.Offset))
+		r.lastMainContentSplitOffset = float32(r.mainContentSplit.Offset)
+		r.mainView.config.MainContentSplitOffset = r.lastMainContentSplitOffset
+		err := config.SaveConfig(r.mainView.config)
+		if err != nil {
+			fmt.Printf("[DEBUG] views/main.go: Failed to save config from renderer: %v\n", err)
+		}
+	}
+
+	// Perform the default layout for the sidebar split
+	// Note: sidebarSplit is nested within mainContentSplit, so its layout is relative
+	// We need to ensure its parent (mainContentSplit) has laid it out first.
+	// For simplicity, we'll just check its offset here.
+	if float32(r.sidebarSplit.Offset) != r.lastSidebarSplitOffset {
+		fmt.Printf("[DEBUG] views/main.go: SidebarSplit offset changed from %f to %f\n", r.lastSidebarSplitOffset, float32(r.sidebarSplit.Offset))
+		r.lastSidebarSplitOffset = float32(r.sidebarSplit.Offset)
+		r.mainView.config.SidebarSplitOffset = r.lastSidebarSplitOffset
+		err := config.SaveConfig(r.mainView.config)
+		if err != nil {
+			fmt.Printf("[DEBUG] views/main.go: Failed to save config from renderer: %v\n", err)
+		}
+	}
+}
+
+func (r *mainViewRenderer) MinSize() fyne.Size {
+	return r.mainContentSplit.MinSize()
+}
+
+func (r *mainViewRenderer) Refresh() {
+	// Refresh the split containers themselves
+	r.mainContentSplit.Refresh()
+	r.sidebarSplit.Refresh()
+}
+
+func (r *mainViewRenderer) Objects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.mainContentSplit}
+}
+
+func (r *mainViewRenderer) Destroy() {
+	// Clean up any resources if necessary
+}
+
 func (v *MainView) GetMediaGridContainer() *fyne.Container {
 	return v.mediaGridContainer
 }
 
-func NewMainView(cfg *config.Config, database *db.Database, win fyne.Window, mediaDir string) *MainView {
+func (v *MainView) GetMainContentSplitOffset() float32 {
+	if v.mainContentSplit != nil {
+		fmt.Printf("[DEBUG] views/main.go: GetMainContentSplitOffset returning: %f\n", float32(v.mainContentSplit.Offset))
+		return float32(v.mainContentSplit.Offset)
+	}
+	fmt.Printf("[DEBUG] views/main.go: GetMainContentSplitOffset returning config value: %f\n", v.config.MainContentSplitOffset)
+	return v.config.MainContentSplitOffset
+}
+
+func (v *MainView) GetSidebarSplitOffset() float32 {
+	if v.sidebarSplit != nil {
+		fmt.Printf("[DEBUG] views/main.go: GetSidebarSplitOffset returning: %f\n", float32(v.sidebarSplit.Offset))
+		return float32(v.sidebarSplit.Offset)
+	}
+	fmt.Printf("[DEBUG] views/main.go: GetSidebarSplitOffset returning config value: %f\n", v.config.SidebarSplitOffset)
+	return v.config.SidebarSplitOffset
+}
+
+func NewMainView(cfg *config.Config, database *db.Database, win fyne.Window) *MainView {
 	fmt.Printf("[DEBUG] main.go: MainView using MediaDirs: %v\n", cfg.MediaDirs)
-	return &MainView{
+	v := &MainView{
 		config:   cfg,
 		database: database,
 		window:   win,
 		mediaDir: filepath.Clean(mediaDir),
 	}
+	v.ExtendBaseWidget(v)
+	return v
 }
 
 
@@ -101,9 +191,7 @@ func (v *MainView) Build() fyne.CanvasObject {
 
 	v.mainContentSplit = container.NewHSplit(sidebar, grid)
 	v.mainContentSplit.SetOffset(float64(v.config.MainContentSplitOffset))
-	// v.mainContentSplit.OnChanged = func(f float32) {
-	// 	v.config.MainContentSplitOffset = f
-	// }
+	fmt.Printf("[DEBUG] views/main.go: MainContentSplit initial offset set to: %f\n", v.config.MainContentSplitOffset)
 
 	content := container.NewBorder(
 		toolbar,            // top
@@ -112,8 +200,11 @@ func (v *MainView) Build() fyne.CanvasObject {
 		nil,                // right
 		v.mainContentSplit, // center
 	)
-
-	return content
+	// Set the content of the MainView (which is now a widget)
+	if v.window != nil {
+		v.window.SetContent(content)
+	}
+	return v // Return the MainView itself
 }
 
 func (v *MainView) createToolbar() fyne.CanvasObject {
@@ -232,8 +323,13 @@ func (v *MainView) updateNode(uid string, branch bool, obj fyne.CanvasObject) {
 		container.NewBorder(foldersLabel, nil, nil, nil, container.NewVScroll(foldersTree)),
 		tagsSection,
 	)
-	split.SetOffset(0.95)
-	return split
+	v.sidebarSplit.SetOffset(float64(v.config.SidebarSplitOffset))
+	fmt.Printf("[DEBUG] views/main.go: SidebarSplit initial offset set to: %f\n", v.config.SidebarSplitOffset)
+	// v.sidebarSplit.OnChanged = func(f float32) {
+	// 	v.config.SidebarSplitOffset = f
+	// }
+	return v.sidebarSplit
+
 }
 
 func (v *MainView) filterMediaFiles(input string) {
@@ -256,7 +352,19 @@ func (v *MainView) RefreshMediaGrid() {
 					if !file.IsDir() {
 						filePath := filepath.Join(mediaDir, file.Name())
 						mediaType := components.GetMediaType(file.Name())
-						card := components.NewMediaCard(filePath, file.Name(), mediaType)
+						var thumbPath string
+					if mediaType == components.MediaTypeVideo {
+						homeDir, _ := os.UserHomeDir()
+						thumbDir := filepath.Join(homeDir, ".media-manager", "thumbnails")
+						thumbFileName := strings.ReplaceAll(strings.TrimSuffix(file.Name(), filepath.Ext(file.Name())), " ", "_") + ".jpg"
+						thumbPath = filepath.Join(thumbDir, thumbFileName)
+						ensureVideoThumbnail(filePath, thumbPath)
+					}
+					card := components.NewMediaCard(filePath, file.Name(), mediaType, thumbPath)
+					card.SetOnDelete(func() {
+						v.mediaGridContainer.Remove(card)
+						v.mediaGridContainer.Refresh()
+					})
 						v.mediaGridContainer.Add(card)
 					}
 				}
@@ -269,14 +377,34 @@ func (v *MainView) RefreshMediaGrid() {
 }
 
 func (v *MainView) createMediaGrid() *fyne.Container {
-	cardSize := fyne.NewSize(192, 192)
-	var cards []fyne.CanvasObject
+	cardSize := fyne.NewSize(180, 180) // Fixed size for cards to match generated thumbnails
+	v.mediaGridContainer = container.New(layout.NewGridWrapLayout(cardSize))
 
-	// Fetch media files from the database
-	mediaFiles, err := v.database.GetMediaFiles(-1, -1) // Fetch all for now
-	if err != nil {
-		fmt.Printf("Error fetching media files: %v\n", err)
-		return container.New(layout.NewGridWrapLayout(cardSize))
+	if len(v.config.MediaDirs) > 0 {
+		mediaDir := v.config.MediaDirs[0]
+		files, err := os.ReadDir(mediaDir)
+		if err == nil {
+			for _, file := range files {
+				if !file.IsDir() {
+					filePath := filepath.Join(mediaDir, file.Name())
+					mediaType := components.GetMediaType(file.Name())
+					var thumbPath string
+					if mediaType == components.MediaTypeVideo {
+						homeDir, _ := os.UserHomeDir()
+						thumbDir := filepath.Join(homeDir, ".media-manager", "thumbnails")
+						thumbFileName := strings.ReplaceAll(strings.TrimSuffix(file.Name(), filepath.Ext(file.Name())), " ", "_") + ".jpg"
+						thumbPath = filepath.Join(thumbDir, thumbFileName)
+						ensureVideoThumbnail(filePath, thumbPath)
+					}
+					card := components.NewMediaCard(filePath, file.Name(), mediaType, thumbPath)
+					card.SetOnDelete(func() {
+						v.mediaGridContainer.Remove(card)
+						v.mediaGridContainer.Refresh()
+					})
+					v.mediaGridContainer.Add(card)
+				}
+			}
+		}
 	}
 
 	for _, mediaFile := range mediaFiles {

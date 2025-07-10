@@ -7,8 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"testing"
 	"runtime"
+	"testing"
 )
 
 func getProjectRoot() (string, error) {

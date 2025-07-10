@@ -3,34 +3,42 @@ package components
 import (
 	"fmt"
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
+	xwidget "fyne.io/x/fyne/widget"
 )
 
 // HoverableCard wraps a HoverableImage in a container that can detect hover events
 type HoverableCard struct {
 	widget.BaseWidget
-	hoverableImage *HoverableImage
-	label          *widget.Label
-	isHovered      bool
+	animatedGif *xwidget.AnimatedGif
+	label       *widget.Label
+	isHovered   bool
 }
 
 // NewHoverableCard creates a card that contains a hoverable image and label
-func NewHoverableCard(staticImage *canvas.Image, animatedImage *canvas.Image, labelText string) *HoverableCard {
+func NewHoverableCard(gifPath, labelText string) *HoverableCard {
 	fmt.Println("[DEBUG] NewHoverableCard called")
 
-	hoverableImg := &HoverableImage{
-		StaticImage:   staticImage,
-		AnimatedImage: animatedImage,
+	uri, err := storage.ParseURI(fmt.Sprintf("file://%s", gifPath))
+	if err != nil {
+		fmt.Printf("Error parsing GIF URI for card: %v\n", err)
+		return nil
 	}
-	hoverableImg.ExtendBaseWidget(hoverableImg)
+
+	animatedGif, err := xwidget.NewAnimatedGif(uri)
+	if err != nil {
+		fmt.Printf("Error creating animated GIF for card: %v\n", err)
+		// Handle error, perhaps return a card with a placeholder image
+		return nil
+	}
 
 	label := widget.NewLabelWithStyle(labelText, fyne.TextAlignCenter, fyne.TextStyle{})
 
 	card := &HoverableCard{
-		hoverableImage: hoverableImg,
-		label:          label,
+		animatedGif: animatedGif,
+		label:       label,
 	}
 	card.ExtendBaseWidget(card)
 	return card
@@ -43,8 +51,9 @@ var _ desktop.Hoverable = (*HoverableCard)(nil)
 func (hc *HoverableCard) MouseIn(*desktop.MouseEvent) {
 	fmt.Println("[DEBUG] !!!! HoverableCard MouseIn event triggered !!!!")
 	hc.isHovered = true
-	hc.hoverableImage.IsHovered = true
-	fmt.Printf("[DEBUG] HoverableCard set IsHovered to: %v\n", hc.hoverableImage.IsHovered)
+	if hc.animatedGif != nil {
+		hc.animatedGif.Start()
+	}
 	hc.Refresh()
 }
 
@@ -52,8 +61,9 @@ func (hc *HoverableCard) MouseIn(*desktop.MouseEvent) {
 func (hc *HoverableCard) MouseOut() {
 	fmt.Println("[DEBUG] !!!! HoverableCard MouseOut event triggered !!!!")
 	hc.isHovered = false
-	hc.hoverableImage.IsHovered = false
-	fmt.Printf("[DEBUG] HoverableCard set IsHovered to: %v\n", hc.hoverableImage.IsHovered)
+	if hc.animatedGif != nil {
+		hc.animatedGif.Stop()
+	}
 	hc.Refresh()
 }
 
@@ -64,6 +74,9 @@ func (hc *HoverableCard) MouseMoved(*desktop.MouseEvent) {
 
 // MinSize returns the minimum size for the card
 func (hc *HoverableCard) MinSize() fyne.Size {
+	if hc.animatedGif != nil {
+		return hc.animatedGif.MinSize()
+	}
 	return fyne.NewSize(120, 120)
 }
 
@@ -71,7 +84,7 @@ func (hc *HoverableCard) MinSize() fyne.Size {
 func (hc *HoverableCard) CreateRenderer() fyne.WidgetRenderer {
 	return &hoverableCardRenderer{
 		card:  hc,
-		image: hc.hoverableImage,
+		gif:   hc.animatedGif,
 		label: hc.label,
 	}
 }
@@ -79,33 +92,47 @@ func (hc *HoverableCard) CreateRenderer() fyne.WidgetRenderer {
 // hoverableCardRenderer renders the hoverable card
 type hoverableCardRenderer struct {
 	card  *HoverableCard
-	image *HoverableImage
+	gif   *xwidget.AnimatedGif
 	label *widget.Label
 }
 
 func (r *hoverableCardRenderer) Layout(size fyne.Size) {
-	// Layout image at the top, label at the bottom
-	imageHeight := size.Height * 0.8 // 80% of the card height for image
+	// Layout GIF at the top, label at the bottom
+	gifHeight := size.Height * 0.8   // 80% of the card height for GIF
 	labelHeight := size.Height * 0.2 // 20% for label
 
-	r.image.Resize(fyne.NewSize(size.Width, imageHeight))
-	r.image.Move(fyne.NewPos(0, 0))
+	if r.gif != nil {
+		r.gif.Resize(fyne.NewSize(size.Width, gifHeight))
+		r.gif.Move(fyne.NewPos(0, 0))
+	}
 
 	r.label.Resize(fyne.NewSize(size.Width, labelHeight))
-	r.label.Move(fyne.NewPos(0, imageHeight))
+	r.label.Move(fyne.NewPos(0, gifHeight))
 }
 
 func (r *hoverableCardRenderer) MinSize() fyne.Size {
+	if r.gif != nil {
+		return r.gif.MinSize()
+	}
 	return fyne.NewSize(120, 120)
 }
 
 func (r *hoverableCardRenderer) Refresh() {
-	r.image.Refresh()
+	if r.gif != nil {
+		r.gif.Refresh()
+	}
 	r.label.Refresh()
 }
 
 func (r *hoverableCardRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.image, r.label}
+	if r.gif != nil {
+		return []fyne.CanvasObject{r.gif, r.label}
+	}
+	return []fyne.CanvasObject{r.label}
 }
 
-func (r *hoverableCardRenderer) Destroy() {}
+func (r *hoverableCardRenderer) Destroy() {
+	if r.gif != nil {
+		r.gif.Stop()
+	}
+}

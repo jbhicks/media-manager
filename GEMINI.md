@@ -79,6 +79,26 @@ Correct:
 
 ---
 
+## Operational Guidelines
+
+**CRITICAL:** NEVER initiate a long-running process (e.g., GUI applications, servers, continuous monitoring tools) in the foreground expecting a direct return. Such commands will block the agent and require manual cancellation by the user.
+
+Instead, always adhere to the following:
+-   **User-Initiated:** If the user needs to run a long-running application for direct interaction, instruct them on how to run it themselves.
+-   **Agent-Initiated (for debugging/monitoring):** If the agent *must* initiate a long-running process for debugging, testing, or monitoring purposes:
+    1.  **Spawn in Background:** Use `nohup <command> > <logfile> 2>&1 &` to run the process in a separate thread, detached from the current session.
+    2.  **Redirect Output:** Always redirect `stdout` and `stderr` to a designated log file (e.g., `app_debug.log`).
+    3.  **Monitor Log File:** Use `read_file` to periodically check the content of the log file for output.
+    4.  **Provide Termination Instructions:** Always inform the user how to manually stop the background process (e.g., `kill <PID>`).
+
+This ensures the agent remains responsive and does not block the user's terminal.
+
+## Agent Workflow
+
+### Task Tracking
+
+The `CURRENT_TASK.md` file in the root directory is used to track the state of the current feature implementation or task. Agents should refer to and update this file to maintain a persistent record of ongoing work, status, sub-tasks, and notes.
+
 ## Consolidated Agent-Oriented Content
 
 ### Testing Plan

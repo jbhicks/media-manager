@@ -23,7 +23,10 @@ type MediaManagerApp struct {
 
 func NewMediaManagerApp(mediaDir string) (*MediaManagerApp, error) {
 	fmt.Printf("[DEBUG] app.go: Received mediaDir: %s\n", mediaDir)
-	cfg := config.NewConfig(mediaDir)
+	cfg, err := config.LoadConfig(mediaDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
 
 	database, err := db.NewDatabase(cfg.DatabasePath)
 	if err != nil {
@@ -38,8 +41,17 @@ func NewMediaManagerApp(mediaDir string) (*MediaManagerApp, error) {
 	fyneApp := app.NewWithID("com.mediamanager.app")
 
 	window := fyneApp.NewWindow("Media Manager")
-	window.Resize(fyne.NewSize(1200, 800))
-	window.CenterOnScreen()
+
+	// Load window size and position from config, or use defaults
+	if cfg.WindowWidth > 0 && cfg.WindowHeight > 0 {
+		window.Resize(fyne.NewSize(cfg.WindowWidth, cfg.WindowHeight))
+
+		fmt.Printf("[DEBUG] app.go: Loaded window size: %fx%f at %f,%f\n", cfg.WindowWidth, cfg.WindowHeight, cfg.WindowX, cfg.WindowY)
+	} else {
+		window.Resize(fyne.NewSize(1200, 800))
+		window.CenterOnScreen()
+		fmt.Println("[DEBUG] app.go: Using default window size and centering on screen.")
+	}
 
 	return &MediaManagerApp{
 		fyneApp:  fyneApp,
@@ -142,4 +154,26 @@ func (app *MediaManagerApp) RescanMediaDirectory() {
 	}
 	app.mainView.RefreshMediaGrid()
 	fmt.Println("[DEBUG] app.go: RescanMediaDirectory finished.")
+}
+
+func (app *MediaManagerApp) SaveConfig() {
+	fmt.Println("[DEBUG] app.go: Saving configuration...")
+	if app.mainView != nil {
+		app.config.MainContentSplitOffset = app.mainView.GetMainContentSplitOffset()
+		app.config.SidebarSplitOffset = app.mainView.GetSidebarSplitOffset()
+		fmt.Printf("[DEBUG] app.go: Retrieved MainContentSplitOffset: %f, SidebarSplitOffset: %f\n", app.config.MainContentSplitOffset, app.config.SidebarSplitOffset)
+	}
+
+	// Save window size and position
+	app.config.WindowWidth = app.window.Canvas().Size().Width
+	app.config.WindowHeight = app.window.Canvas().Size().Height
+
+	fmt.Printf("[DEBUG] app.go: Saving window size: %fx%f at %f,%f\n", app.config.WindowWidth, app.config.WindowHeight, app.config.WindowX, app.config.WindowY)
+
+	err := config.SaveConfig(app.config)
+	if err != nil {
+		fmt.Printf("[DEBUG] app.go: Failed to save config: %v\n", err)
+	} else {
+		fmt.Printf("[DEBUG] app.go: Config saved: %+v\n", app.config)
+	}
 }

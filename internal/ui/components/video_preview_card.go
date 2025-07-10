@@ -83,9 +83,8 @@ func (vpc *VideoPreviewCard) MouseIn(*desktop.MouseEvent) {
 	fmt.Println("[DEBUG] VideoPreviewCard MouseIn - starting animated GIF")
 	vpc.isHovered = true
 
-	// Replace the static image with animated GIF and start animation
+	// Replace the static image with animated GIF
 	vpc.container.Objects[0] = vpc.animatedGif
-	vpc.animatedGif.Start()
 	vpc.container.Refresh()
 }
 

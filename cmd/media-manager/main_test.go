@@ -32,7 +32,6 @@ func TestMainPathArgument(t *testing.T) {
 	}
 }
 
-
 func captureLogOutput(f func()) string {
 	var buf bytes.Buffer
 	log.SetOutput(&buf)
