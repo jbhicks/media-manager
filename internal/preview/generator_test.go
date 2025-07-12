@@ -16,13 +16,8 @@ func TestGenerateVideoThumbnail(t *testing.T) {
 	}
 
 	tempDir := t.TempDir()
-	videoPath := filepath.Join(tempDir, "test.mp4")
+	videoPath := "..\\..\\media\\big_buck_bunny_480p_stereo [avidemux 30sec].mp4"
 	thumbnailPath := filepath.Join(tempDir, "thumbnail.jpg")
-
-	// Create a dummy video file
-	if err := os.WriteFile(videoPath, []byte("dummy"), 0644); err != nil {
-		t.Fatalf("Failed to create dummy video file: %v", err)
-	}
 
 	fmt.Printf("[DEBUG] Testing thumbnail generation for: %s\n", videoPath)
 	fmt.Printf("[DEBUG] Thumbnail output path: %s\n", thumbnailPath)

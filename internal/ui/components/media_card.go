@@ -2,16 +2,19 @@ package components
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	xwidget "fyne.io/x/fyne/widget"
 	"image/color"
-	"os/exec"
-	"path/filepath"
-	"strings"
 )
 
 type MediaType int
@@ -89,7 +92,60 @@ func (mc *MediaCard) setupContent() {
 }
 
 func (mc *MediaCard) generateThumbnail() {
-	// Generate thumbnail in background
+	var img fyne.Resource
+	var err error
+
+	switch mc.mediaType {
+	case MediaTypeImage:
+		img, err = fyne.LoadResourceFromPath(mc.filePath)
+		if err != nil {
+			fmt.Printf("Error loading image %s: %v\n", mc.filePath, err)
+			return
+		}
+	case MediaTypeVideo:
+		// Generate video thumbnail (single frame PNG) using ffmpeg
+		thumbPath := filepath.Join(os.TempDir(), "media-manager-thumbs", mc.fileName+".png")
+		_ = os.MkdirAll(filepath.Dir(thumbPath), 0755)
+
+		cmd := exec.Command("ffmpeg", "-y", "-i", mc.filePath, "-ss", "00:00:01.000", "-vframes", "1", "-vf", "scale=200:200:force_original_aspect_ratio=increase,crop=200:200", thumbPath)
+		err = cmd.Run()
+		if err != nil {
+			fmt.Printf("Error generating video thumbnail for %s: %v\n", mc.filePath, err)
+			return
+		}
+		img, err = fyne.LoadResourceFromPath(thumbPath)
+		if err != nil {
+			fmt.Printf("Error loading video thumbnail %s: %v\n", thumbPath, err)
+			return
+		}
+
+		// Generate animated GIF for hover preview
+		gifPath := filepath.Join(os.TempDir(), "media-manager-thumbs", mc.fileName+".gif")
+		_ = os.MkdirAll(filepath.Dir(gifPath), 0755)
+
+		// Extract 2 seconds of video starting from 1 second mark, scale to 200px width, and convert to GIF
+		cmd = exec.Command("ffmpeg", "-y", "-i", mc.filePath, "-ss", "00:00:01.000", "-t", "2", "-vf", "fps=10,scale=200:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse", gifPath)
+		err = cmd.Run()
+		if err != nil {
+			fmt.Printf("Error generating animated GIF for %s: %v\n", mc.filePath, err)
+		} else {
+			gifURI := storage.NewFileURI(gifPath)
+			animGif, animErr := xwidget.NewAnimatedGif(gifURI)
+			if animErr == nil {
+				mc.animatedGif = animGif
+				mc.hasAnimation = true
+			} else {
+				fmt.Printf("Error creating animated GIF widget for %s: %v\n", gifPath, animErr)
+			}
+		}
+	default:
+		return
+	}
+
+	if img != nil {
+		mc.content = canvas.NewImageFromResource(img)
+		mc.Refresh()
+	}
 }
 
 func (mc *MediaCard) setDefaultVideoIcon() {
