@@ -261,12 +261,9 @@ func (r *mediaCardRenderer) MinSize() fyne.Size {
 func (r *mediaCardRenderer) Refresh() {
 	// Update content reference in case it changed (video hover)
 	r.content = r.card.content
-
-	// Refresh all objects
-	canvas.Refresh(r.background)
-	canvas.Refresh(r.content)
-	canvas.Refresh(r.labelBackground)
-	canvas.Refresh(r.label)
+	r.background.Refresh()
+	r.label.Refresh()
+	r.labelBackground.Refresh()
 
 	// Force a layout update to ensure content is positioned correctly
 	r.Layout(r.background.Size())
