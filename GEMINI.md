@@ -35,20 +35,19 @@ Never run `make dev`. The user has it running in a separate process.
 When making any changes to the GUI, you must follow these rules to avoid threading issues:
 
 - **All UI updates must run on the main thread.**
-- Use `fyne.CurrentApp().Driver().Do()` to schedule UI operations on the main thread.
-- **Do not use `time.AfterFunc` for UI updates.** This will cause the app to crash.
+- When updating a `fyne.CanvasObject` or calling `Refresh()` on a widget from a goroutine, you **must** wrap these operations in `fyne.Do()` or `fyne.DoAndWait()`.
+- `fyne.Do()` ensures that the enclosed code is executed safely on the main Fyne UI thread.
 
-Incorrect:
+Example:
 
-`time.AfterFunc(1*time.Millisecond, func() {`
-	`// UI update code here`
-`})`
-
-Correct:
-
-`fyne.CurrentApp().Driver().Do(func() {`
-	`// UI update code here`
-`})`
+```go
+// In a goroutine:
+fyne.Do(func() {
+    myImage := canvas.NewImageFromResource(myResource)
+    myWidget.content = myImage // Assuming myWidget has a content field
+    myWidget.Refresh() // Call Refresh on the widget to update its display
+})
+```
 
 ## Testing Guidelines
 - Use Go's built-in `testing` package for unit tests.

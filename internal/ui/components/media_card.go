@@ -143,8 +143,10 @@ func (mc *MediaCard) generateThumbnail() {
 	}
 
 	if img != nil {
-		mc.content = canvas.NewImageFromResource(img)
-		mc.Refresh()
+		fyne.Do(func() {
+			mc.content = canvas.NewImageFromResource(img)
+			mc.Refresh()
+		})
 	}
 }
 
@@ -261,9 +263,6 @@ func (r *mediaCardRenderer) MinSize() fyne.Size {
 func (r *mediaCardRenderer) Refresh() {
 	// Update content reference in case it changed (video hover)
 	r.content = r.card.content
-	r.background.Refresh()
-	r.label.Refresh()
-	r.labelBackground.Refresh()
 
 	// Force a layout update to ensure content is positioned correctly
 	r.Layout(r.background.Size())
