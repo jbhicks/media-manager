@@ -221,10 +221,11 @@ func (ap *AnimatedPreview) animateNextFrame() {
 
 	// Update to next frame
 	framePath := ap.frameFiles[ap.currentFrame]
-	ap.displayImage.File = framePath
-
-	// Don't refresh here - let the parent container handle it
-	fmt.Printf("[DEBUG] Showing frame %d: %s\n", ap.currentFrame, framePath)
+	fyne.Do(func() {
+		ap.displayImage.File = framePath
+		// Don't refresh here - let the parent container handle it
+		fmt.Printf("[DEBUG] Showing frame %d: %s\n", ap.currentFrame, framePath)
+	})
 
 	ap.currentFrame = (ap.currentFrame + 1) % len(ap.frameFiles)
 
@@ -249,8 +250,10 @@ func (ap *AnimatedPreview) stopAnimation() {
 	ap.frameCount = 3 // Reset for next click animation
 
 	// Return to static image
-	ap.displayImage.File = ap.staticImagePath
-	// Don't refresh here - let the parent container handle it
+	fyne.Do(func() {
+		ap.displayImage.File = ap.staticImagePath
+		// Don't refresh here - let the parent container handle it
+	})
 }
 
 // MinSize returns the minimum size
@@ -279,7 +282,8 @@ func (r *animatedPreviewRenderer) MinSize() fyne.Size {
 }
 
 func (r *animatedPreviewRenderer) Refresh() {
-	r.preview.displayImage.Refresh()
+	// No direct refresh of child objects needed here.
+	// The parent widget's Refresh() will handle the redraw.
 }
 
 func (r *animatedPreviewRenderer) Objects() []fyne.CanvasObject {

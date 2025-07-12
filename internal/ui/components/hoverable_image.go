@@ -92,13 +92,8 @@ func (r *hoverableImageRenderer) MinSize() fyne.Size {
 
 func (r *hoverableImageRenderer) Refresh() {
 	fmt.Printf("[DEBUG] HoverableImage Refresh called, IsHovered: %v\n", r.hoverableImage.IsHovered)
-	if r.hoverableImage.IsHovered && r.hoverableImage.AnimatedImage != nil {
-		fmt.Println("[DEBUG] Switching to animated image")
-		r.hoverableImage.AnimatedImage.Refresh()
-	} else if r.hoverableImage.StaticImage != nil {
-		fmt.Println("[DEBUG] Switching to static image")
-		r.hoverableImage.StaticImage.Refresh()
-	}
+	// No direct refresh of child objects needed here.
+	// The parent widget's Refresh() will handle the redraw.
 }
 
 func (r *hoverableImageRenderer) Objects() []fyne.CanvasObject {

@@ -150,7 +150,8 @@ func (r *videoPreviewCardRenderer) MinSize() fyne.Size {
 }
 
 func (r *videoPreviewCardRenderer) Refresh() {
-	r.card.container.Refresh()
+	// No direct refresh of child objects needed here.
+	// The parent widget's Refresh() will handle the redraw.
 }
 
 func (r *videoPreviewCardRenderer) Objects() []fyne.CanvasObject {

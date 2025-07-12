@@ -100,8 +100,8 @@ func (r *hoverableCardRenderer) MinSize() fyne.Size {
 }
 
 func (r *hoverableCardRenderer) Refresh() {
-	r.image.Refresh()
-	r.label.Refresh()
+	// No direct refresh of child objects needed here.
+	// The parent widget's Refresh() will handle the redraw.
 }
 
 func (r *hoverableCardRenderer) Objects() []fyne.CanvasObject {
