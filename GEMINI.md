@@ -49,6 +49,8 @@ fyne.Do(func() {
 })
 ```
 
+- **Renderer Refresh() Method**: A custom widget renderer's `Refresh()` method should **never** call `Refresh()` on its child `fyne.CanvasObject`s. Its sole responsibility is to update its internal state to match the widget's state, and then trigger a re-layout if necessary. The Fyne engine handles the actual redrawing of child objects.
+
 ## Testing Guidelines
 - Use Go's built-in `testing` package for unit tests.
 - Leverage `fyne.io/fyne/v2/test` for testing graphical components.
