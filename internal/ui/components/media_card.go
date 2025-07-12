@@ -235,7 +235,6 @@ func (r *mediaCardRenderer) Layout(size fyne.Size) {
 	contentY := padding + (contentAvailableHeight-contentMin.Height)/2
 	r.content.Resize(contentMin)
 	r.content.Move(fyne.NewPos(contentX, contentY))
-	canvas.Refresh(r.content)
 
 	// Label and overlay always visible, anchored to bottom
 	labelMinHeight := float32(22)
