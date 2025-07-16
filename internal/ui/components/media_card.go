@@ -13,9 +13,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -40,7 +38,6 @@ type MediaCard struct {
 	animatedGif     *xwidget.AnimatedGif // fyne-x GIF widget for animated previews
 	icon            *widget.Icon
 	label           *widget.Label
-	labelContainer  fyne.CanvasObject
 	labelBackground fyne.CanvasObject
 	background      *canvas.Rectangle
 	content         fyne.CanvasObject
@@ -53,7 +50,10 @@ type MediaCard struct {
 
 func NewMediaCard(filePath, fileName string, mediaType MediaType, thumbPath string) *MediaCard {
 	fmt.Printf("[DEBUG] NewMediaCard: Creating card for %s (Type: %v)\n", fileName, mediaType)
-	displayName := fileName // No truncation; allow full name
+	displayName := fileName
+	if len(displayName) > 22 {
+		displayName = displayName[:19] + "..."
+	}
 
 	card := &MediaCard{
 		mediaType:     mediaType,
@@ -67,12 +67,6 @@ func NewMediaCard(filePath, fileName string, mediaType MediaType, thumbPath stri
 	card.setupContent()
 	card.label = widget.NewLabelWithStyle(displayName, fyne.TextAlignCenter, fyne.TextStyle{})
 	card.label.Wrapping = fyne.TextWrapWord
-	// Wrap label in VBox with spacers for vertical centering
-	card.labelContainer = container.NewVBox(
-		layout.NewSpacer(),
-		card.label,
-		layout.NewSpacer(),
-	)
 	card.background = canvas.NewRectangle(theme.Color(theme.ColorNameInputBackground))
 	card.background.StrokeColor = color.NRGBA{100, 100, 100, 255}
 	card.background.StrokeWidth = 1
@@ -280,8 +274,7 @@ func (mc *MediaCard) openFile() error {
 }
 
 func (mc *MediaCard) MinSize() fyne.Size {
-	// Increased width for more title space
-	return fyne.NewSize(240, 101)
+	return fyne.NewSize(180, 101)
 }
 
 func (mc *MediaCard) CreateRenderer() fyne.WidgetRenderer {
@@ -290,7 +283,7 @@ func (mc *MediaCard) CreateRenderer() fyne.WidgetRenderer {
 		background:      mc.background,
 		content:         mc.content,
 		labelBackground: mc.labelBackground,
-		labelContainer:  mc.labelContainer,
+		label:           mc.label,
 	}
 }
 
@@ -299,7 +292,7 @@ type mediaCardRenderer struct {
 	background      *canvas.Rectangle
 	content         fyne.CanvasObject
 	labelBackground fyne.CanvasObject
-	labelContainer  fyne.CanvasObject
+	label           *widget.Label
 }
 
 func (r *mediaCardRenderer) Layout(size fyne.Size) {
@@ -307,7 +300,7 @@ func (r *mediaCardRenderer) Layout(size fyne.Size) {
 	r.background.Resize(size)
 	r.background.Move(fyne.NewPos(0, 0))
 
-	labelAreaHeight := float32(90) // Increased for more lines and vertical centering
+	labelAreaHeight := r.label.MinSize().Height + float32(8)
 	contentAvailableHeight := size.Height - labelAreaHeight
 	contentAvailableWidth := size.Width
 
@@ -335,7 +328,7 @@ func (r *mediaCardRenderer) Layout(size fyne.Size) {
 
 	canvas.Refresh(r.content)
 
-	labelMinHeight := float32(72) // Further increased for more title space (about 3 lines)
+	labelMinHeight := float32(44) // Increased for more title space
 	labelWidth := size.Width - float32(8)
 	labelX := float32(4)
 	labelHeight := labelMinHeight
@@ -344,13 +337,12 @@ func (r *mediaCardRenderer) Layout(size fyne.Size) {
 	r.labelBackground.Resize(fyne.NewSize(labelWidth, labelHeight))
 	r.labelBackground.Move(fyne.NewPos(labelX, labelY))
 
-	r.labelContainer.Resize(fyne.NewSize(labelWidth, labelHeight))
-	r.labelContainer.Move(fyne.NewPos(labelX, labelY))
+	r.label.Resize(fyne.NewSize(labelWidth, labelHeight))
+	r.label.Move(fyne.NewPos(labelX, labelY))
 }
 
 func (r *mediaCardRenderer) MinSize() fyne.Size {
-	// Match card width increase
-	return fyne.NewSize(240, 101)
+	return fyne.NewSize(180, 101)
 }
 
 func (r *mediaCardRenderer) Refresh() {
@@ -361,13 +353,13 @@ func (r *mediaCardRenderer) Refresh() {
 		canvas.Refresh(r.content)
 	}
 	canvas.Refresh(r.labelBackground)
-	canvas.Refresh(r.labelContainer)
+	canvas.Refresh(r.label)
 
 	r.Layout(r.background.Size())
 }
 
 func (r *mediaCardRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.background, r.content, r.labelBackground, r.labelContainer}
+	return []fyne.CanvasObject{r.background, r.content, r.labelBackground, r.label}
 }
 
 func (r *mediaCardRenderer) Destroy() {
