@@ -11,7 +11,7 @@ tmp_dir = "tmp"
   # The path to the binary to run.
   bin = "tmp/media-manager"
   # The command that will be executed to run the binary.
-  full_bin = "APP_ENV=dev ./tmp/media-manager ./media 2>&1 | tee -a tmp/build.log"
+  full_bin = "APP_ENV=dev ./tmp/media-manager --dev-reset ./media 2>&1 | tee -a tmp/build.log"
 
   # File extensions to watch.
   include_ext = ["go", "tpl", "tmpl", "html"]

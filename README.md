@@ -31,6 +31,21 @@ go build -o bin/media-manager cmd/media-manager/main.go
 ./bin/media-manager
 ```
 
+### Development Flags
+
+- `--dev-reset`  
+  **Purpose:** Deletes the entire thumbnail cache and database on startup, forcing a full rescan and regeneration of all previews and metadata.  
+  **Usage:**
+  ```bash
+  ./bin/media-manager --dev-reset
+  ```
+  **When to use:**
+  - After changing preview/thumbnail generation logic
+  - When you want to clear all cached previews and start fresh
+  - For development and debugging to ensure all media is reprocessed
+  
+  This flag is intended for development and testing. It will remove `~/.media-manager/thumbnails/` and `~/.media-manager/media.db` before launching the app normally.
+
 ## Architecture
 
 - **Frontend**: Fyne-based native desktop GUI

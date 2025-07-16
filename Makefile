@@ -16,6 +16,7 @@ CMD_PATH=./cmd/media-manager
 
 all: dev
 
+# 'dev' now always runs the app with --dev-reset (see .air.toml), so cache and database are cleared on each start
 dev:
 	$(GOBUILD) -o bin/clear-previews ./cmd/clear-previews/main.go
 	bin/clear-previews
@@ -23,7 +24,7 @@ dev:
 	CLEAR_DB_ON_START=true air
 
 build:
-	$(GOBUILD) -o bin/$(BINARY_NAME) $(CMD_PATH)/main.go
+	$(GOBUILD) -o $(CURDIR)/bin/$(BINARY_NAME) $(CMD_PATH)/main.go
 
 clean:
 	$(GOCLEAN)
@@ -36,3 +37,16 @@ clear-cache:
 
 test:
 	$(GOTEST) ./...
+
+install:
+	$(MAKE) build
+	@if [ -n "$$GOBIN" ]; then \
+		install_dir="$$GOBIN"; \
+	elif [ -n "$$GOPATH" ]; then \
+		install_dir="$$GOPATH/bin"; \
+	else \
+		install_dir="$$HOME/go/bin"; \
+	fi; \
+	mkdir -p "$$install_dir"; \
+	cp bin/$(BINARY_NAME) "$$install_dir/$(BINARY_NAME)"; \
+	echo "Installed $(BINARY_NAME) to $$install_dir"

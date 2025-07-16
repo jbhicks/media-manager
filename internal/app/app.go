@@ -124,6 +124,11 @@ func (app *MediaManagerApp) RebuildMissingPreviews() {
 		return
 	}
 	for _, video := range videos {
+		if _, err := os.Stat(video.Path); os.IsNotExist(err) {
+			fmt.Printf("[WARN] File does not exist, removing DB record: %s\n", video.Path)
+			db.Delete(&video)
+			continue
+		}
 		gifPath := filepath.Join(app.config.ThumbnailDir, fmt.Sprintf("%d.gif", video.ID))
 		err := preview.GenerateAnimatedPreview(video.Path, gifPath)
 		if err != nil {

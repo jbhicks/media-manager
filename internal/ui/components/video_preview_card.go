@@ -1,92 +1,36 @@
 package components
 
 import (
+	"image"
+	"os"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
-	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
 	xwidget "fyne.io/x/fyne/widget"
-	"os"
 )
 
-// VideoPreviewCard represents a video thumbnail with animated GIF hover preview
 type VideoPreviewCard struct {
 	widget.BaseWidget
 	staticImage     *canvas.Image
 	animatedGif     *xwidget.AnimatedGif
 	label           *widget.Label
 	container       *fyne.Container
+	background      *canvas.Rectangle
+	labelBackground *canvas.Rectangle
 	isHovered       bool
 	hasAnimation    bool
 	animatedGifPath string
 }
-
-// NewVideoPreviewCard creates a new video preview card using the Fyne-X AnimatedGif widget
-func NewVideoPreviewCard(staticImagePath, animatedGifPath, labelText string) *VideoPreviewCard {
-	// [DEBUG] NewVideoPreviewCard called - static: %s, animated: %s\n", staticImagePath, animatedGifPath)
-
-	// Load static thumbnail
-	staticImg := canvas.NewImageFromFile(staticImagePath)
-	staticImg.FillMode = canvas.ImageFillContain
-	staticImg.SetMinSize(fyne.NewSize(100, 80))
-	staticImg.Resize(fyne.NewSize(100, 80))
-
-	// Try to load animated GIF using Fyne-X widget
-	var animatedGif *xwidget.AnimatedGif
-	hasAnimation := false
-
-	if _, err := os.Stat(animatedGifPath); err == nil {
-		// Create animated GIF widget using Fyne-X
-		gifURI := storage.NewFileURI(animatedGifPath)
-		gif, err := xwidget.NewAnimatedGif(gifURI)
-		if err == nil {
-			gif.SetMinSize(fyne.NewSize(100, 80))
-			gif.Resize(fyne.NewSize(100, 80))
-			animatedGif = gif
-			hasAnimation = true
-			// [DEBUG] Successfully loaded animated GIF: %s\n", animatedGifPath)
-		} else {
-			// [DEBUG] Failed to load animated GIF: %v\n", err)
-		}
-	} else {
-		// [DEBUG] No animated GIF found: %s\n", animatedGifPath)
-	}
-
-	label := widget.NewLabelWithStyle(labelText, fyne.TextAlignCenter, fyne.TextStyle{})
-
-	// Create container with static image initially
-	imgContainer := container.NewGridWrap(fyne.NewSize(100, 80), staticImg)
-	cont := container.NewVBox(imgContainer, label)
-
-	// Store the image container for reuse in MouseOut
-	card := &VideoPreviewCard{
-		staticImage:     staticImg,
-		animatedGif:     animatedGif,
-		label:           label,
-		container:       cont,
-		isHovered:       false,
-		hasAnimation:    hasAnimation,
-		animatedGifPath: animatedGifPath,
-	}
-	card.ExtendBaseWidget(card)
-	return card
-}
-
-// Ensure VideoPreviewCard implements desktop.Hoverable
-var _ desktop.Hoverable = (*VideoPreviewCard)(nil)
 
 // MouseIn starts the animated GIF on hover
 func (vpc *VideoPreviewCard) MouseIn(*desktop.MouseEvent) {
 	if !vpc.hasAnimation || vpc.animatedGif == nil {
 		return
 	}
-
-	// [DEBUG] VideoPreviewCard MouseIn - starting animated GIF
 	vpc.isHovered = true
-
-	// Replace the static image with animated GIF
 	gifContainer := container.NewGridWrap(fyne.NewSize(100, 80), vpc.animatedGif)
 	vpc.container.Objects[0] = gifContainer
 	vpc.container.Refresh()
@@ -97,11 +41,7 @@ func (vpc *VideoPreviewCard) MouseOut() {
 	if !vpc.hasAnimation || vpc.animatedGif == nil {
 		return
 	}
-
-	// [DEBUG] VideoPreviewCard MouseOut - stopping animated GIF
 	vpc.isHovered = false
-
-	// Stop animation and replace with static image
 	vpc.animatedGif.Stop()
 	imgContainer := container.NewGridWrap(fyne.NewSize(100, 80), vpc.staticImage)
 	vpc.container.Objects[0] = imgContainer
@@ -109,28 +49,18 @@ func (vpc *VideoPreviewCard) MouseOut() {
 }
 
 // MouseMoved handles mouse movement (required by desktop.Hoverable)
-func (vpc *VideoPreviewCard) MouseMoved(*desktop.MouseEvent) {
-	// No action needed
-}
+func (vpc *VideoPreviewCard) MouseMoved(*desktop.MouseEvent) {}
 
 // Tapped handles tap events (for mobile/touch support)
 func (vpc *VideoPreviewCard) Tapped(*fyne.PointEvent) {
 	if !vpc.hasAnimation || vpc.animatedGif == nil {
 		return
 	}
-
-	// [DEBUG] VideoPreviewCard tapped - toggling animation
-
 	if vpc.isHovered {
 		vpc.MouseOut()
 	} else {
 		vpc.MouseIn(nil)
 	}
-}
-
-// MinSize returns the minimum size for the card
-func (vpc *VideoPreviewCard) MinSize() fyne.Size {
-	return fyne.NewSize(120, 120)
 }
 
 // CreateRenderer creates the renderer for the video preview card
@@ -140,29 +70,114 @@ func (vpc *VideoPreviewCard) CreateRenderer() fyne.WidgetRenderer {
 	}
 }
 
-// videoPreviewCardRenderer renders the video preview card
 type videoPreviewCardRenderer struct {
 	card *VideoPreviewCard
 }
 
 func (r *videoPreviewCardRenderer) Layout(size fyne.Size) {
-	r.card.container.Resize(size)
+	padding := float32(4)
+	w, h := 0, 0
+	if r.card.staticImage != nil && r.card.staticImage.File != "" {
+		if file, err := os.Open(r.card.staticImage.File); err == nil {
+			defer file.Close()
+			if cfg, _, err := image.DecodeConfig(file); err == nil {
+				w = cfg.Width
+				h = cfg.Height
+			}
+		}
+	}
+	maxW, maxH := float32(180), float32(120)
+	contentW, contentH := maxW, maxH
+	if w > 0 && h > 0 {
+		aspect := float32(w) / float32(h)
+		if aspect > 1 {
+			contentW = min(maxW, float32(w))
+			contentH = contentW / aspect
+			if contentH > maxH {
+				contentH = maxH
+				contentW = maxH * aspect
+			}
+		} else {
+			contentH = min(maxH, float32(h))
+			contentW = contentH * aspect
+			if contentW > maxW {
+				contentW = maxW
+				contentH = maxW / aspect
+			}
+		}
+	}
+	labelSize := r.card.label.MinSize()
+
+	r.card.background.Resize(fyne.NewSize(contentW+2*padding, contentH+labelSize.Height+3*padding))
+	r.card.background.Move(fyne.NewPos(0, 0))
+
+	if r.card.container != nil {
+		r.card.container.Resize(fyne.NewSize(contentW, contentH))
+		r.card.container.Move(fyne.NewPos(padding, padding))
+	}
+
+	labelX := padding
+	labelY := padding + contentH + padding
+	labelWidth := contentW
+	labelHeight := labelSize.Height
+
+	if r.card.labelBackground != nil {
+		r.card.labelBackground.Resize(fyne.NewSize(labelWidth, labelHeight))
+		r.card.labelBackground.Move(fyne.NewPos(labelX, labelY))
+	}
+	if r.card.label != nil {
+		r.card.label.Resize(fyne.NewSize(labelWidth, labelHeight))
+		r.card.label.Move(fyne.NewPos(labelX, labelY))
+	}
 }
 
 func (r *videoPreviewCardRenderer) MinSize() fyne.Size {
-	return r.card.container.MinSize()
+	w, h := 0, 0
+	if r.card.staticImage != nil && r.card.staticImage.File != "" {
+		if file, err := os.Open(r.card.staticImage.File); err == nil {
+			defer file.Close()
+			if cfg, _, err := image.DecodeConfig(file); err == nil {
+				w = cfg.Width
+				h = cfg.Height
+			}
+		}
+	}
+	maxW, maxH := float32(180), float32(120)
+	contentW, contentH := maxW, maxH
+	if w > 0 && h > 0 {
+		aspect := float32(w) / float32(h)
+		if aspect > 1 {
+			contentW = min(maxW, float32(w))
+			contentH = contentW / aspect
+			if contentH > maxH {
+				contentH = maxH
+				contentW = maxH * aspect
+			}
+		} else {
+			contentH = min(maxH, float32(h))
+			contentW = contentH * aspect
+			if contentW > maxW {
+				contentW = maxW
+				contentH = maxW / aspect
+			}
+		}
+	}
+	labelSize := r.card.label.MinSize()
+	padding := float32(4)
+	return fyne.NewSize(contentW+2*padding, contentH+labelSize.Height+3*padding)
 }
 
 func (r *videoPreviewCardRenderer) Refresh() {
-	r.card.container.Refresh()
+	if r.card.container != nil {
+		r.card.container.Refresh()
+	}
 }
 
 func (r *videoPreviewCardRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.card.container}
+	return []fyne.CanvasObject{r.card.background, r.card.container, r.card.labelBackground}
 }
 
 func (r *videoPreviewCardRenderer) Destroy() {
-	// Stop any running animation
 	if r.card.animatedGif != nil {
 		r.card.animatedGif.Stop()
 	}

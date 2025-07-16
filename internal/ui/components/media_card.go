@@ -1,6 +1,7 @@
 package components
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	"image/color"
@@ -97,6 +98,11 @@ func (mc *MediaCard) setupContent() {
 
 // generateImageThumbnail generates a still thumbnail for images (not GIFs), or uses the original for GIFs
 func (mc *MediaCard) generateImageThumbnail() {
+	if _, err := os.Stat(mc.filePath); os.IsNotExist(err) {
+		fmt.Printf("[WARN] File does not exist, skipping image thumbnail: %s\n", mc.filePath)
+		return
+	}
+	fmt.Printf("[DEBUG] Generating image thumbnail for: %s\n", mc.filePath)
 	fmt.Printf("[DEBUG] generateImageThumbnail called for %s\n", mc.fileName)
 	ext := strings.ToLower(filepath.Ext(mc.filePath))
 	if ext == ".gif" {
@@ -116,10 +122,12 @@ func (mc *MediaCard) generateImageThumbnail() {
 	// Only generate if not exists
 	if _, err := os.Stat(thumbPath); os.IsNotExist(err) {
 		// Use ffmpeg to generate a thumbnail for any image type
-		cmd := exec.Command("ffmpeg", "-i", mc.filePath, "-vf", "scale=180:-1:force_original_aspect_ratio=decrease", "-frames:v", "1", thumbPath)
+		var stderr bytes.Buffer
+		cmd := exec.Command("ffmpeg", "-i", mc.filePath, "-vf", "scale=180:180:force_original_aspect_ratio=increase,crop=180:180", "-frames:v", "1", thumbPath)
+		cmd.Stderr = &stderr
 		err := cmd.Run()
 		if err != nil {
-			fmt.Printf("[ERROR] Failed to generate image thumbnail for %s: %v\n", mc.filePath, err)
+			fmt.Printf("[ERROR] ffmpeg failed to generate GIF for %s: %v\n[ffmpeg stderr]: %s\n", mc.filePath, err, stderr.String())
 			return
 		}
 	}
@@ -138,6 +146,11 @@ func (mc *MediaCard) generateImageThumbnail() {
 }
 
 func (mc *MediaCard) generateGifPreview() {
+	if _, err := os.Stat(mc.filePath); os.IsNotExist(err) {
+		fmt.Printf("[WARN] File does not exist, skipping GIF preview: %s\n", mc.filePath)
+		return
+	}
+	fmt.Printf("[DEBUG] Generating animated GIF preview for: %s\n", mc.filePath)
 	fmt.Printf("[DEBUG] generateGifPreview called for %s\n", mc.fileName)
 	if mc.mediaType != MediaTypeVideo {
 		return
@@ -151,14 +164,16 @@ func (mc *MediaCard) generateGifPreview() {
 	gifPath := filepath.Join(gifDir, strings.TrimSuffix(filepath.Base(mc.filePath), filepath.Ext(mc.filePath))+".gif")
 
 	if _, err := os.Stat(gifPath); os.IsNotExist(err) {
+		var stderr bytes.Buffer
 		cmd := exec.Command("ffmpeg",
 			"-i", mc.filePath,
-			"-vf", "fps=12,scale=180:-1:force_original_aspect_ratio=decrease",
+			"-vf", "fps=12,scale=180:180:force_original_aspect_ratio=increase,crop=180:180",
 			"-frames:v", "24",
 			gifPath)
+		cmd.Stderr = &stderr
 		err := cmd.Run()
 		if err != nil {
-			fmt.Printf("[ERROR] Failed to generate GIF for %s: %v\n", mc.filePath, err)
+			fmt.Printf("[ERROR] ffmpeg failed to generate GIF for %s: %v\n[ffmpeg stderr]: %s\n", mc.filePath, err, stderr.String())
 			return
 		}
 	}
@@ -166,7 +181,11 @@ func (mc *MediaCard) generateGifPreview() {
 	uri := storage.NewFileURI(gifPath)
 	animatedGif, err := xwidget.NewAnimatedGif(uri)
 	if err != nil {
-		fmt.Printf("[ERROR] Failed to create AnimatedGif widget for %s: %v\n", gifPath, err)
+		// fallback: use static image with stretch
+		img := canvas.NewImageFromFile(gifPath)
+		img.FillMode = canvas.ImageFillContain
+		mc.content = img
+		mc.Refresh()
 		return
 	}
 	// Try to get GIF dimensions
@@ -296,43 +315,44 @@ type mediaCardRenderer struct {
 }
 
 func (r *mediaCardRenderer) Layout(size fyne.Size) {
+	padding := float32(4)
+	w, h := r.card.previewWidth, r.card.previewHeight
+	maxW, maxH := float32(180), float32(120)
+	contentW, contentH := maxW, maxH
+	if w > 0 && h > 0 {
+		aspect := float32(w) / float32(h)
+		if aspect > 1 {
+			contentW = min(maxW, float32(w))
+			contentH = contentW / aspect
+			if contentH > maxH {
+				contentH = maxH
+				contentW = maxH * aspect
+			}
+		} else {
+			contentH = min(maxH, float32(h))
+			contentW = contentH * aspect
+			if contentW > maxW {
+				contentW = maxW
+				contentH = maxW / aspect
+			}
+		}
+	}
+	labelSize := r.label.MinSize()
 
-	r.background.Resize(size)
+	r.background.Resize(fyne.NewSize(contentW+2*padding, contentH+labelSize.Height+3*padding))
 	r.background.Move(fyne.NewPos(0, 0))
 
-	labelAreaHeight := r.label.MinSize().Height + float32(8)
-	contentAvailableHeight := size.Height - labelAreaHeight
-	contentAvailableWidth := size.Width
-
-	// Dynamically determine content height based on preview aspect ratio
-	contentHeight := contentAvailableHeight
-	if r.card.previewWidth > 0 && r.card.previewHeight > 0 {
-		aspect := float32(r.card.previewHeight) / float32(r.card.previewWidth)
-		contentHeight = contentAvailableWidth * aspect
-		if contentHeight > contentAvailableHeight {
-			contentHeight = contentAvailableHeight
-		}
-	} else {
-		// Fallback to 16:9 aspect ratio
-		contentHeight = contentAvailableWidth * 9.0 / 16.0
-	}
-	contentSize := fyne.NewSize(contentAvailableWidth, contentHeight)
-
-	contentX := float32(0)
-	contentY := float32(0)
-
 	if r.content != nil {
-		r.content.Resize(contentSize)
-		r.content.Move(fyne.NewPos(contentX, contentY))
+		r.content.Resize(fyne.NewSize(contentW, contentH))
+		r.content.Move(fyne.NewPos(padding, padding))
 	}
 
 	canvas.Refresh(r.content)
 
-	labelMinHeight := float32(44) // Increased for more title space
-	labelWidth := size.Width - float32(8)
-	labelX := float32(4)
-	labelHeight := labelMinHeight
-	labelY := size.Height - labelHeight - float32(4)
+	labelX := padding
+	labelY := padding + contentH + padding
+	labelWidth := contentW
+	labelHeight := labelSize.Height
 
 	r.labelBackground.Resize(fyne.NewSize(labelWidth, labelHeight))
 	r.labelBackground.Move(fyne.NewPos(labelX, labelY))
@@ -342,7 +362,30 @@ func (r *mediaCardRenderer) Layout(size fyne.Size) {
 }
 
 func (r *mediaCardRenderer) MinSize() fyne.Size {
-	return fyne.NewSize(180, 101)
+	w, h := r.card.previewWidth, r.card.previewHeight
+	maxW, maxH := float32(180), float32(120)
+	contentW, contentH := maxW, maxH
+	if w > 0 && h > 0 {
+		aspect := float32(w) / float32(h)
+		if aspect > 1 {
+			contentW = maxW
+			contentH = maxW / aspect
+			if contentH > maxH {
+				contentH = maxH
+				contentW = maxH * aspect
+			}
+		} else {
+			contentH = maxH
+			contentW = maxH * aspect
+			if contentW > maxW {
+				contentW = maxW
+				contentH = maxW / aspect
+			}
+		}
+	}
+	labelSize := r.label.MinSize()
+	padding := float32(8)
+	return fyne.NewSize(contentW+2*padding, contentH+labelSize.Height+3*padding)
 }
 
 func (r *mediaCardRenderer) Refresh() {

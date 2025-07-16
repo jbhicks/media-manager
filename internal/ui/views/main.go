@@ -9,7 +9,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/user/media-manager/internal/config"
@@ -109,6 +108,7 @@ func (v *MainView) createFoldersTree() *widget.Tree {
 		fmt.Printf("[DEBUG] Selected folder: %s\n", id)
 		v.mediaDir = id
 		v.RefreshMediaGrid()
+		tree.OpenBranch(id)
 	}
 
 	return tree
@@ -124,8 +124,8 @@ func (v *MainView) RefreshMediaGrid() {
 	if v.mediaGridContainer != nil {
 		v.mediaGridContainer.Objects = []fyne.CanvasObject{}
 
-		if len(v.config.MediaDirs) > 0 {
-			mediaDir := v.config.MediaDirs[0]
+		if v.mediaDir != "" {
+			mediaDir := v.mediaDir
 			files, err := os.ReadDir(mediaDir)
 			if err == nil {
 				for _, file := range files {
@@ -154,11 +154,11 @@ func (v *MainView) RefreshMediaGrid() {
 }
 
 func (v *MainView) createMediaGrid() *fyne.Container {
-	cardSize := fyne.NewSize(180, 180)
-	v.mediaGridContainer = container.New(layout.NewGridWrapLayout(cardSize))
-
-	if len(v.config.MediaDirs) > 0 {
-		mediaDir := v.config.MediaDirs[0]
+	const cardWidth = 180
+	const cardHeight = 160 // grid height, but cards will clamp to content
+	var cards []fyne.CanvasObject
+	if v.mediaDir != "" {
+		mediaDir := v.mediaDir
 		files, err := os.ReadDir(mediaDir)
 		if err == nil {
 			for _, file := range files {
@@ -169,18 +169,17 @@ func (v *MainView) createMediaGrid() *fyne.Container {
 					filePath := filepath.Join(mediaDir, file.Name())
 					mediaType := components.GetMediaType(file.Name())
 					var thumbPath string
-					// Only use thumbPath for images if needed
 					card := components.NewMediaCard(filePath, file.Name(), mediaType, thumbPath)
 					card.SetOnDelete(func() {
-						v.mediaGridContainer.Remove(card)
-						v.mediaGridContainer.Refresh()
+						// Remove from grid: not needed, grid will be rebuilt on refresh
+						v.RefreshMediaGrid()
 					})
-					v.mediaGridContainer.Add(card)
+					cards = append(cards, card)
 				}
 			}
 		}
 	}
-
+	v.mediaGridContainer = container.NewGridWrap(fyne.NewSize(cardWidth, cardHeight), cards...)
 	return v.mediaGridContainer
 }
 

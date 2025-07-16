@@ -164,15 +164,25 @@ func generateVideoThumbnail(srcPath, thumbPath string) error {
 	fmt.Printf("[DEBUG] Source file exists: %v\n", fileExists(srcPath))
 	fmt.Printf("[DEBUG] Thumbnail path writable: %v\n", pathWritable(thumbPath))
 	cmd := exec.Command("ffmpeg",
+		"-loglevel", "warning",
 		"-i", srcPath,
 		"-ss", "00:00:01", // Extract frame at 1 second
 		"-vframes", "1", // Extract only 1 frame
 		"-vf", "scale=180:101:force_original_aspect_ratio=increase,crop=180:101", // Scale and crop to 180x101
+		"-f", "image2", // Explicitly set output format to image2 to avoid sequence pattern errors
 		"-y", // Overwrite output file
 		thumbPath,
 	)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to generate video thumbnail: %w", err)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if strings.Contains(string(output), "does not contain an image sequence pattern") {
+			fmt.Printf("[WARN] ffmpeg: output filename may need a sequence pattern or -update option.\n")
+		}
+		fmt.Printf("[ERROR] ffmpeg error: %v\n[ffmpeg output]: %s\n", err, string(output))
+		return fmt.Errorf("failed to generate video thumbnail: %w\n[ffmpeg output]: %s", err, string(output))
+	}
+	if len(output) > 0 {
+		fmt.Printf("[ffmpeg warning]: %s\n", string(output))
 	}
 	if _, err := os.Stat(thumbPath); err != nil {
 		return fmt.Errorf("Thumbnail file missing: %s", thumbPath)
@@ -205,7 +215,7 @@ func getVideoDuration(filePath string) (time.Duration, error) {
 // GenerateAnimatedPreview creates a single animated GIF for video preview
 
 func GenerateAnimatedPreviewCPU(srcPath, gifPath string) error {
-	fmt.Printf("[DEBUG] Generating animated GIF preview for: %s\n", srcPath)
+	fmt.Printf("[DEBUG] Generating scene-overview animated GIF preview for: %s\n", srcPath)
 
 	// Check if animated preview already exists
 	if _, err := os.Stat(gifPath); err == nil {
@@ -223,38 +233,59 @@ func GenerateAnimatedPreviewCPU(srcPath, gifPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get video duration: %w", err)
 	}
+	durSec := duration.Seconds()
 
-	// Generate a GIF preview that summarizes the entire video in about 10 seconds
-	targetGifDuration := 10.0 // seconds
-	targetGifFps := 12.0      // frames per second
-	numFrames := int(targetGifDuration * targetGifFps)
-	interval := duration.Seconds() / float64(numFrames)
-	// Use select filter to sample frames at regular time intervals
-	filterComplex := fmt.Sprintf("select='not(mod(t,%.6f))',setpts=N/FRAME_RATE/TB,fps=%.0f,scale=180:101:force_original_aspect_ratio=increase,crop=180:101", interval, targetGifFps)
+	// Decide on number of segments and segment length
+	numSegments := 10
+	segLen := 1.0 // seconds
+	if durSec < float64(numSegments+1) {
+		numSegments = int(durSec) - 1
+		if numSegments < 1 {
+			numSegments = 1
+		}
+	}
+	interval := durSec / float64(numSegments+1)
+
+	// Build filtergraph for ffmpeg
+	var filterParts []string
+	var concatInputs []string
+	for i := 0; i < numSegments; i++ {
+		start := interval * float64(i+1)
+		end := start + segLen
+		filterParts = append(filterParts,
+			fmt.Sprintf("[0:v]trim=start=%.3f:end=%.3f,setpts=PTS-STARTPTS[v%d]", start, end, i))
+		concatInputs = append(concatInputs, fmt.Sprintf("[v%d]", i))
+	}
+	filterParts = append(filterParts,
+		fmt.Sprintf("%sconcat=n=%d:v=1:a=0,scale=180:101:force_original_aspect_ratio=increase,crop=180:101,fps=12[outv]",
+			strings.Join(concatInputs, ""), numSegments))
+	filtergraph := strings.Join(filterParts, ";")
 
 	cmd := exec.Command("ffmpeg",
+		"-loglevel", "warning",
 		"-i", srcPath,
-		"-vf", filterComplex,
-		"-c:v", "gif", // Explicitly set GIF video codec
-		"-f", "gif", // Force GIF format
-		"-y", // Overwrite existing
+		"-filter_complex", filtergraph,
+		"-map", "[outv]",
+		"-y",
 		gifPath,
 	)
 
-	fmt.Printf("[DEBUG] Running ffmpeg for GIF: %v\n", cmd.Args)
+	fmt.Printf("[DEBUG] Running ffmpeg for scene-overview GIF: %v\n", cmd.Args)
+	fmt.Printf("[DEBUG] ffmpeg filtergraph: %s\n", filtergraph)
 	output, err := cmd.CombinedOutput()
-	fmt.Printf("[DEBUG] ffmpeg output: %s\n", string(output))
 	if err != nil {
-		fmt.Printf("[ERROR] ffmpeg error: %v\n", err)
+		fmt.Printf("[ERROR] ffmpeg error: %v\n[ffmpeg output]: %s\n", err, string(output))
 		return fmt.Errorf("failed to generate animated preview: %v, output: %s\n", err, string(output))
 	}
-
+	if len(output) > 0 {
+		fmt.Printf("[ffmpeg warning]: %s\n", string(output))
+	}
 	// Verify the GIF was created
 	if _, err := os.Stat(gifPath); err != nil {
 		return fmt.Errorf("animated preview file missing after generation: %s", gifPath)
 	}
 
-	fmt.Printf("[DEBUG] Successfully generated animated preview: %s\n", gifPath)
+	fmt.Printf("[DEBUG] Successfully generated scene-overview animated preview: %s\n", gifPath)
 	return nil
 }
 
@@ -323,6 +354,7 @@ func ExtractGifFrames(gifPath, outputDir string) ([]string, error) {
 	// FFmpeg command to extract frames
 	outputPattern := filepath.Join(outputDir, "frame_%d.jpg")
 	cmd := exec.Command("ffmpeg",
+		"-loglevel", "warning",
 		"-i", gifPath,
 		"-vsync", "0", // Ensure all frames are extracted
 		"-vf", "fps=8", // Force 8 frames per second
@@ -334,12 +366,13 @@ func ExtractGifFrames(gifPath, outputDir string) ([]string, error) {
 
 	fmt.Printf("[DEBUG] Running ffmpeg for frame extraction: %v\n", cmd.Args)
 	output, err := cmd.CombinedOutput()
-	fmt.Printf("[DEBUG] ffmpeg output: %s\n", string(output))
 	if err != nil {
-		fmt.Printf("[ERROR] ffmpeg error: %v\n", err)
+		fmt.Printf("[ERROR] ffmpeg error: %v\n[ffmpeg output]: %s\n", err, string(output))
 		return nil, fmt.Errorf("failed to extract GIF frames: %v, output: %s", err, string(output))
 	}
-
+	if len(output) > 0 {
+		fmt.Printf("[ffmpeg warning]: %s\n", string(output))
+	}
 	// Collect paths of extracted frames
 	var framePaths []string
 	// This is a bit hacky, but we need to find the number of frames extracted.
