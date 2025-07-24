@@ -1,0 +1,396 @@
+2025/07/08 22:25:38 Opening directory: /home/josh/media-manager
+2025/07/08 22:25:38 [DEBUG] main.go: Passing dir to app: /home/josh/media-manager
+[DEBUG] app.go: Received mediaDir: /home/josh/media-manager
+[DEBUG] Attempting to load config...
+[DEBUG] Config file path: /home/josh/.media-manager/config.json
+[DEBUG] Read 319 bytes from config file.
+[DEBUG] Config loaded: &{DatabasePath:/home/josh/.media-manager/media.db ThumbnailDir:/home/josh/.media-manager/thumbnails ThumbnailSize:300 MediaDirs:[./media] MainContentSplitOffset:0.09331848 SidebarSplitOffset:0.95 WindowWidth:0 WindowHeight:0 WindowX:0 WindowY:0}
+[DEBUG] MediaDirs overridden by command line argument: [/home/josh/media-manager]
+[DEBUG] app.go: Using default window size and centering on screen.
+[DEBUG] main.go: MainView using MediaDirs: [/home/josh/media-manager]
+[DEBUG] views/main.go: SidebarSplit initial offset set to: 0.950000
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] views/main.go: MainContentSplit initial offset set to: 0.093318
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}
+[DEBUG] mediaCardRenderer.Layout - received size: {180 180}
+[DEBUG] mediaCardRenderer.Layout - contentSize: {180 136.92188}

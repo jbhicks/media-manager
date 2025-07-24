@@ -2,13 +2,18 @@ package app
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 
 	"github.com/user/media-manager/internal/config"
 	"github.com/user/media-manager/internal/db"
+	"github.com/user/media-manager/internal/preview"
+	"github.com/user/media-manager/internal/scanner"
 	"github.com/user/media-manager/internal/ui/views"
+	"github.com/user/media-manager/pkg/models"
 )
 
 type MediaManagerApp struct {
@@ -22,13 +27,27 @@ type MediaManagerApp struct {
 }
 
 func NewMediaManagerApp(mediaDir string) (*MediaManagerApp, error) {
-	fmt.Printf("[DEBUG] app.go: Received mediaDir: %s\n", mediaDir)
-	cfg := config.NewConfig(mediaDir)
+	// Check CLEAR_DB_ON_START env var
+	clearDB := os.Getenv("CLEAR_DB_ON_START") == "true"
 
-	database, err := db.NewDatabase(cfg.DatabasePath)
+	cfg, err := config.LoadConfig(mediaDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	var database *db.Database
+	if clearDB {
+		fmt.Println("[DEBUG] CLEAR_DB_ON_START is true: will clear previews after init.")
+		// Preview clearing is handled in main.go before app startup.
+	}
+
+	// Always re-initialize database for app usage
+	database, err = db.NewDatabase(cfg.DatabasePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize database: %w", err)
 	}
+
+	fmt.Printf("[DEBUG] app.go: Received mediaDir: %s\n", mediaDir)
 
 	mediaScanner, err := scanner.NewMediaScanner(database)
 	if err != nil {
@@ -38,8 +57,27 @@ func NewMediaManagerApp(mediaDir string) (*MediaManagerApp, error) {
 	fyneApp := app.NewWithID("com.mediamanager.app")
 
 	window := fyneApp.NewWindow("Media Manager")
-	window.Resize(fyne.NewSize(1200, 800))
-	window.CenterOnScreen()
+
+	// Load window size and position from config, or use defaults
+	if cfg.WindowWidth > 0 && cfg.WindowHeight > 0 {
+		window.Resize(fyne.NewSize(cfg.WindowWidth, cfg.WindowHeight))
+
+		fmt.Printf("[DEBUG] app.go: Loaded window size: %fx%f at %f,%f\n", cfg.WindowWidth, cfg.WindowHeight, cfg.WindowX, cfg.WindowY)
+	} else {
+		window.Resize(fyne.NewSize(1200, 800))
+		window.CenterOnScreen()
+		fmt.Println("[DEBUG] app.go: Using default window size and centering on screen.")
+	}
+
+	// Ensure the passed-in mediaDir is in the DB as a Folder
+	if mediaDir != "" {
+		var count int64
+		database.GetDB().Model(&models.Folder{}).Where("path = ?", mediaDir).Count(&count)
+		if count == 0 {
+			folder := &models.Folder{Path: mediaDir, Name: filepath.Base(mediaDir)}
+			database.GetDB().Create(folder)
+		}
+	}
 
 	return &MediaManagerApp{
 		fyneApp:  fyneApp,
@@ -61,6 +99,9 @@ func (app *MediaManagerApp) Run() {
 		fmt.Printf("Error during initial scan: %v\n", err)
 	}
 
+	// Rebuild missing animated previews for videos
+	app.RebuildMissingPreviews()
+
 	// Start watching the media directory for changes
 	fmt.Printf("[DEBUG] app.go: Starting file watcher for %s\n", app.mediaDir)
 	err = app.scanner.StartWatching([]string{app.mediaDir})
@@ -68,17 +109,36 @@ func (app *MediaManagerApp) Run() {
 		fmt.Printf("Error starting file watcher: %v\n", err)
 	}
 
-	// Select the initial media directory in the tree once the window is shown
-	app.window.SetOnShowed(func() {
-		if app.mainView.foldersTree != nil && app.mediaDir != "" {
-			app.mainView.foldersTree.Select(app.mediaDir)
-			app.mainView.foldersTree.Refresh()
-			// Explicitly update the root node to ensure its style is applied
-			app.mainView.foldersTree.UpdateNode(app.mediaDir, app.mainView.createNode, app.mainView.updateNode)
-		}
-	})
-
 	app.window.ShowAndRun()
+}
+
+// RebuildMissingPreviews regenerates animated previews for videos with empty PreviewPath
+func (app *MediaManagerApp) RebuildMissingPreviews() {
+	fmt.Println("[DEBUG] Rebuilding missing animated previews...")
+	var videos []models.MediaFile
+	db := app.db.GetDB()
+	db.Where("file_type = ? AND (preview_path = '' OR preview_path IS NULL)", "video").Find(&videos)
+	fmt.Printf("[DEBUG] Found %d videos with missing previews.\n", len(videos))
+	if len(videos) == 0 {
+		fmt.Println("[DEBUG] No missing previews to rebuild.")
+		return
+	}
+	for _, video := range videos {
+		if _, err := os.Stat(video.Path); os.IsNotExist(err) {
+			fmt.Printf("[WARN] File does not exist, removing DB record: %s\n", video.Path)
+			db.Delete(&video)
+			continue
+		}
+		gifPath := filepath.Join(app.config.ThumbnailDir, fmt.Sprintf("%d.gif", video.ID))
+		err := preview.GenerateAnimatedPreview(video.Path, gifPath)
+		if err != nil {
+			fmt.Printf("[ERROR] Failed to generate preview for %s: %v\n", video.Path, err)
+			continue
+		}
+		video.PreviewPath = gifPath
+		db.Model(&video).Update("preview_path", gifPath)
+		fmt.Printf("[DEBUG] Rebuilt preview for %s -> %s\n", video.Path, gifPath)
+	}
 }
 
 func (app *MediaManagerApp) setupUI() {
@@ -142,4 +202,26 @@ func (app *MediaManagerApp) RescanMediaDirectory() {
 	}
 	app.mainView.RefreshMediaGrid()
 	fmt.Println("[DEBUG] app.go: RescanMediaDirectory finished.")
+}
+
+func (app *MediaManagerApp) SaveConfig() {
+	fmt.Println("[DEBUG] app.go: Saving configuration...")
+	if app.mainView != nil {
+		// app.config.MainContentSplitOffset = app.mainView.GetMainContentSplitOffset() // Disabled: not implemented
+		// app.config.SidebarSplitOffset = app.mainView.GetSidebarSplitOffset() // Disabled: not implemented
+		fmt.Printf("[DEBUG] app.go: Retrieved MainContentSplitOffset: %f, SidebarSplitOffset: %f\n", app.config.MainContentSplitOffset, app.config.SidebarSplitOffset)
+	}
+
+	// Save window size and position
+	app.config.WindowWidth = app.window.Canvas().Size().Width
+	app.config.WindowHeight = app.window.Canvas().Size().Height
+
+	fmt.Printf("[DEBUG] app.go: Saving window size: %fx%f at %f,%f\n", app.config.WindowWidth, app.config.WindowHeight, app.config.WindowX, app.config.WindowY)
+
+	err := config.SaveConfig(app.config)
+	if err != nil {
+		fmt.Printf("[DEBUG] app.go: Failed to save config: %v\n", err)
+	} else {
+		fmt.Printf("[DEBUG] app.go: Config saved: %+v\n", app.config)
+	}
 }
