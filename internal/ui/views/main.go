@@ -26,6 +26,7 @@ type MainView struct {
 	mediaDir           string
 	foldersTree        *widget.Tree
 	filter             string
+	recursiveSearch    bool
 }
 
 func (v *MainView) getChildDirs(path string) []string {
@@ -126,25 +127,40 @@ func (v *MainView) RefreshMediaGrid() {
 
 		if v.mediaDir != "" {
 			mediaDir := v.mediaDir
-			files, err := os.ReadDir(mediaDir)
-			if err == nil {
-				for _, file := range files {
-					if !file.IsDir() {
-						if v.filter != "" && !strings.Contains(strings.ToLower(file.Name()), strings.ToLower(v.filter)) {
-							continue
-						}
-						filePath := filepath.Join(mediaDir, file.Name())
-						mediaType := components.GetMediaType(file.Name())
-						var thumbPath string
-						// Only use thumbPath for images if needed
-						card := components.NewMediaCard(filePath, file.Name(), mediaType, thumbPath)
-						card.SetOnDelete(func() {
-							v.mediaGridContainer.Remove(card)
-							v.mediaGridContainer.Refresh()
-						})
-						v.mediaGridContainer.Add(card)
-					}
+			var files []os.DirEntry
+			var err error
+			if v.recursiveSearch {
+				files = getAllMediaFilesRecursive(mediaDir)
+			} else {
+				files, err = os.ReadDir(mediaDir)
+				if err != nil {
+					files = nil
 				}
+			}
+			for _, file := range files {
+				var fileName string
+				var filePath string
+				if v.recursiveSearch {
+					filePath = file.Name() // full path
+					fileName = filepath.Base(filePath)
+				} else {
+					if file.IsDir() {
+						continue
+					}
+					fileName = file.Name()
+					filePath = filepath.Join(mediaDir, file.Name())
+				}
+				if v.filter != "" && !strings.Contains(strings.ToLower(fileName), strings.ToLower(v.filter)) {
+					continue
+				}
+				mediaType := components.GetMediaType(fileName)
+				var thumbPath string
+				card := components.NewMediaCard(filePath, fileName, mediaType, thumbPath)
+				card.SetOnDelete(func() {
+					v.mediaGridContainer.Remove(card)
+					v.mediaGridContainer.Refresh()
+				})
+				v.mediaGridContainer.Add(card)
 			}
 		}
 
@@ -159,28 +175,70 @@ func (v *MainView) createMediaGrid() *fyne.Container {
 	var cards []fyne.CanvasObject
 	if v.mediaDir != "" {
 		mediaDir := v.mediaDir
-		files, err := os.ReadDir(mediaDir)
-		if err == nil {
-			for _, file := range files {
-				if !file.IsDir() {
-					if v.filter != "" && !strings.Contains(strings.ToLower(file.Name()), strings.ToLower(v.filter)) {
-						continue
-					}
-					filePath := filepath.Join(mediaDir, file.Name())
-					mediaType := components.GetMediaType(file.Name())
-					var thumbPath string
-					card := components.NewMediaCard(filePath, file.Name(), mediaType, thumbPath)
-					card.SetOnDelete(func() {
-						// Remove from grid: not needed, grid will be rebuilt on refresh
-						v.RefreshMediaGrid()
-					})
-					cards = append(cards, card)
-				}
+		var files []os.DirEntry
+		var err error
+		if v.recursiveSearch {
+			files = getAllMediaFilesRecursive(mediaDir)
+		} else {
+			files, err = os.ReadDir(mediaDir)
+			if err != nil {
+				files = nil
 			}
+		}
+		for _, file := range files {
+			var fileName string
+			var filePath string
+			if v.recursiveSearch {
+				filePath = file.Name() // full path
+				fileName = filepath.Base(filePath)
+			} else {
+				if file.IsDir() {
+					continue
+				}
+				fileName = file.Name()
+				filePath = filepath.Join(mediaDir, file.Name())
+			}
+			if v.filter != "" && !strings.Contains(strings.ToLower(fileName), strings.ToLower(v.filter)) {
+				continue
+			}
+			mediaType := components.GetMediaType(fileName)
+			var thumbPath string
+			card := components.NewMediaCard(filePath, fileName, mediaType, thumbPath)
+			card.SetOnDelete(func() {
+				// Remove from grid: not needed, grid will be rebuilt on refresh
+				v.RefreshMediaGrid()
+			})
+			cards = append(cards, card)
 		}
 	}
 	v.mediaGridContainer = container.NewGridWrap(fyne.NewSize(cardWidth, cardHeight), cards...)
 	return v.mediaGridContainer
+}
+
+// getAllMediaFilesRecursive returns a slice of os.DirEntry-like objects for all media files in dir and subdirs
+func getAllMediaFilesRecursive(root string) []os.DirEntry {
+	var files []os.DirEntry
+	filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil // skip error
+		}
+		if d.IsDir() {
+			return nil
+		}
+		// Wrap DirEntry to override Name() to return full path
+		files = append(files, &fullPathDirEntry{DirEntry: d, fullPath: path})
+		return nil
+	})
+	return files
+}
+
+type fullPathDirEntry struct {
+	os.DirEntry
+	fullPath string
+}
+
+func (f *fullPathDirEntry) Name() string {
+	return f.fullPath
 }
 
 func (v *MainView) Build() fyne.CanvasObject {
@@ -228,9 +286,17 @@ func (v *MainView) Build() fyne.CanvasObject {
 			v.foldersTree = v.createFoldersTree()
 			v.window.SetContent(v.Build())
 		}, v.window)
+		dialog.Resize(fyne.NewSize(800, 600))
 		dialog.Show()
 	})
-	buttonBox := container.NewHBox(refreshBtn, addFolderBtn)
+	// Add Recursive Search checkbox
+	recursiveCheck := widget.NewCheck("Recursive Search", func(checked bool) {
+		v.recursiveSearch = checked
+		fmt.Printf("[DEBUG] Recursive Search toggled: %v\n", checked)
+		v.RefreshMediaGrid()
+	})
+	recursiveCheck.SetChecked(v.recursiveSearch)
+	buttonBox := container.NewHBox(refreshBtn, addFolderBtn, recursiveCheck)
 	toolbar := container.NewBorder(nil, nil, nil, buttonBox, filterEntry)
 
 	// Pre-select the root media directory
