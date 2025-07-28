@@ -12,41 +12,31 @@ GORUN=$(GOCMD) run
 BINARY_NAME=media-manager
 CMD_PATH=./cmd/media-manager
 
-.PHONY: all dev build clean clear-cache test
+.PHONY: all dev build clean clear-cache
 
 all: dev
 
-# 'dev' now always runs the app with --dev-reset (see .air.toml), so cache and database are cleared on each start
 dev:
-	$(GOBUILD) -o bin/clear-previews ./cmd/clear-previews/main.go
-	bin/clear-previews
+ifeq ($(OS),Windows_NT)
+	if not exist tmp mkdir tmp
+	air
+else
 	mkdir -p tmp
-	CLEAR_DB_ON_START=true air
+	air
+endif
 
 build:
-	$(GOBUILD) -o $(CURDIR)/bin/$(BINARY_NAME) $(CMD_PATH)/main.go
+	$(GOBUILD) -o tmp/$(BINARY_NAME).exe $(CMD_PATH)/main.go
 
 clean:
 	$(GOCLEAN)
+ifeq ($(OS),Windows_NT)
+	del tmp\$(BINARY_NAME).exe
+else
 	rm -f bin/$(BINARY_NAME)
+endif
 
 clear-cache:
-	@echo "Clearing all media-manager cache..."
-	@rm -rf ~/.media-manager/thumbnails/* ~/.media-manager/previews/* ~/.media-manager/video_previews/* ./thumbnails/* 2>/dev/null || true
-	@echo "All media-manager cache cleared!"
-
-test:
-	$(GOTEST) ./...
-
-install:
-	$(MAKE) build
-	@if [ -n "$$GOBIN" ]; then \
-		install_dir="$$GOBIN"; \
-	elif [ -n "$$GOPATH" ]; then \
-		install_dir="$$GOPATH/bin"; \
-	else \
-		install_dir="$$HOME/go/bin"; \
-	fi; \
-	mkdir -p "$$install_dir"; \
-	cp bin/$(BINARY_NAME) "$$install_dir/$(BINARY_NAME)"; \
-	echo "Installed $(BINARY_NAME) to $$install_dir"
+	@echo "Clearing thumbnail cache..."
+	@rm -rf ~/.media-manager/thumbnails/* ./thumbnails/* 2>/dev/null || true
+	@echo "Thumbnail cache cleared!"

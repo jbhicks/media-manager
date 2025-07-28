@@ -21,6 +21,17 @@ import (
 	xwidget "fyne.io/x/fyne/widget"
 )
 
+// logToDebugFile appends a message to app_debug.log for error tracking
+func logToDebugFile(msg string) {
+	f, err := os.OpenFile("app_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("[ERROR] Could not open app_debug.log: %v\n", err)
+		return
+	}
+	_, _ = f.WriteString(fmt.Sprintf("%s\n", msg))
+	f.Close()
+}
+
 type MediaType int
 
 const (
@@ -107,11 +118,26 @@ func (mc *MediaCard) generateImageThumbnail() {
 	ext := strings.ToLower(filepath.Ext(mc.filePath))
 	if ext == ".gif" {
 		// For GIFs, just use the original file as a still image
-		img := canvas.NewImageFromFile(mc.filePath)
-		img.FillMode = canvas.ImageFillContain
-		mc.content = img
-		mc.Refresh()
-		return
+		if file, err := os.Open(mc.filePath); err == nil {
+			defer file.Close()
+			if _, _, err := image.DecodeConfig(file); err == nil {
+				img := canvas.NewImageFromFile(mc.filePath)
+				img.FillMode = canvas.ImageFillContain
+				mc.content = img
+				mc.Refresh()
+				return
+			} else {
+				logToDebugFile(fmt.Sprintf("[ERROR] Invalid GIF image: %s, error: %v", mc.filePath, err))
+				mc.content = widget.NewIcon(theme.FileImageIcon())
+				mc.Refresh()
+				return
+			}
+		} else {
+			logToDebugFile(fmt.Sprintf("[ERROR] Could not open GIF file: %s, error: %v", mc.filePath, err))
+			mc.content = widget.NewIcon(theme.FileImageIcon())
+			mc.Refresh()
+			return
+		}
 	}
 	// For other images, generate a thumbnail (jpg)
 	homeDir, _ := os.UserHomeDir()
@@ -127,22 +153,33 @@ func (mc *MediaCard) generateImageThumbnail() {
 		cmd.Stderr = &stderr
 		err := cmd.Run()
 		if err != nil {
-			fmt.Printf("[ERROR] ffmpeg failed to generate GIF for %s: %v\n[ffmpeg stderr]: %s\n", mc.filePath, err, stderr.String())
+			logToDebugFile(fmt.Sprintf("[ERROR] ffmpeg failed to generate thumbnail for %s: %v\n[ffmpeg stderr]: %s\n", mc.filePath, err, stderr.String()))
+			mc.content = widget.NewIcon(theme.FileImageIcon())
+			mc.Refresh()
 			return
 		}
 	}
-	img := canvas.NewImageFromFile(thumbPath)
-	img.FillMode = canvas.ImageFillContain
-	// Try to get image dimensions
 	if file, err := os.Open(thumbPath); err == nil {
 		defer file.Close()
-		if srcImg, _, err := image.DecodeConfig(file); err == nil {
-			mc.previewWidth = srcImg.Width
-			mc.previewHeight = srcImg.Height
+		if _, _, err := image.DecodeConfig(file); err == nil {
+			img := canvas.NewImageFromFile(thumbPath)
+			img.FillMode = canvas.ImageFillContain
+			mc.content = img
+			mc.Refresh()
+			return
+		} else {
+			logToDebugFile(fmt.Sprintf("[ERROR] Invalid thumbnail image: %s, error: %v", thumbPath, err))
+			mc.content = widget.NewIcon(theme.FileImageIcon())
+			mc.Refresh()
+			return
 		}
+	} else {
+		logToDebugFile(fmt.Sprintf("[ERROR] Could not open thumbnail file: %s, error: %v", thumbPath, err))
+		mc.content = widget.NewIcon(theme.FileImageIcon())
+		mc.Refresh()
+		return
 	}
-	mc.content = img
-	mc.Refresh()
+
 }
 
 func (mc *MediaCard) generateGifPreview() {
@@ -156,11 +193,9 @@ func (mc *MediaCard) generateGifPreview() {
 		return
 	}
 
-	// Only generate and use GIF for videos
 	homeDir, _ := os.UserHomeDir()
 	gifDir := filepath.Join(homeDir, ".media-manager", "previews")
 	os.MkdirAll(gifDir, 0755)
-
 	gifPath := filepath.Join(gifDir, strings.TrimSuffix(filepath.Base(mc.filePath), filepath.Ext(mc.filePath))+".gif")
 
 	if _, err := os.Stat(gifPath); os.IsNotExist(err) {
@@ -173,36 +208,46 @@ func (mc *MediaCard) generateGifPreview() {
 		cmd.Stderr = &stderr
 		err := cmd.Run()
 		if err != nil {
-			fmt.Printf("[ERROR] ffmpeg failed to generate GIF for %s: %v\n[ffmpeg stderr]: %s\n", mc.filePath, err, stderr.String())
+			logToDebugFile(fmt.Sprintf("[ERROR] ffmpeg failed to generate GIF for %s: %v\n[ffmpeg stderr]: %s\n", mc.filePath, err, stderr.String()))
+			mc.content = widget.NewIcon(theme.FileImageIcon())
+			mc.Refresh()
 			return
 		}
 	}
 
-	uri := storage.NewFileURI(gifPath)
-	animatedGif, err := xwidget.NewAnimatedGif(uri)
-	if err != nil {
-		// fallback: use static image with stretch
-		img := canvas.NewImageFromFile(gifPath)
-		img.FillMode = canvas.ImageFillContain
-		mc.content = img
+	// Validate GIF before loading
+	if file, err := os.Open(gifPath); err == nil {
+		defer file.Close()
+		if _, err := gif.DecodeConfig(file); err == nil {
+			uri := storage.NewFileURI(gifPath)
+			animatedGif, err := xwidget.NewAnimatedGif(uri)
+			if err == nil {
+				animatedGif.Stop() // Show first frame only
+				mc.animatedGif = animatedGif
+				mc.content = animatedGif
+				mc.hasAnimation = true
+				mc.Refresh()
+				return
+			} else {
+				// fallback: use static image
+				img := canvas.NewImageFromFile(gifPath)
+				img.FillMode = canvas.ImageFillContain
+				mc.content = img
+				mc.Refresh()
+				return
+			}
+		} else {
+			logToDebugFile(fmt.Sprintf("[ERROR] Invalid GIF preview: %s, error: %v", gifPath, err))
+			mc.content = widget.NewIcon(theme.FileImageIcon())
+			mc.Refresh()
+			return
+		}
+	} else {
+		logToDebugFile(fmt.Sprintf("[ERROR] Could not open GIF preview file: %s, error: %v", gifPath, err))
+		mc.content = widget.NewIcon(theme.FileImageIcon())
 		mc.Refresh()
 		return
 	}
-	// Try to get GIF dimensions
-	if file, err := os.Open(gifPath); err == nil {
-		defer file.Close()
-		if cfg, err := gif.DecodeConfig(file); err == nil {
-			mc.previewWidth = cfg.Width
-			mc.previewHeight = cfg.Height
-		}
-	}
-	animatedGif.Stop() // Show first frame only
-	fyne.Do(func() {
-		mc.animatedGif = animatedGif
-		mc.content = animatedGif
-		mc.hasAnimation = true
-		mc.Refresh()
-	})
 }
 
 var _ desktop.Hoverable = (*MediaCard)(nil)
@@ -315,76 +360,42 @@ type mediaCardRenderer struct {
 }
 
 func (r *mediaCardRenderer) Layout(size fyne.Size) {
-	padding := float32(4)
-	w, h := r.card.previewWidth, r.card.previewHeight
-	maxW, maxH := float32(180), float32(120)
-	contentW, contentH := maxW, maxH
-	if w > 0 && h > 0 {
-		aspect := float32(w) / float32(h)
-		if aspect > 1 {
-			contentW = min(maxW, float32(w))
-			contentH = contentW / aspect
-			if contentH > maxH {
-				contentH = maxH
-				contentW = maxH * aspect
-			}
-		} else {
-			contentH = min(maxH, float32(h))
-			contentW = contentH * aspect
-			if contentW > maxW {
-				contentW = maxW
-				contentH = maxW / aspect
-			}
-		}
-	}
-	labelSize := r.label.MinSize()
+	padding := float32(8)
+	// Use the grid cell size for everything
+	w, h := size.Width, size.Height
 
-	r.background.Resize(fyne.NewSize(contentW+2*padding, contentH+labelSize.Height+3*padding))
+	r.background.Resize(size)
 	r.background.Move(fyne.NewPos(0, 0))
 
+	contentH := h - 40 // leave space for label
+	contentW := w - 2*padding
 	if r.content != nil {
 		r.content.Resize(fyne.NewSize(contentW, contentH))
 		r.content.Move(fyne.NewPos(padding, padding))
 	}
+<<<<<<< HEAD
 	canvas.Refresh(r.content)
 
 	labelX := padding
 	labelY := padding + contentH + padding
 	labelWidth := contentW
 	labelHeight := labelSize.Height
+=======
+
+	labelHeight := float32(32)
+	labelY := h - labelHeight - padding
+	labelWidth := w - 2*padding
+>>>>>>> d178e5b02ff1acf1b056cfc23338296a936dc80d
 
 	r.labelBackground.Resize(fyne.NewSize(labelWidth, labelHeight))
-	r.labelBackground.Move(fyne.NewPos(labelX, labelY))
+	r.labelBackground.Move(fyne.NewPos(padding, labelY))
 
 	r.label.Resize(fyne.NewSize(labelWidth, labelHeight))
-	r.label.Move(fyne.NewPos(labelX, labelY))
+	r.label.Move(fyne.NewPos(padding, labelY))
 }
 
 func (r *mediaCardRenderer) MinSize() fyne.Size {
-	w, h := r.card.previewWidth, r.card.previewHeight
-	maxW, maxH := float32(180), float32(120)
-	contentW, contentH := maxW, maxH
-	if w > 0 && h > 0 {
-		aspect := float32(w) / float32(h)
-		if aspect > 1 {
-			contentW = maxW
-			contentH = maxW / aspect
-			if contentH > maxH {
-				contentH = maxH
-				contentW = maxH * aspect
-			}
-		} else {
-			contentH = maxH
-			contentW = maxH * aspect
-			if contentW > maxW {
-				contentW = maxW
-				contentH = maxW / aspect
-			}
-		}
-	}
-	labelSize := r.label.MinSize()
-	padding := float32(8)
-	return fyne.NewSize(contentW+2*padding, contentH+labelSize.Height+3*padding)
+	return fyne.NewSize(180, 180)
 }
 
 func (r *mediaCardRenderer) Refresh() {
