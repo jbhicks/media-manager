@@ -390,18 +390,17 @@ func (r *mediaCardRenderer) MinSize() fyne.Size {
 }
 
 func (r *mediaCardRenderer) Refresh() {
-	r.content = r.card.content
-
-	canvas.Refresh(r.background)
-	if r.content != nil {
-		canvas.Refresh(r.content)
-	}
-	canvas.Refresh(r.labelBackground)
-	canvas.Refresh(r.label)
-
-	r.Layout(r.background.Size())
+	fyne.Do(func() {
+		r.content = r.card.content
+		canvas.Refresh(r.background)
+		if r.content != nil {
+			canvas.Refresh(r.content)
+		}
+		canvas.Refresh(r.labelBackground)
+		canvas.Refresh(r.label)
+		r.Layout(r.background.Size())
+	})
 }
-
 func (r *mediaCardRenderer) Objects() []fyne.CanvasObject {
 	return []fyne.CanvasObject{r.background, r.content, r.labelBackground, r.label}
 }
