@@ -16,7 +16,8 @@ A native desktop media management application built with Go and Fyne for browsin
 ### Prerequisites
 - Go 1.24+ 
 - C/C++ compiler (for Fyne dependencies)
-- FFmpeg (for video thumbnail generation)
+
+**Note:** FFmpeg is automatically downloaded on first run for video thumbnail generation. No manual installation required.
 
 ### Build
 ```bash
@@ -64,6 +65,7 @@ go build -o bin/media-manager cmd/media-manager/main.go
 │   ├── db/               # Database layer and models
 │   ├── scanner/          # File system scanning
 │   ├── preview/          # Thumbnail generation
+│   ├── ffmpeg/           # FFmpeg binary management (auto-download)
 │   └── config/           # Configuration management
 ├── pkg/
 │   ├── models/           # Shared data structures
@@ -71,11 +73,22 @@ go build -o bin/media-manager cmd/media-manager/main.go
 └── bin/                  # Built executables
 ```
 
+## FFmpeg Handling
+
+The application automatically downloads ffmpeg binaries on first run:
+- Binaries are cached in `~/.media-manager/bin/`
+- Downloads from GitHub releases (one-time, ~150MB total)
+- Falls back to system PATH if download fails
+- Supports: macOS ARM64 (Apple Silicon)
+- Coming soon: Linux, Windows, macOS Intel
+
 ## Configuration
 
 The application stores data in `~/.media-manager/`:
 - `media.db` - SQLite database
 - `thumbnails/` - Generated thumbnail cache (uniform 200×200 images)
+- `bin/` - Downloaded ffmpeg binaries (cached on first run)
+- `previews/` - Generated video preview GIFs
 
 Environment variables:
 - `DB_PATH` - Custom database path
