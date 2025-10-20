@@ -6,12 +6,13 @@ import (
 	"image"
 	"image/jpeg"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/user/media-manager/internal/ffmpeg"
 )
 
 func getUserConfig(key string, defaultValue int) int {
@@ -163,7 +164,7 @@ func generateVideoThumbnail(srcPath, thumbPath string) error {
 	fmt.Printf("[DEBUG] Running ffmpeg command: ffmpeg -i %s -ss 00:00:01 -vframes 1 -vf scale=180:180:force_original_aspect_ratio=increase,crop=180:180 -y %s\n", srcPath, thumbPath)
 	fmt.Printf("[DEBUG] Source file exists: %v\n", fileExists(srcPath))
 	fmt.Printf("[DEBUG] Thumbnail path writable: %v\n", pathWritable(thumbPath))
-	cmd := exec.Command("ffmpeg",
+	cmd, err := ffmpeg.NewFFmpegCommand(
 		"-loglevel", "warning",
 		"-i", srcPath,
 		"-ss", "00:00:01", // Extract frame at 1 second
@@ -173,6 +174,9 @@ func generateVideoThumbnail(srcPath, thumbPath string) error {
 		"-y", // Overwrite output file
 		thumbPath,
 	)
+	if err != nil {
+		return fmt.Errorf("failed to get ffmpeg: %w", err)
+	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if strings.Contains(string(output), "does not contain an image sequence pattern") {
@@ -191,12 +195,15 @@ func generateVideoThumbnail(srcPath, thumbPath string) error {
 }
 
 func getVideoDuration(filePath string) (time.Duration, error) {
-	cmd := exec.Command("ffprobe",
+	cmd, err := ffmpeg.NewFFprobeCommand(
 		"-v", "error",
 		"-show_entries", "format=duration",
 		"-of", "default=noprint_wrappers=1:nokey=1",
 		filePath,
 	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get ffprobe: %w", err)
+	}
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -261,7 +268,7 @@ func GenerateAnimatedPreviewCPU(srcPath, gifPath string) error {
 			strings.Join(concatInputs, ""), numSegments))
 	filtergraph := strings.Join(filterParts, ";")
 
-	cmd := exec.Command("ffmpeg",
+	cmd, err := ffmpeg.NewFFmpegCommand(
 		"-loglevel", "warning",
 		"-i", srcPath,
 		"-filter_complex", filtergraph,
@@ -269,6 +276,9 @@ func GenerateAnimatedPreviewCPU(srcPath, gifPath string) error {
 		"-y",
 		gifPath,
 	)
+	if err != nil {
+		return fmt.Errorf("failed to get ffmpeg: %w", err)
+	}
 
 	fmt.Printf("[DEBUG] Running ffmpeg for scene-overview GIF: %v\n", cmd.Args)
 	fmt.Printf("[DEBUG] ffmpeg filtergraph: %s\n", filtergraph)
@@ -291,7 +301,10 @@ func GenerateAnimatedPreviewCPU(srcPath, gifPath string) error {
 
 // GetFFmpegHardwareAccelerations returns a list of supported hardware accelerations by ffmpeg.
 func GetFFmpegHardwareAccelerations() ([]string, error) {
-	cmd := exec.Command("ffmpeg", "-hwaccels")
+	cmd, err := ffmpeg.NewFFmpegCommand("-hwaccels")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ffmpeg: %w", err)
+	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("failed to run ffmpeg -hwaccels: %w\n%s", err, string(output))
@@ -353,7 +366,7 @@ func ExtractGifFrames(gifPath, outputDir string) ([]string, error) {
 
 	// FFmpeg command to extract frames
 	outputPattern := filepath.Join(outputDir, "frame_%d.jpg")
-	cmd := exec.Command("ffmpeg",
+	cmd, err := ffmpeg.NewFFmpegCommand(
 		"-loglevel", "warning",
 		"-i", gifPath,
 		"-vsync", "0", // Ensure all frames are extracted
@@ -363,6 +376,9 @@ func ExtractGifFrames(gifPath, outputDir string) ([]string, error) {
 		"-qscale:v", "2", // High quality jpeg output
 		outputPattern,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ffmpeg: %w", err)
+	}
 
 	fmt.Printf("[DEBUG] Running ffmpeg for frame extraction: %v\n", cmd.Args)
 	output, err := cmd.CombinedOutput()
@@ -470,7 +486,10 @@ func GenerateAnimatedPreviewGPU(srcPath, gifPath, hwaccel string) error {
 		return fmt.Errorf("unsupported hardware acceleration: %s", hwaccel)
 	}
 
-	cmd := exec.Command("ffmpeg", cmdArgs...)
+	cmd, err := ffmpeg.NewFFmpegCommand(cmdArgs...)
+	if err != nil {
+		return fmt.Errorf("failed to get ffmpeg: %w", err)
+	}
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

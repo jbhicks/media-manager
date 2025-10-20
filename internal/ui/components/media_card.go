@@ -19,6 +19,8 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	xwidget "fyne.io/x/fyne/widget"
+
+	"github.com/user/media-manager/internal/ffmpeg"
 )
 
 // logToDebugFile appends a message to app_debug.log for error tracking
@@ -147,13 +149,31 @@ func (mc *MediaCard) generateImageThumbnail() {
 	thumbPath := filepath.Join(thumbDir, thumbFileName)
 	// Only generate if not exists
 	if _, err := os.Stat(thumbPath); os.IsNotExist(err) {
-		// Use ffmpeg to generate a thumbnail for any image type
+		// Use embedded ffmpeg to generate a thumbnail for any image type
 		var stderr bytes.Buffer
-		cmd := exec.Command("ffmpeg", "-i", mc.filePath, "-vf", "scale=216:216:force_original_aspect_ratio=increase,crop=216:216", "-frames:v", "1", thumbPath)
+		cmd, err := ffmpeg.NewFFmpegCommand("-i", mc.filePath, "-vf", "scale=216:216:force_original_aspect_ratio=increase,crop=216:216", "-frames:v", "1", thumbPath)
+		if err != nil {
+			logToDebugFile(fmt.Sprintf("[ERROR] Failed to get ffmpeg: %v\n", err))
+			mc.content = widget.NewIcon(theme.FileImageIcon())
+			mc.Refresh()
+			return
+		}
 		cmd.Stderr = &stderr
-		err := cmd.Run()
+		err = cmd.Run()
 		if err != nil {
 			logToDebugFile(fmt.Sprintf("[ERROR] ffmpeg failed to generate thumbnail for %s: %v\n[ffmpeg stderr]: %s\n", mc.filePath, err, stderr.String()))
+			// Try to show the original image as fallback
+			if file, err := os.Open(mc.filePath); err == nil {
+				defer file.Close()
+				if _, _, err := image.DecodeConfig(file); err == nil {
+					img := canvas.NewImageFromFile(mc.filePath)
+					img.FillMode = canvas.ImageFillContain
+					mc.content = img
+					mc.Refresh()
+					return
+				}
+			}
+			// Last resort: show icon
 			mc.content = widget.NewIcon(theme.FileImageIcon())
 			mc.Refresh()
 			return
@@ -200,16 +220,25 @@ func (mc *MediaCard) generateGifPreview() {
 
 	if _, err := os.Stat(gifPath); os.IsNotExist(err) {
 		var stderr bytes.Buffer
-		cmd := exec.Command("ffmpeg",
+		cmd, err := ffmpeg.NewFFmpegCommand(
 			"-i", mc.filePath,
 			"-vf", "fps=12,scale=216:216:force_original_aspect_ratio=increase,crop=216:216",
 			"-frames:v", "24",
 			gifPath)
+		if err != nil {
+			logToDebugFile(fmt.Sprintf("[ERROR] Failed to get ffmpeg: %v\n", err))
+			mc.content = widget.NewIcon(theme.FileVideoIcon())
+			mc.Refresh()
+			return
+		}
 		cmd.Stderr = &stderr
-		err := cmd.Run()
+		err = cmd.Run()
 		if err != nil {
 			logToDebugFile(fmt.Sprintf("[ERROR] ffmpeg failed to generate GIF for %s: %v\n[ffmpeg stderr]: %s\n", mc.filePath, err, stderr.String()))
-			mc.content = widget.NewIcon(theme.FileImageIcon())
+			// Show video icon as fallback with a loading indicator style
+			icon := widget.NewIcon(theme.FileVideoIcon())
+			mc.content = icon
+			mc.hasAnimation = false
 			mc.Refresh()
 			return
 		}
@@ -414,9 +443,9 @@ func (r *mediaCardRenderer) Destroy() {
 func GetMediaType(filename string) MediaType {
 	ext := strings.ToLower(filepath.Ext(filename))
 	switch ext {
-	case ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp":
+	case ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif", ".ico", ".svg":
 		return MediaTypeImage
-	case ".mp4", ".webm", ".ogv", ".flv", ".mov", ".avi", ".mkv", ".ts", ".3gp":
+	case ".mp4", ".webm", ".ogv", ".flv", ".mov", ".avi", ".mkv", ".ts", ".3gp", ".mpeg", ".mpg", ".wmv", ".m4v", ".vob", ".divx":
 		return MediaTypeVideo
 	default:
 		return MediaTypeFile
