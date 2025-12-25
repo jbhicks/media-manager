@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    user: "${UID}:${GID}"
+    network_mode: host
+    volumes:
+      - ${HOME}/jellyfin/config:/config
+      - ${HOME}/jellyfin/cache:/cache
+      - /mnt/media/Movies:/media/movies:ro
+      - /mnt/media/Series:/media/series:ro
+      - /mnt/media/Downloads:/media/downloads:ro
+    restart: unless-stopped
+    environment:
+      - JELLYFIN_PublishedServerUrl=http://localhost:8096
+    # Hardware acceleration (optional - uncomment if you have Intel/AMD GPU)
+    # devices:
+    #   - /dev/dri:/dev/dri

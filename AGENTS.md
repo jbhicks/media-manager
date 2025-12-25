@@ -29,6 +29,72 @@ Never run `make dev`. The user has it running in a separate process.
 - Use `context.Context` for cancellation and timeouts
 - Prefer composition over inheritance
 
+## Web UI Styling Guidelines
+
+### CSS Framework Reference
+The project uses **GitHub Primer CSS** as a reference for styling patterns. The Primer CSS repository is available as a git submodule in `reference/primer-css/`.
+
+**Key Primer Resources**:
+- **Source Files**: `reference/primer-css/src/` - Contains all component styles
+- **Documentation**: `reference/primer-css/docs/` - Component documentation and examples
+- **Variables**: `reference/primer-css/src/support/variables/` - Color schemes, spacing, typography
+
+### Styling Principles
+When working on the web UI (`web/index.html` or server-side HTML templates):
+
+1. **Use Primer Patterns**: Reference Primer CSS components for:
+   - Color schemes (dark mode friendly)
+   - Spacing and layout patterns
+   - Component design (buttons, cards, forms)
+   - Typography hierarchy
+
+2. **CSS Variables**: Define CSS custom properties (variables) for:
+   - Colors (background, text, accent, borders)
+   - Spacing (margins, padding, gaps)
+   - Transitions and animations
+   - Keep consistent with Primer's design system
+
+3. **Component Structure**: Follow Primer's component patterns:
+   - **Buttons**: `reference/primer-css/src/buttons/`
+   - **Cards/Boxes**: `reference/primer-css/src/box/`
+   - **Navigation**: `reference/primer-css/src/navigation/`
+   - **Forms**: `reference/primer-css/src/forms/`
+   - **Layout**: `reference/primer-css/src/layout/`
+
+4. **Responsive Design**: 
+   - Mobile-first approach
+   - Use Primer's breakpoint patterns
+   - Ensure touch-friendly targets (min 44px)
+
+5. **Dark Mode**:
+   - Use Primer's dark color schemes as reference
+   - Ensure sufficient contrast ratios
+   - Test all states (hover, active, disabled)
+
+6. **Accessibility**:
+   - Follow Primer's accessibility patterns
+   - Proper ARIA labels and roles
+   - Keyboard navigation support
+   - Focus indicators
+
+### Current Tech Stack
+- **Frontend**: HTMX (no JavaScript framework)
+- **Styling**: Custom CSS (no external CSS framework, Primer used as reference only)
+- **Server**: Go HTTP handlers returning HTML partials
+
+### Example Usage
+When creating a new UI component:
+```css
+/* Look at reference/primer-css/src/buttons/button.scss for patterns */
+.btn-primary {
+    /* Use Primer's color and spacing patterns */
+    background: var(--accent-blue);
+    padding: 8px 16px;
+    border-radius: 6px;
+    /* ... */
+}
+```
+
 ## Fyne GUI Development
 
 When making any changes to the GUI, you must follow these rules to avoid threading issues:
@@ -115,6 +181,7 @@ Correct:
   - **Thumbnails**: Go image packages, FFmpeg for videos
   - **File Watching**: fsnotify for real-time updates
   - **Testing**: Go standard testing, testify for assertions
+  - **Web UI**: HTMX for dynamic interactions, Primer CSS as styling reference
 
 ---
 

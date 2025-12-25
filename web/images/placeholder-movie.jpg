@@ -1,0 +1,29 @@
+<svg width="300" height="450" viewBox="0 0 300 450" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="300" height="450" fill="#1a1a2e"/>
+  
+  <!-- Film strip design -->
+  <rect x="50" y="100" width="200" height="250" rx="10" fill="#2a2a3e" stroke="#6366f1" stroke-width="2"/>
+  
+  <!-- Film frames -->
+  <rect x="60" y="110" width="60" height="45" rx="3" fill="#0a0a0f" stroke="#6366f1" stroke-width="1"/>
+  <rect x="130" y="110" width="60" height="45" rx="3" fill="#0a0a0f" stroke="#6366f1" stroke-width="1"/>
+  
+  <rect x="60" y="165" width="60" height="45" rx="3" fill="#0a0a0f" stroke="#6366f1" stroke-width="1"/>
+  <rect x="130" y="165" width="60" height="45" rx="3" fill="#0a0a0f" stroke="#6366f1" stroke-width="1"/>
+  
+  <rect x="60" y="220" width="60" height="45" rx="3" fill="#0a0a0f" stroke="#6366f1" stroke-width="1"/>
+  <rect x="130" y="220" width="60" height="45" rx="3" fill="#0a0a0f" stroke="#6366f1" stroke-width="1"/>
+  
+  <rect x="60" y="275" width="60" height="45" rx="3" fill="#0a0a0f" stroke="#6366f1" stroke-width="1"/>
+  <rect x="130" y="275" width="60" height="45" rx="3" fill="#0a0a0f" stroke="#6366f1" stroke-width="1"/>
+  
+  <!-- Center holes -->
+  <rect x="85" y="130" width="30" height="30" rx="15" fill="#0a0a0f"/>
+  <rect x="85" y="185" width="30" height="30" rx="15" fill="#0a0a0f"/>
+  <rect x="85" y="240" width="30" height="30" rx="15" fill="#0a0a0f"/>
+  
+  <!-- Title text -->
+  <text x="150" y="50" text-anchor="middle" fill="#6366f1" font-family="Arial, sans-serif" font-size="18" font-weight="bold">🎬 MEDIA</text>
+  <text x="150" y="75" text-anchor="middle" fill="#a1a1aa" font-family="Arial, sans-serif" font-size="12">MANAGER</text>
+</svg>

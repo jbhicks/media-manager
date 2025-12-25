@@ -1,0 +1,29 @@
+{
+  "dependencies": {
+    "@hisma/server-puppeteer": "^0.6.5",
+    "puppeteer": "^24.34.0"
+  },
+  "name": "media-manager",
+  "version": "1.0.0",
+  "description": "A native desktop media management application built with Go and Fyne for browsing, organizing, and tagging image and video files.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "example": "examples"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jbhicks/media-manager.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/jbhicks/media-manager/issues"
+  },
+  "homepage": "https://github.com/jbhicks/media-manager#readme"
+}
