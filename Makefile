@@ -10,9 +10,11 @@ GORUN=$(GOCMD) run
 
 # Project variables
 BINARY_NAME=media-manager
+SERVICE_BINARY=media-manager-service
 CMD_PATH=./cmd/media-manager
+SERVICE_PATH=./cmd/media-manager-service
 
-.PHONY: all dev build clean clear-cache test
+.PHONY: all dev build build-service clean clear-cache test install install-service
 
 all: dev
 
@@ -25,6 +27,11 @@ dev:
 
 build:
 	$(GOBUILD) -o $(CURDIR)/bin/$(BINARY_NAME) $(CMD_PATH)/main.go
+
+build-service:
+	$(GOBUILD) -o $(CURDIR)/bin/$(SERVICE_BINARY) $(SERVICE_PATH)/main.go
+
+build-all: build build-service
 
 clean:
 	$(GOCLEAN)
@@ -50,3 +57,13 @@ install:
 	mkdir -p "$$install_dir"; \
 	cp bin/$(BINARY_NAME) "$$install_dir/$(BINARY_NAME)"; \
 	echo "Installed $(BINARY_NAME) to $$install_dir"
+
+install-service:
+	$(MAKE) build-service
+	@echo "Installing service binary to /usr/local/bin (requires sudo)..."
+	@echo "sudo cp bin/$(SERVICE_BINARY) /usr/local/bin/$(SERVICE_BINARY)" > sudo_install_service.sh
+	@echo "sudo chmod +x /usr/local/bin/$(SERVICE_BINARY)" >> sudo_install_service.sh
+	@echo "sudo cp media-manager-service@.service /etc/systemd/system/" >> sudo_install_service.sh
+	@echo "sudo systemctl daemon-reload" >> sudo_install_service.sh
+	@echo "Please run: ./sudo_install_service.sh"
+	@chmod +x sudo_install_service.sh

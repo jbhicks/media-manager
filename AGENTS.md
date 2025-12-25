@@ -17,7 +17,21 @@ When `air` is running for auto-reloading, build messages are logged to `tmp/buil
 
 ### Important Note
 Agents should never ask for permission to proceed with tasks. Always take action directly unless explicitly instructed otherwise.
-Never run `make dev`. The user has it running in a separate process.
+
+### Service Auto-Reload
+The service (`cmd/media-manager-service`) runs with `air` for auto-reloading during development. When you make changes to service code:
+- `air` automatically detects changes and rebuilds the service binary
+- The service restarts automatically
+- Build output goes to `tmp/build.log`
+- Service output goes to `tmp/service.log`
+- **Wait 2-3 seconds after making changes** for the rebuild to complete
+
+If you need to verify the service restarted, check:
+```bash
+tail -20 tmp/service.log  # Should show recent startup messages
+```
+
+Note: The GUI application (`cmd/media-manager`) is separate and does NOT use auto-reload.
 - Follow standard Go conventions (gofmt, go vet)
 - Use Go modules for dependency management
 - Package names should be lowercase, single words
@@ -81,6 +95,93 @@ When working on the web UI (`web/index.html` or server-side HTML templates):
 - **Frontend**: HTMX (no JavaScript framework)
 - **Styling**: Custom CSS (no external CSS framework, Primer used as reference only)
 - **Server**: Go HTTP handlers returning HTML partials
+
+### HTMX-First Development Philosophy
+
+**IMPORTANT**: This project uses **HTMX for all interactive features**. Minimize custom JavaScript whenever possible.
+
+**When to use HTMX (preferred):**
+- Navigation and routing (`hx-get`, `hx-push-url`)
+- Form submissions (`hx-post`, `hx-put`, `hx-delete`)
+- Dynamic content updates (`hx-target`, `hx-swap`)
+- Polling and live updates (`hx-trigger="every 2s"`)
+- Conditional loading (`hx-trigger="revealed"`)
+- Event-driven updates (`hx-trigger="click, keyup"`)
+- Server-sent events and WebSockets (`hx-sse`, `hx-ws`)
+
+**When custom JavaScript is acceptable:**
+- UI-only operations (animations, transitions)
+- Client-side state management (active nav indicators)
+- Toast notifications and alerts
+- Browser APIs (localStorage, sessionStorage, clipboard)
+- Third-party integrations (analytics, chat widgets)
+
+**Anti-patterns to avoid:**
+- ❌ Using `fetch()` or `XMLHttpRequest` when HTMX can handle it
+- ❌ Manual DOM manipulation that HTMX can do declaratively
+- ❌ Client-side routing when HTMX `hx-push-url` works
+- ❌ Complex JavaScript state management
+- ❌ Heavy JavaScript frameworks or libraries
+
+**HTMX Routing Pattern (Server-Side Detection):**
+
+The app uses smart routing that detects the `HX-Request` header:
+- **HTMX requests** (with `HX-Request: true` header) → Returns HTML partial only
+- **Direct browser requests** (no header) → Returns full page with layout
+
+Example server-side handler:
+```go
+func (s *HTTPServer) handleSuggestionsPage(w http.ResponseWriter, r *http.Request) {
+    if r.Header.Get("HX-Request") == "true" {
+        // Return partial for HTMX to swap
+        s.handleSuggestionsPartial(w, r)
+        return
+    }
+    // Return full page with layout for direct access
+    s.serveFullPage(w, r, "suggestions")
+}
+```
+
+Example navigation links:
+```html
+<!-- GOOD: Clean URLs with HTMX -->
+<a href="/suggestions" 
+   hx-get="/suggestions" 
+   hx-target="#content"
+   hx-push-url="true">
+   Suggestions
+</a>
+
+<!-- AVOID: Hash routing or manual JavaScript -->
+<a href="#suggestions" onclick="navigate('suggestions')">Suggestions</a>
+```
+
+**Benefits of this approach:**
+- ✅ Clean, shareable URLs (`/suggestions` not `#suggestions`)
+- ✅ Page refresh works correctly (loads full page with styling)
+- ✅ Browser back/forward buttons work automatically
+- ✅ HTMX handles all routing declaratively
+- ✅ No client-side routing JavaScript needed
+
+**IMPORTANT: Use Absolute Paths for Static Assets**
+
+When using HTMX routing with different URL paths, always use **absolute paths** for CSS, JavaScript, and images:
+
+```html
+<!-- GOOD: Absolute paths work from any route -->
+<link rel="stylesheet" href="/web/styles.css">
+<script src="/web/app.js"></script>
+<img src="/web/images/logo.png">
+
+<!-- BAD: Relative paths break on different routes -->
+<link rel="stylesheet" href="styles.css">        <!-- Works on /web/index.html, fails on /suggestions -->
+<script src="app.js"></script>                   <!-- Works on /web/index.html, fails on /suggestions -->
+<img src="images/logo.png">                       <!-- Works on /web/index.html, fails on /suggestions -->
+```
+
+Why: When the page URL changes (e.g., from `/web/index.html` to `/suggestions`), relative paths resolve differently:
+- At `/web/index.html`: `styles.css` → `/web/styles.css` ✅
+- At `/suggestions`: `styles.css` → `/suggestions/styles.css` ❌
 
 ### Example Usage
 When creating a new UI component:
@@ -182,6 +283,28 @@ Correct:
   - **File Watching**: fsnotify for real-time updates
   - **Testing**: Go standard testing, testify for assertions
   - **Web UI**: HTMX for dynamic interactions, Primer CSS as styling reference
+
+---
+
+## Browser Testing and Performance
+
+When analyzing website performance, debugging web applications, or automating browser interactions, use the `chrome-devtools` MCP tools.
+
+**Available capabilities:**
+- **Performance analysis**: Record traces and extract actionable performance insights
+- **Browser automation**: Reliable automation with puppeteer (click, fill forms, navigate)
+- **Network debugging**: Analyze network requests, check browser console
+- **Visual debugging**: Take screenshots and DOM snapshots
+- **Emulation**: Test different devices, viewports, and network conditions
+
+**Usage pattern:**
+```
+use chrome-devtools to check the performance of https://example.com
+use chrome-devtools to take a screenshot of https://example.com
+use chrome-devtools to analyze network requests for https://example.com
+```
+
+**Note**: The Chrome DevTools MCP server will automatically start a Chrome instance when needed. Always reference it explicitly in prompts when browser automation or performance analysis is required.
 
 ---
 
