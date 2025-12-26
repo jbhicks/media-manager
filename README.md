@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="web/images/logo.svg" alt="Media Manager Logo" width="200">
+</p>
+
 # Media Manager
 
 A native desktop media management application built with Go and Fyne for browsing, organizing, and tagging image and video files.

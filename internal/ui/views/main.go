@@ -146,9 +146,17 @@ func (v *MainView) RefreshMediaGrid() {
 				if v.filter != "" && !strings.Contains(strings.ToLower(fileName), strings.ToLower(v.filter)) {
 					continue
 				}
+
 				mediaType := components.GetMediaType(fileName)
 				var thumbPath string
-				card := components.NewMediaCard(filePath, fileName, mediaType, thumbPath)
+				// Look up in database to get existing thumbnail/preview path
+				if dbFile, err := v.database.GetMediaFileByPath(filePath); err == nil {
+					if dbFile.PreviewPath != "" {
+						thumbPath = dbFile.PreviewPath
+					}
+				}
+
+				card := components.NewMediaCard(filePath, fileName, mediaType, thumbPath, v.config.ThumbnailDir)
 				card.SetOnDelete(func() {
 					v.mediaGridContainer.Remove(card)
 					v.mediaGridContainer.Refresh()
@@ -197,9 +205,17 @@ func (v *MainView) createMediaGrid() *fyne.Container {
 			if v.filter != "" && !strings.Contains(strings.ToLower(fileName), strings.ToLower(v.filter)) {
 				continue
 			}
+
 			mediaType := components.GetMediaType(fileName)
 			var thumbPath string
-			card := components.NewMediaCard(filePath, fileName, mediaType, thumbPath)
+			// Look up in database to get existing thumbnail/preview path
+			if dbFile, err := v.database.GetMediaFileByPath(filePath); err == nil {
+				if dbFile.PreviewPath != "" {
+					thumbPath = dbFile.PreviewPath
+				}
+			}
+
+			card := components.NewMediaCard(filePath, fileName, mediaType, thumbPath, v.config.ThumbnailDir)
 			card.SetOnDelete(func() {
 				v.RefreshMediaGrid()
 			})
@@ -314,7 +330,7 @@ func (v *MainView) Build() fyne.CanvasObject {
 	} else if v.foldersTree == nil {
 		fmt.Println("[WARN] foldersTree is nil, cannot select root directory")
 	}
-	return container.NewVBox(toolbar, split)
+	return container.NewBorder(toolbar, nil, nil, nil, split)
 }
 
 func NewMainView(cfg *config.Config, db *db.Database, window fyne.Window, mediaDir string) *MainView {

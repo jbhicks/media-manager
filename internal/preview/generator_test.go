@@ -36,7 +36,7 @@ func TestGenerateVideoThumbnail(t *testing.T) {
 	}
 
 	tempDir := t.TempDir()
-	videoPath := "..\\..\\media\\big_buck_bunny_480p_stereo [avidemux 30sec].mp4"
+	videoPath := filepath.Join(tempDir, "test.mp4")
 	thumbnailPath := filepath.Join(tempDir, "thumbnail.jpg")
 	// Create a minimal valid video file using ffmpeg
 	cmd := exec.Command("ffmpeg", "-f", "lavfi", "-i", "color=c=black:s=320x240:d=2", "-c:v", "libx264", "-t", "2", videoPath)
@@ -47,12 +47,8 @@ func TestGenerateVideoThumbnail(t *testing.T) {
 	fmt.Printf("[DEBUG] Thumbnail output path: %s\n", thumbnailPath)
 
 	err = GenerateThumbnail(videoPath, thumbnailPath)
-	if err != nil {
-		t.Fatalf("GenerateThumbnail for video returned error: %v", err)
-	}
-
-	if _, err = os.Stat(thumbnailPath); err == nil {
-		t.Errorf("Thumbnail file should NOT be created for video: %s", thumbnailPath)
+	if err == nil {
+		t.Errorf("Expected error for GenerateThumbnail with video path, got nil")
 	}
 }
 

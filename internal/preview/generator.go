@@ -1,19 +1,94 @@
 package preview
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
-	"github.com/nfnt/resize"
 	"image"
-	"image/jpeg"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/user/media-manager/internal/ffmpeg"
 )
+
+var (
+	poolOnce sync.Once
+	taskChan chan task
+)
+
+type task struct {
+	srcPath   string
+	destPath  string
+	mediaType string
+	done      chan error
+}
+
+func initPool() {
+	poolOnce.Do(func() {
+		numWorkers := runtime.NumCPU()
+		if numWorkers > 4 {
+			numWorkers = 4 // Cap at 4 workers to avoid overwhelming I/O
+		}
+		taskChan = make(chan task, 100)
+		for i := 0; i < numWorkers; i++ {
+			go worker()
+		}
+	})
+}
+
+func worker() {
+	for t := range taskChan {
+		var err error
+		if t.mediaType == "video" {
+			err = GenerateAnimatedPreview(t.srcPath, t.destPath)
+		} else {
+			err = GenerateThumbnail(t.srcPath, t.destPath)
+		}
+		if t.done != nil {
+			t.done <- err
+		}
+	}
+}
+
+// GenerateUniqueFilename creates a unique hex filename based on the source path
+func GenerateUniqueFilename(filePath, extension string) string {
+	hash := sha256.Sum256([]byte(filePath))
+	return hex.EncodeToString(hash[:]) + extension
+}
+
+// GetPreview returns the path to the preview, generating it in the background if it doesn't exist.
+func GetPreview(srcPath string, mediaType string, thumbDir string) (string, error) {
+	initPool()
+
+	ext := ".jpg"
+	if mediaType == "video" {
+		ext = ".gif"
+	}
+
+	destFilename := GenerateUniqueFilename(srcPath, ext)
+	destPath := filepath.Join(thumbDir, destFilename)
+
+	if _, err := os.Stat(destPath); err == nil {
+		return destPath, nil
+	}
+
+	// Queue for generation
+	select {
+	case taskChan <- task{srcPath: srcPath, destPath: destPath, mediaType: mediaType}:
+		// Task queued
+	default:
+		// Queue full, maybe return error or log
+		fmt.Printf("[WARN] Preview task queue full for: %s\n", srcPath)
+	}
+
+	return destPath, nil // Return the path even if it doesn't exist yet
+}
 
 func getUserConfig(key string, defaultValue int) int {
 	// Placeholder implementation for user configuration
@@ -46,8 +121,7 @@ func GenerateThumbnail(filePath, thumbPath string) error {
 
 	// Only generate static thumbnails for images
 	fileExt := strings.ToLower(filepath.Ext(filePath))
-	switch {
-	case isImageFile(fileExt):
+	if IsImageFile(fileExt) {
 		// Ensure the output directory exists
 		thumbDir := filepath.Dir(thumbPath)
 		if err := os.MkdirAll(thumbDir, 0755); err != nil {
@@ -58,104 +132,72 @@ func GenerateThumbnail(filePath, thumbPath string) error {
 			return fmt.Errorf("source file does not exist: %s", filePath)
 		}
 		return generateImageThumbnail(filePath, thumbPath)
-	case isVideoFile(fileExt):
-		// No longer generate static thumbnails for videos
-		return nil
-	default:
-		return fmt.Errorf("unsupported file type: %s", fileExt)
 	}
+	return fmt.Errorf("unsupported file type for static thumbnail: %s", fileExt)
 }
 
-func isImageFile(ext string) bool {
-	imageExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".tiff", ".bmp"}
+// GetMetadata extracts width, height and duration using ffprobe
+func GetMetadata(filePath string) (width, height, duration int, err error) {
+	cmd, err := ffmpeg.NewFFprobeCommand(
+		"-v", "error",
+		"-select_streams", "v:0",
+		"-show_entries", "stream=width,height,duration",
+		"-of", "csv=s=x:p=0",
+		filePath,
+	)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("ffprobe failed: %w", err)
+	}
+
+	// Format: 1920x1080x123.456 (or just 1920x1080 if duration missing)
+	parts := strings.Split(strings.TrimSpace(string(output)), "x")
+	if len(parts) >= 2 {
+		width, _ = strconv.Atoi(parts[0])
+		height, _ = strconv.Atoi(parts[1])
+	}
+	if len(parts) >= 3 {
+		durFloat, _ := strconv.ParseFloat(parts[2], 64)
+		duration = int(durFloat)
+	}
+
+	return width, height, duration, nil
+}
+
+func IsImageFile(ext string) bool {
+	imageExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".tiff", ".bmp", ".ico", ".svg"}
 	return slices.Contains(imageExts, ext)
 }
 
-func isVideoFile(ext string) bool {
-	videoExts := []string{".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v", ".3gp"}
+func IsVideoFile(ext string) bool {
+	videoExts := []string{".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v", ".3gp", ".ogv", ".flv", ".asf", ".dv", ".mp2", ".mpg", ".mpeg", ".rm", ".wmv", ".ts", ".vob", ".divx"}
 	return slices.Contains(videoExts, ext)
 }
 
 func generateImageThumbnail(srcPath, thumbPath string) error {
-	// Open source image
-	file, err := os.Open(srcPath)
+	fmt.Printf("[DEBUG] Generating blurred-background thumbnail for: %s\n", srcPath)
+
+	cmd, err := ffmpeg.NewFFmpegCommand(
+		"-loglevel", "warning",
+		"-i", srcPath,
+		"-vf", "scale=216:216:force_original_aspect_ratio=increase,boxblur=20,setsar=1[bg];[0:v]scale=216:216:force_original_aspect_ratio=decrease,setsar=1[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2",
+		"-vframes", "1",
+		"-y",
+		thumbPath,
+	)
 	if err != nil {
-		return fmt.Errorf("failed to open image: %w", err)
+		return fmt.Errorf("failed to get ffmpeg: %w", err)
 	}
-	defer file.Close()
 
-	// Get file info to verify it's a valid file
-	fileInfo, err := file.Stat()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to get file info: %w", err)
+		return fmt.Errorf("ffmpeg failed to generate image thumbnail: %w\n[ffmpeg output]: %s", err, string(output))
 	}
 
-	if fileInfo.Size() == 0 {
-		return fmt.Errorf("image file is empty")
-	}
-
-	fmt.Printf("[DEBUG] Image file size: %d bytes\n", fileInfo.Size())
-
-	// Decode image
-	img, format, err := image.Decode(file)
-	if err != nil {
-		// Try to debug what went wrong
-		file.Seek(0, 0) // Reset to beginning of file
-		buffer := make([]byte, 512)
-		n, _ := file.Read(buffer)
-		fmt.Printf("[DEBUG] Image decode failed. First %d bytes: %v\n", n, buffer[:n])
-		return fmt.Errorf("failed to decode image (format: %s): %w", format, err)
-	}
-	fmt.Printf("[DEBUG] Successfully decoded image format: %s\n", format)
-
-	// Get the original dimensions
-	bounds := img.Bounds()
-	fmt.Printf("[DEBUG] Original image dimensions: %dx%d\n", bounds.Dx(), bounds.Dy())
-
-	// Target size for the thumbnail
-	targetWidth, targetHeight := uint(180), uint(180)
-
-	// Calculate scaling factor to cover the target dimensions
-	originalWidth, originalHeight := uint(bounds.Dx()), uint(bounds.Dy())
-	scaleX := float64(targetWidth) / float64(originalWidth)
-	scaleY := float64(targetHeight) / float64(originalHeight)
-
-	var scaledImg image.Image
-	if scaleX > scaleY { // Original is taller than target aspect ratio, scale by width
-		scaledImg = resize.Resize(targetWidth, 0, img, resize.Lanczos3)
-	} else { // Original is wider than target aspect ratio, scale by height
-		scaledImg = resize.Resize(0, targetHeight, img, resize.Lanczos3)
-	}
-
-	// Calculate crop rectangle
-	scaledBounds := scaledImg.Bounds()
-	cropX := (scaledBounds.Dx() - int(targetWidth)) / 2
-	cropY := (scaledBounds.Dy() - int(targetHeight)) / 2
-
-	// Crop the scaled image using SubImage
-	type SubImager interface {
-		SubImage(r image.Rectangle) image.Image
-	}
-	subImager, ok := scaledImg.(SubImager)
-	if !ok {
-		return fmt.Errorf("image does not support SubImage interface")
-	}
-
-	resizedImg := subImager.SubImage(image.Rect(cropX, cropY, cropX+int(targetWidth), cropY+int(targetHeight)))
-
-	// Save thumbnail
-	outFile, err := os.Create(thumbPath)
-	if err != nil {
-		return fmt.Errorf("failed to create thumbnail file: %w", err)
-	}
-	defer outFile.Close()
-
-	err = jpeg.Encode(outFile, resizedImg, &jpeg.Options{Quality: 85})
-	if err != nil {
-		return fmt.Errorf("failed to encode thumbnail: %w", err)
-	}
-
-	fmt.Printf("[DEBUG] Successfully created thumbnail at: %s\n", thumbPath)
 	return nil
 }
 
@@ -222,7 +264,7 @@ func getVideoDuration(filePath string) (time.Duration, error) {
 // GenerateAnimatedPreview creates a single animated GIF for video preview
 
 func GenerateAnimatedPreviewCPU(srcPath, gifPath string) error {
-	fmt.Printf("[DEBUG] Generating scene-overview animated GIF preview for: %s\n", srcPath)
+	fmt.Printf("[DEBUG] Generating 2x2 animated grid preview for: %s\n", srcPath)
 
 	// Check if animated preview already exists
 	if _, err := os.Stat(gifPath); err == nil {
@@ -242,31 +284,21 @@ func GenerateAnimatedPreviewCPU(srcPath, gifPath string) error {
 	}
 	durSec := duration.Seconds()
 
-	// Decide on number of segments and segment length
-	numSegments := 10
-	segLen := 1.0 // seconds
-	if durSec < float64(numSegments+1) {
-		numSegments = int(durSec) - 1
-		if numSegments < 1 {
-			numSegments = 1
-		}
-	}
-	interval := durSec / float64(numSegments+1)
+	// Capture 4 segments at 10%, 40%, 70%, 90%
+	// Using a shorter segment (e.g. 0.8s) to keep GIF size small
+	segLen := 0.8
+	p1, p4, p7, p9 := durSec*0.1, durSec*0.4, durSec*0.7, durSec*0.9
 
-	// Build filtergraph for ffmpeg
-	var filterParts []string
-	var concatInputs []string
-	for i := 0; i < numSegments; i++ {
-		start := interval * float64(i+1)
-		end := start + segLen
-		filterParts = append(filterParts,
-			fmt.Sprintf("[0:v]trim=start=%.3f:end=%.3f,setpts=PTS-STARTPTS[v%d]", start, end, i))
-		concatInputs = append(concatInputs, fmt.Sprintf("[v%d]", i))
-	}
-	filterParts = append(filterParts,
-		fmt.Sprintf("%sconcat=n=%d:v=1:a=0,scale=180:101:force_original_aspect_ratio=increase,crop=180:101,fps=12[outv]",
-			strings.Join(concatInputs, ""), numSegments))
-	filtergraph := strings.Join(filterParts, ";")
+	// Filtergraph for 2x2 grid
+	// Each quadrant is 108x108 (total 216x216)
+	filtergraph := fmt.Sprintf(
+		"[0:v]trim=start=%.2f:end=%.2f,setpts=PTS-STARTPTS,scale=108:108:force_original_aspect_ratio=increase,crop=108:108[v1];"+
+			"[0:v]trim=start=%.2f:end=%.2f,setpts=PTS-STARTPTS,scale=108:108:force_original_aspect_ratio=increase,crop=108:108[v2];"+
+			"[0:v]trim=start=%.2f:end=%.2f,setpts=PTS-STARTPTS,scale=108:108:force_original_aspect_ratio=increase,crop=108:108[v3];"+
+			"[0:v]trim=start=%.2f:end=%.2f,setpts=PTS-STARTPTS,scale=108:108:force_original_aspect_ratio=increase,crop=108:108[v4];"+
+			"[v1][v2][v3][v4]xstack=inputs=4:layout=0_0|108_0|0_108|108_108,fps=12[outv]",
+		p1, p1+segLen, p4, p4+segLen, p7, p7+segLen, p9, p9+segLen,
+	)
 
 	cmd, err := ffmpeg.NewFFmpegCommand(
 		"-loglevel", "warning",
@@ -280,22 +312,12 @@ func GenerateAnimatedPreviewCPU(srcPath, gifPath string) error {
 		return fmt.Errorf("failed to get ffmpeg: %w", err)
 	}
 
-	fmt.Printf("[DEBUG] Running ffmpeg for scene-overview GIF: %v\n", cmd.Args)
-	fmt.Printf("[DEBUG] ffmpeg filtergraph: %s\n", filtergraph)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Printf("[ERROR] ffmpeg error: %v\n[ffmpeg output]: %s\n", err, string(output))
-		return fmt.Errorf("failed to generate animated preview: %v, output: %s\n", err, string(output))
-	}
-	if len(output) > 0 {
-		fmt.Printf("[ffmpeg warning]: %s\n", string(output))
-	}
-	// Verify the GIF was created
-	if _, err := os.Stat(gifPath); err != nil {
-		return fmt.Errorf("animated preview file missing after generation: %s", gifPath)
+		return fmt.Errorf("ffmpeg failed to generate 2x2 animated preview: %v, output: %s\n", err, string(output))
 	}
 
-	fmt.Printf("[DEBUG] Successfully generated scene-overview animated preview: %s\n", gifPath)
+	fmt.Printf("[DEBUG] Successfully generated 2x2 animated preview: %s\n", gifPath)
 	return nil
 }
 

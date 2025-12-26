@@ -1,7 +1,7 @@
 # Binaries
-media-manager
-media-manager-service
-generate-suggestions
+bin/media-manager.exe
+bin/media-manager
+main.exe
 main
 bin/test-service
 

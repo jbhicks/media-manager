@@ -10,8 +10,10 @@ import (
 
 	"github.com/user/media-manager/internal/config"
 	"github.com/user/media-manager/internal/db"
+	"github.com/user/media-manager/internal/ffmpeg"
 	"github.com/user/media-manager/internal/preview"
 	"github.com/user/media-manager/internal/scanner"
+	"github.com/user/media-manager/internal/ui/assets"
 	"github.com/user/media-manager/internal/ui/views"
 	"github.com/user/media-manager/pkg/models"
 )
@@ -29,6 +31,11 @@ type MediaManagerApp struct {
 func NewMediaManagerApp(mediaDir string) (*MediaManagerApp, error) {
 	// Check CLEAR_DB_ON_START env var
 	clearDB := os.Getenv("CLEAR_DB_ON_START") == "true"
+
+	// Initialize FFmpeg
+	if err := ffmpeg.Initialize(); err != nil {
+		fmt.Printf("[ERROR] Failed to initialize ffmpeg: %v\n", err)
+	}
 
 	cfg, err := config.LoadConfig(mediaDir)
 	if err != nil {
@@ -55,8 +62,18 @@ func NewMediaManagerApp(mediaDir string) (*MediaManagerApp, error) {
 	}
 
 	fyneApp := app.NewWithID("com.mediamanager.app")
+	if len(assets.LogoSVG) > 0 {
+		fmt.Printf("[DEBUG] Setting app icon (SVG) (size: %d bytes)\n", len(assets.LogoSVG))
+		logoRes := fyne.NewStaticResource("logo.svg", assets.LogoSVG)
+		fyneApp.SetIcon(logoRes)
+	} else {
+		fmt.Println("[WARN] Logo asset is empty or nil!")
+	}
 
 	window := fyneApp.NewWindow("Media Manager")
+	if len(assets.LogoSVG) > 0 {
+		window.SetIcon(fyne.NewStaticResource("logo.svg", assets.LogoSVG))
+	}
 
 	// Load window size and position from config, or use defaults
 	if cfg.WindowWidth > 0 && cfg.WindowHeight > 0 {
@@ -102,6 +119,9 @@ func (app *MediaManagerApp) Run() {
 	// Rebuild missing animated previews for videos
 	app.RebuildMissingPreviews()
 
+	// Refresh UI to show newly found media and previews
+	app.mainView.RefreshMediaGrid()
+
 	// Start watching the media directory for changes
 	fmt.Printf("[DEBUG] app.go: Starting file watcher for %s\n", app.mediaDir)
 	err = app.scanner.StartWatching([]string{app.mediaDir})
@@ -129,15 +149,16 @@ func (app *MediaManagerApp) RebuildMissingPreviews() {
 			db.Delete(&video)
 			continue
 		}
-		gifPath := filepath.Join(app.config.ThumbnailDir, fmt.Sprintf("%d.gif", video.ID))
-		err := preview.GenerateAnimatedPreview(video.Path, gifPath)
+
+		gifPath, err := preview.GetPreview(video.Path, "video", app.config.ThumbnailDir)
 		if err != nil {
-			fmt.Printf("[ERROR] Failed to generate preview for %s: %v\n", video.Path, err)
+			fmt.Printf("[ERROR] Failed to queue preview for %s: %v\n", video.Path, err)
 			continue
 		}
+
 		video.PreviewPath = gifPath
 		db.Model(&video).Update("preview_path", gifPath)
-		fmt.Printf("[DEBUG] Rebuilt preview for %s -> %s\n", video.Path, gifPath)
+		fmt.Printf("[DEBUG] Queued preview rebuild for %s -> %s\n", video.Path, gifPath)
 	}
 }
 

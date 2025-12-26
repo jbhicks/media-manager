@@ -1648,3 +1648,83 @@
 [ERROR] ffmpeg failed to generate GIF for /mnt/media/_/vr/BadoinkVR_Isa Bella_La_Isla_Bella_8K_180_180x180_3dh.mp4: exec: no command
 [ffmpeg stderr]: 
 
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec].avi: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec]-flac.ogv: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec].mkv: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec]-vorbis.ogv: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec].flv: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec].webm: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec].wmv: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec].mov: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec].3gp: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec].mpg: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec].mp4: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec]-flac.ogv: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec].3gp: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec]-vorbis.ogv: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec].avi: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec].flv: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec].mkv: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec].mov: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec].mp4: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec].mpg: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec].webm: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] ffmpeg failed to generate GIF for media\big_buck_bunny_480p_stereo [avidemux 30sec].wmv: exec: no command
+[ffmpeg stderr]: 
+
+[ERROR] Invalid GIF preview: C:\Users\joshu\.media-manager\previews\big_buck_bunny_480p_stereo [avidemux 30sec].gif, error: gif: reading header: unexpected EOF
+[ERROR] Invalid GIF preview: C:\Users\joshu\.media-manager\previews\big_buck_bunny_480p_stereo [avidemux 30sec].gif, error: gif: reading header: unexpected EOF
+[ERROR] Invalid GIF preview: C:\Users\joshu\.media-manager\previews\big_buck_bunny_480p_stereo [avidemux 30sec].gif, error: gif: reading header: unexpected EOF
+[ERROR] Invalid GIF preview: C:\Users\joshu\.media-manager\previews\big_buck_bunny_480p_stereo [avidemux 30sec].gif, error: gif: reading header: unexpected EOF
+[ERROR] Invalid GIF preview: C:\Users\joshu\.media-manager\previews\big_buck_bunny_480p_stereo [avidemux 30sec].gif, error: gif: reading header: unexpected EOF
+[ERROR] Invalid GIF preview: C:\Users\joshu\.media-manager\previews\big_buck_bunny_480p_stereo [avidemux 30sec].gif, error: gif: reading header: unexpected EOF
+[ERROR] Invalid GIF preview: C:\Users\joshu\.media-manager\previews\big_buck_bunny_480p_stereo [avidemux 30sec].gif, error: gif: reading header: unexpected EOF
+[ERROR] Invalid GIF preview: C:\Users\joshu\.media-manager\previews\big_buck_bunny_480p_stereo [avidemux 30sec].gif, error: gif: reading header: unexpected EOF
+[ERROR] Invalid GIF preview: C:\Users\joshu\.media-manager\previews\big_buck_bunny_480p_stereo [avidemux 30sec].gif, error: gif: reading header: unexpected EOF
+[ERROR] Invalid GIF preview: C:\Users\joshu\.media-manager\previews\big_buck_bunny_480p_stereo [avidemux 30sec]-flac.gif, error: gif: reading header: unexpected EOF
+[ERROR] Invalid GIF preview: C:\Users\joshu\.media-manager\previews\big_buck_bunny_480p_stereo [avidemux 30sec]-vorbis.gif, error: gif: reading header: unexpected EOF
+[ERROR] Invalid GIF preview: C:\Users\joshu\.media-manager\previews\big_buck_bunny_480p_stereo [avidemux 30sec].gif, error: gif: reading header: unexpected EOF
+[ERROR] Invalid GIF preview: C:\Users\joshu\.media-manager\previews\big_buck_bunny_480p_stereo [avidemux 30sec].gif, error: gif: reading header: unexpected EOF
+[ERROR] Invalid GIF preview: C:\Users\joshu\.media-manager\previews\big_buck_bunny_480p_stereo [avidemux 30sec].gif, error: gif: reading header: unexpected EOF

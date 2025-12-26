@@ -1,42 +1,55 @@
 <!DOCTYPE html>
 <html>
+
 <head>
+    <link rel="icon" type="image/svg+xml" href="/web/images/logo.svg">
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <style>
-        body { font-family: Arial, sans-serif; padding: 20px; }
-        .task { border: 1px solid #ccc; padding: 10px; margin: 10px 0; }
-        .success { color: green; }
-        .error { color: red; }
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+
+        .task {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin: 10px 0;
+        }
+
+        .success {
+            color: green;
+        }
+
+        .error {
+            color: red;
+        }
     </style>
 </head>
+
 <body>
     <h1>Delete Functionality Test</h1>
     <div id="tasks">
         <div class="task" id="task-54">
             <span>Test Task 54</span>
-            <button hx-post="/api/tasks/delete" 
-                    hx-vals='{"_method": "DELETE", "id": 54}' 
-                    hx-target="closest .task" 
-                    hx-swap="outerHTML swap:1s">
+            <button hx-post="/api/tasks/delete" hx-vals='{"_method": "DELETE", "id": 54}' hx-target="closest .task"
+                hx-swap="outerHTML swap:1s">
                 🗑️ Delete
             </button>
         </div>
         <div class="task" id="task-55">
             <span>Test Task 55</span>
-            <button hx-post="/api/tasks/delete" 
-                    hx-vals='{"_method": "DELETE", "id": 55}' 
-                    hx-target="closest .task" 
-                    hx-swap="outerHTML swap:1s">
+            <button hx-post="/api/tasks/delete" hx-vals='{"_method": "DELETE", "id": 55}' hx-target="closest .task"
+                hx-swap="outerHTML swap:1s">
                 🗑️ Delete
             </button>
         </div>
     </div>
-    
+
     <div id="result"></div>
-    
+
     <script>
         // Monitor HTMX requests
-        document.body.addEventListener('htmx:afterRequest', function(evt) {
+        document.body.addEventListener('htmx:afterRequest', function (evt) {
             const result = document.getElementById('result');
             if (evt.detail.xhr.status === 200) {
                 result.innerHTML = '<div class="success">✅ Delete request successful!</div>';
@@ -44,10 +57,11 @@
                 result.innerHTML = '<div class="error">❌ Delete request failed: ' + evt.detail.xhr.status + '</div>';
             }
         });
-        
-        document.body.addEventListener('htmx:beforeRequest', function(evt) {
+
+        document.body.addEventListener('htmx:beforeRequest', function (evt) {
             document.getElementById('result').innerHTML = '<div>⏳ Sending delete request...</div>';
         });
     </script>
 </body>
+
 </html>

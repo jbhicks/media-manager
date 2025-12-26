@@ -1,0 +1,3 @@
+# Ignore the large binaries but keep them for local builds
+ffmpeg.exe
+ffprobe.exe

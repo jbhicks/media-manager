@@ -1,16 +1,14 @@
 package components
 
 import (
-	"bytes"
 	"fmt"
-	"image"
 	"image/color"
-	"image/gif"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -20,7 +18,8 @@ import (
 	"fyne.io/fyne/v2/widget"
 	xwidget "fyne.io/x/fyne/widget"
 
-	"github.com/user/media-manager/internal/ffmpeg"
+	"github.com/user/media-manager/internal/preview"
+	"github.com/user/media-manager/pkg/models"
 )
 
 // logToDebugFile appends a message to app_debug.log for error tracking
@@ -58,27 +57,43 @@ type MediaCard struct {
 	isHovered       bool
 	hasAnimation    bool
 	onDelete        func()
-	previewWidth    int
-	previewHeight   int
+	thumbDir        string
+	duration        int
+	extension       string
+	durationLabel   *widget.Label
+	extensionLabel  *widget.Label
 }
 
-func NewMediaCard(filePath, fileName string, mediaType MediaType, thumbPath string) *MediaCard {
-	fmt.Printf("[DEBUG] NewMediaCard: Creating card for %s (Type: %v)\n", fileName, mediaType)
-	displayName := fileName
+func NewMediaCard(file models.MediaFile, thumbDir string) *MediaCard {
+	mediaType := GetMediaType(file.Filename)
+	fmt.Printf("[DEBUG] NewMediaCard: Creating card for %s (Type: %v)\n", file.Filename, mediaType)
+	displayName := file.Filename
 	if len(displayName) > 22 {
 		displayName = displayName[:19] + "..."
 	}
 
 	card := &MediaCard{
 		mediaType:     mediaType,
-		filePath:      filePath,
-		fileName:      fileName,
-		thumbnailPath: thumbPath,
+		filePath:      file.Path,
+		fileName:      file.Filename,
+		thumbnailPath: file.PreviewPath,
+		thumbDir:      thumbDir,
+		duration:      file.Duration,
+		extension:     strings.ToUpper(strings.TrimPrefix(filepath.Ext(file.Filename), ".")),
 		isHovered:     false,
 		hasAnimation:  false,
 	}
 
 	card.setupContent()
+
+	// Setup overlays
+	if card.duration > 0 {
+		mins := card.duration / 60
+		secs := card.duration % 60
+		card.durationLabel = widget.NewLabelWithStyle(fmt.Sprintf("%d:%02d", mins, secs), fyne.TextAlignTrailing, fyne.TextStyle{Bold: true})
+	}
+	card.extensionLabel = widget.NewLabelWithStyle(card.extension, fyne.TextAlignTrailing, fyne.TextStyle{Bold: true})
+
 	card.label = widget.NewLabelWithStyle(displayName, fyne.TextAlignCenter, fyne.TextStyle{})
 	card.label.Wrapping = fyne.TextWrapWord
 	card.background = canvas.NewRectangle(theme.Color(theme.ColorNameInputBackground))
@@ -101,182 +116,65 @@ func (mc *MediaCard) setupContent() {
 
 	switch mc.mediaType {
 	case MediaTypeImage:
-		go mc.generateImageThumbnail()
+		go mc.loadPreview("image")
 	case MediaTypeVideo:
-		go mc.generateGifPreview()
+		go mc.loadPreview("video")
 	case MediaTypeFile:
 		mc.content = widget.NewIcon(theme.FileIcon())
 	}
 }
 
-// generateImageThumbnail generates a still thumbnail for images (not GIFs), or uses the original for GIFs
-func (mc *MediaCard) generateImageThumbnail() {
-	if _, err := os.Stat(mc.filePath); os.IsNotExist(err) {
-		fmt.Printf("[WARN] File does not exist, skipping image thumbnail: %s\n", mc.filePath)
-		return
-	}
-	fmt.Printf("[DEBUG] Generating image thumbnail for: %s\n", mc.filePath)
-	fmt.Printf("[DEBUG] generateImageThumbnail called for %s\n", mc.fileName)
-	ext := strings.ToLower(filepath.Ext(mc.filePath))
-	if ext == ".gif" {
-		// For GIFs, just use the original file as a still image
-		if file, err := os.Open(mc.filePath); err == nil {
-			defer file.Close()
-			if _, _, err := image.DecodeConfig(file); err == nil {
-				img := canvas.NewImageFromFile(mc.filePath)
-				img.FillMode = canvas.ImageFillContain
-				mc.content = img
-				mc.Refresh()
-				return
-			} else {
-				logToDebugFile(fmt.Sprintf("[ERROR] Invalid GIF image: %s, error: %v", mc.filePath, err))
-				mc.content = widget.NewIcon(theme.FileImageIcon())
-				mc.Refresh()
-				return
-			}
-		} else {
-			logToDebugFile(fmt.Sprintf("[ERROR] Could not open GIF file: %s, error: %v", mc.filePath, err))
-			mc.content = widget.NewIcon(theme.FileImageIcon())
-			mc.Refresh()
+func (mc *MediaCard) loadPreview(mediaTypeStr string) {
+	// If we already have a path from DB, use it initially
+	if mc.thumbnailPath != "" {
+		if _, err := os.Stat(mc.thumbnailPath); err == nil {
+			mc.updateContent(mc.thumbnailPath)
 			return
 		}
 	}
-	// For other images, generate a thumbnail (jpg)
-	homeDir, _ := os.UserHomeDir()
-	thumbDir := filepath.Join(homeDir, ".media-manager", "thumbnails")
-	os.MkdirAll(thumbDir, 0755)
-	thumbFileName := strings.ReplaceAll(strings.TrimSuffix(filepath.Base(mc.filePath), filepath.Ext(mc.filePath)), " ", "_") + "_thumb.jpg"
-	thumbPath := filepath.Join(thumbDir, thumbFileName)
-	// Only generate if not exists
-	if _, err := os.Stat(thumbPath); os.IsNotExist(err) {
-		// Use embedded ffmpeg to generate a thumbnail for any image type
-		var stderr bytes.Buffer
-		cmd, err := ffmpeg.NewFFmpegCommand("-i", mc.filePath, "-vf", "scale=216:216:force_original_aspect_ratio=increase,crop=216:216", "-frames:v", "1", thumbPath)
-		if err != nil {
-			logToDebugFile(fmt.Sprintf("[ERROR] Failed to get ffmpeg: %v\n", err))
-			mc.content = widget.NewIcon(theme.FileImageIcon())
-			mc.Refresh()
-			return
-		}
-		cmd.Stderr = &stderr
-		err = cmd.Run()
-		if err != nil {
-			logToDebugFile(fmt.Sprintf("[ERROR] ffmpeg failed to generate thumbnail for %s: %v\n[ffmpeg stderr]: %s\n", mc.filePath, err, stderr.String()))
-			// Try to show the original image as fallback
-			if file, err := os.Open(mc.filePath); err == nil {
-				defer file.Close()
-				if _, _, err := image.DecodeConfig(file); err == nil {
-					img := canvas.NewImageFromFile(mc.filePath)
-					img.FillMode = canvas.ImageFillContain
-					mc.content = img
-					mc.Refresh()
-					return
-				}
-			}
-			// Last resort: show icon
-			mc.content = widget.NewIcon(theme.FileImageIcon())
-			mc.Refresh()
-			return
-		}
-	}
-	if file, err := os.Open(thumbPath); err == nil {
-		defer file.Close()
-		if _, _, err := image.DecodeConfig(file); err == nil {
-			img := canvas.NewImageFromFile(thumbPath)
-			img.FillMode = canvas.ImageFillContain
-			mc.content = img
-			mc.Refresh()
-			return
-		} else {
-			logToDebugFile(fmt.Sprintf("[ERROR] Invalid thumbnail image: %s, error: %v", thumbPath, err))
-			mc.content = widget.NewIcon(theme.FileImageIcon())
-			mc.Refresh()
-			return
-		}
-	} else {
-		logToDebugFile(fmt.Sprintf("[ERROR] Could not open thumbnail file: %s, error: %v", thumbPath, err))
-		mc.content = widget.NewIcon(theme.FileImageIcon())
-		mc.Refresh()
+
+	// Request from centralized manager
+	path, err := preview.GetPreview(mc.filePath, mediaTypeStr, mc.thumbDir)
+	if err != nil {
+		fmt.Printf("[ERROR] Failed to get preview for %s: %v\n", mc.filePath, err)
 		return
 	}
 
+	// Wait for the file to exist (the worker pool will create it)
+	// For now, we'll just check existence periodically or wait until Refresh is called.
+	// A better way would be a callback, but let's start simple.
+	for i := 0; i < 30; i++ { // Wait up to 30 seconds
+		if _, err := os.Stat(path); err == nil {
+			mc.thumbnailPath = path
+			mc.updateContent(path)
+			return
+		}
+		time.Sleep(1 * time.Second)
+	}
 }
 
-func (mc *MediaCard) generateGifPreview() {
-	if _, err := os.Stat(mc.filePath); os.IsNotExist(err) {
-		fmt.Printf("[WARN] File does not exist, skipping GIF preview: %s\n", mc.filePath)
-		return
-	}
-	fmt.Printf("[DEBUG] Generating animated GIF preview for: %s\n", mc.filePath)
-	fmt.Printf("[DEBUG] generateGifPreview called for %s\n", mc.fileName)
-	if mc.mediaType != MediaTypeVideo {
-		return
-	}
-
-	homeDir, _ := os.UserHomeDir()
-	gifDir := filepath.Join(homeDir, ".media-manager", "previews")
-	os.MkdirAll(gifDir, 0755)
-	gifPath := filepath.Join(gifDir, strings.TrimSuffix(filepath.Base(mc.filePath), filepath.Ext(mc.filePath))+".gif")
-
-	if _, err := os.Stat(gifPath); os.IsNotExist(err) {
-		var stderr bytes.Buffer
-		cmd, err := ffmpeg.NewFFmpegCommand(
-			"-i", mc.filePath,
-			"-vf", "fps=12,scale=216:216:force_original_aspect_ratio=increase,crop=216:216",
-			"-frames:v", "24",
-			gifPath)
-		if err != nil {
-			logToDebugFile(fmt.Sprintf("[ERROR] Failed to get ffmpeg: %v\n", err))
-			mc.content = widget.NewIcon(theme.FileVideoIcon())
-			mc.Refresh()
-			return
-		}
-		cmd.Stderr = &stderr
-		err = cmd.Run()
-		if err != nil {
-			logToDebugFile(fmt.Sprintf("[ERROR] ffmpeg failed to generate GIF for %s: %v\n[ffmpeg stderr]: %s\n", mc.filePath, err, stderr.String()))
-			// Show video icon as fallback with a loading indicator style
-			icon := widget.NewIcon(theme.FileVideoIcon())
-			mc.content = icon
-			mc.hasAnimation = false
-			mc.Refresh()
-			return
-		}
-	}
-
-	// Validate GIF before loading
-	if file, err := os.Open(gifPath); err == nil {
-		defer file.Close()
-		if _, err := gif.DecodeConfig(file); err == nil {
-			uri := storage.NewFileURI(gifPath)
+func (mc *MediaCard) updateContent(path string) {
+	fyne.Do(func() {
+		if mc.mediaType == MediaTypeVideo {
+			uri := storage.NewFileURI(path)
 			animatedGif, err := xwidget.NewAnimatedGif(uri)
 			if err == nil {
-				animatedGif.Stop() // Show first frame only
+				animatedGif.Stop()
 				mc.animatedGif = animatedGif
 				mc.content = animatedGif
 				mc.hasAnimation = true
-				mc.Refresh()
-				return
 			} else {
-				// fallback: use static image
-				img := canvas.NewImageFromFile(gifPath)
+				img := canvas.NewImageFromFile(path)
 				img.FillMode = canvas.ImageFillContain
 				mc.content = img
-				mc.Refresh()
-				return
 			}
 		} else {
-			logToDebugFile(fmt.Sprintf("[ERROR] Invalid GIF preview: %s, error: %v", gifPath, err))
-			mc.content = widget.NewIcon(theme.FileImageIcon())
-			mc.Refresh()
-			return
+			img := canvas.NewImageFromFile(path)
+			img.FillMode = canvas.ImageFillContain
+			mc.content = img
 		}
-	} else {
-		logToDebugFile(fmt.Sprintf("[ERROR] Could not open GIF preview file: %s, error: %v", gifPath, err))
-		mc.content = widget.NewIcon(theme.FileImageIcon())
 		mc.Refresh()
-		return
-	}
+	})
 }
 
 var _ desktop.Hoverable = (*MediaCard)(nil)
@@ -345,7 +243,7 @@ func (mc *MediaCard) openFile() error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
-		cmd = exec.Command("cmd", "/C", "start", mc.filePath)
+		cmd = exec.Command("cmd", "/C", "start", "", mc.filePath)
 	case "darwin": // macOS
 		cmd = exec.Command("open", mc.filePath)
 	default: // Linux and others
@@ -370,6 +268,11 @@ func (mc *MediaCard) MinSize() fyne.Size {
 	return fyne.NewSize(216, 121)
 }
 
+	label           *widget.Label
+	durationLabel   *widget.Label
+	extensionLabel  *widget.Label
+}
+
 func (mc *MediaCard) CreateRenderer() fyne.WidgetRenderer {
 	return &mediaCardRenderer{
 		card:            mc,
@@ -377,6 +280,8 @@ func (mc *MediaCard) CreateRenderer() fyne.WidgetRenderer {
 		content:         mc.content,
 		labelBackground: mc.labelBackground,
 		label:           mc.label,
+		durationLabel:   mc.durationLabel,
+		extensionLabel:  mc.extensionLabel,
 	}
 }
 
@@ -386,6 +291,8 @@ type mediaCardRenderer struct {
 	content         fyne.CanvasObject
 	labelBackground fyne.CanvasObject
 	label           *widget.Label
+	durationLabel   *widget.Label
+	extensionLabel  *widget.Label
 }
 
 func (r *mediaCardRenderer) Layout(size fyne.Size) {
@@ -411,6 +318,19 @@ func (r *mediaCardRenderer) Layout(size fyne.Size) {
 
 	r.label.Resize(fyne.NewSize(labelWidth, labelHeight))
 	r.label.Move(fyne.NewPos(padding, labelY))
+
+	// Duration bottom right of content
+	if r.durationLabel != nil {
+		ds := r.durationLabel.MinSize()
+		r.durationLabel.Resize(ds)
+		r.durationLabel.Move(fyne.NewPos(w-padding-ds.Width-4, contentH-ds.Height-4))
+	}
+	// Extension top right
+	if r.extensionLabel != nil {
+		es := r.extensionLabel.MinSize()
+		r.extensionLabel.Resize(es)
+		r.extensionLabel.Move(fyne.NewPos(w-padding-es.Width-4, padding+4))
+	}
 }
 
 func (r *mediaCardRenderer) MinSize() fyne.Size {
@@ -426,11 +346,24 @@ func (r *mediaCardRenderer) Refresh() {
 		}
 		canvas.Refresh(r.labelBackground)
 		canvas.Refresh(r.label)
+		if r.durationLabel != nil {
+			canvas.Refresh(r.durationLabel)
+		}
+		if r.extensionLabel != nil {
+			canvas.Refresh(r.extensionLabel)
+		}
 		r.Layout(r.background.Size())
 	})
 }
 func (r *mediaCardRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.background, r.content, r.labelBackground, r.label}
+	objs := []fyne.CanvasObject{r.background, r.content, r.labelBackground, r.label}
+	if r.durationLabel != nil {
+		objs = append(objs, r.durationLabel)
+	}
+	if r.extensionLabel != nil {
+		objs = append(objs, r.extensionLabel)
+	}
+	return objs
 }
 
 func (r *mediaCardRenderer) Destroy() {

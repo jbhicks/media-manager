@@ -5,12 +5,12 @@ import (
 	"mime"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/fsnotify/fsnotify"
 
 	"github.com/user/media-manager/internal/db"
+	"github.com/user/media-manager/internal/preview"
 	"github.com/user/media-manager/pkg/models"
 )
 
@@ -50,6 +50,7 @@ func (s *MediaScanner) ScanDirectory(dirPath string) error {
 			return nil
 		}
 
+		width, height, duration, _ := preview.GetMetadata(path)
 		mediaFile := &models.MediaFile{
 			Path:     path,
 			Filename: info.Name(),
@@ -57,6 +58,9 @@ func (s *MediaScanner) ScanDirectory(dirPath string) error {
 			ModTime:  info.ModTime(),
 			FileType: s.getFileType(path),
 			MimeType: s.getMimeType(path),
+			Width:    width,
+			Height:   height,
+			Duration: duration,
 		}
 		fmt.Printf("[DEBUG] Saving media file to DB: %s\n", path)
 		err = s.database.CreateMediaFile(mediaFile)
@@ -77,21 +81,15 @@ func (s *MediaScanner) ScanDirectory(dirPath string) error {
 
 func (s *MediaScanner) isMediaFile(filePath string) bool {
 	ext := strings.ToLower(filepath.Ext(filePath))
-
-	imageExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".tiff", ".bmp"}
-	videoExts := []string{".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v", ".3gp"}
-
-	return slices.Contains(imageExts, ext) || slices.Contains(videoExts, ext)
+	return preview.IsImageFile(ext) || preview.IsVideoFile(ext)
 }
 
 func (s *MediaScanner) getFileType(filePath string) string {
 	ext := strings.ToLower(filepath.Ext(filePath))
-	imageExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".tiff", ".bmp"}
-	videoExts := []string{".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v", ".3gp"}
-	if slices.Contains(imageExts, ext) {
+	if preview.IsImageFile(ext) {
 		return "image"
 	}
-	if slices.Contains(videoExts, ext) {
+	if preview.IsVideoFile(ext) {
 		return "video"
 	}
 	return "unknown"

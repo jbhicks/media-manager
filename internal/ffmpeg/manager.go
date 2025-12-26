@@ -2,6 +2,7 @@ package ffmpeg
 
 import (
 	"crypto/sha256"
+	"embed"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,9 @@ import (
 	"runtime"
 	"sync"
 )
+
+//go:embed bin/*
+var ffmpegBinaries embed.FS
 
 const (
 	releaseVersion = "v0.1.0"
@@ -79,23 +83,64 @@ func ensureBinaries() error {
 		return fmt.Errorf("failed to create bin directory: %w", err)
 	}
 
+	ffmpegName := "ffmpeg"
+	ffprobeName := "ffprobe"
+	if runtime.GOOS == "windows" {
+		ffmpegName += ".exe"
+		ffprobeName += ".exe"
+	}
+
+	ffmpegPath = filepath.Join(binDir, ffmpegName)
+	ffprobePath = filepath.Join(binDir, ffprobeName)
+
+	fmt.Printf("[DEBUG] ensureBinaries: checking %s and %s\n", ffmpegPath, ffprobePath)
+
+	// Check if already extracted
+	if _, err := os.Stat(ffmpegPath); err == nil {
+		if _, err := os.Stat(ffprobePath); err == nil {
+			return nil
+		}
+	}
+
+	// Try to extract from embedded FS
+	fmt.Printf("[INFO] Extracting embedded ffmpeg binaries...\n")
+	extractedFfmpeg := false
+	extractedFfprobe := false
+
+	content, err := ffmpegBinaries.ReadFile("bin/" + ffmpegName)
+	if err != nil {
+		fmt.Printf("[DEBUG] Failed to read embedded %s: %v\n", ffmpegName, err)
+	} else {
+		if err := os.WriteFile(ffmpegPath, content, 0755); err != nil {
+			fmt.Printf("[DEBUG] Failed to write %s to %s: %v\n", ffmpegName, ffmpegPath, err)
+		} else {
+			extractedFfmpeg = true
+		}
+	}
+
+	content, err = ffmpegBinaries.ReadFile("bin/" + ffprobeName)
+	if err != nil {
+		fmt.Printf("[DEBUG] Failed to read embedded %s: %v\n", ffprobeName, err)
+	} else {
+		if err := os.WriteFile(ffprobePath, content, 0755); err != nil {
+			fmt.Printf("[DEBUG] Failed to write %s to %s: %v\n", ffprobeName, ffprobePath, err)
+		} else {
+			extractedFfprobe = true
+		}
+	}
+
+	if extractedFfmpeg && extractedFfprobe {
+		fmt.Printf("[INFO] Successfully extracted embedded binaries\n")
+		return nil
+	}
+
+	// Fallback to download or system path
 	ffmpegInfo, ffprobeInfo, err := getBinaryInfo()
 	if err != nil {
 		return trySystemPath(err)
 	}
 
-	ffmpegPath = filepath.Join(binDir, ffmpegInfo.name)
-	ffprobePath = filepath.Join(binDir, ffprobeInfo.name)
-
-	if _, err := os.Stat(ffmpegPath); err == nil {
-		if _, err := os.Stat(ffprobePath); err == nil {
-			fmt.Printf("[INFO] Using cached ffmpeg binaries from: %s\n", binDir)
-			return nil
-		}
-	}
-
 	fmt.Printf("[INFO] Downloading ffmpeg binaries (one-time setup)...\n")
-
 	if err := downloadBinary(ffmpegInfo.url, ffmpegPath); err != nil {
 		return trySystemPath(fmt.Errorf("failed to download ffmpeg: %w", err))
 	}
@@ -104,7 +149,6 @@ func ensureBinaries() error {
 		return trySystemPath(fmt.Errorf("failed to download ffprobe: %w", err))
 	}
 
-	fmt.Printf("[INFO] FFmpeg binaries downloaded successfully\n")
 	return nil
 }
 
@@ -153,7 +197,8 @@ func trySystemPath(downloadErr error) error {
 	fmt.Printf("[WARN] %v\n", downloadErr)
 	fmt.Printf("[INFO] Attempting to use system ffmpeg from PATH...\n")
 
-	ffmpegPath, err := exec.LookPath("ffmpeg")
+	var err error
+	ffmpegPath, err = exec.LookPath("ffmpeg")
 	if err == nil {
 		ffprobePath, err = exec.LookPath("ffprobe")
 		if err == nil {

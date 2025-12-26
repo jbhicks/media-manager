@@ -45,6 +45,15 @@ func (d *Database) GetDB() *gorm.DB {
 	return d.db
 }
 
+func (d *Database) GetMediaFileByPath(path string) (*models.MediaFile, error) {
+	var file models.MediaFile
+	err := d.db.Where("path = ?", path).First(&file).Error
+	if err != nil {
+		return nil, err
+	}
+	return &file, nil
+}
+
 func (d *Database) GetMediaFiles(limit, offset int) ([]models.MediaFile, error) {
 	var files []models.MediaFile
 	err := d.db.Preload("Tags").Limit(limit).Offset(offset).Find(&files).Error

@@ -1,40 +1,46 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>📺 Media Manager</title>
+    <link rel="icon" type="image/svg+xml" href="/web/images/logo.svg">
     <link rel="stylesheet" href="/web/styles.css">
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
 </head>
-<body>
-        <!-- Navigation -->
-        <nav class="nav-container">
-            <div class="nav-header">
-                <a href="/" class="nav-brand">📺 Media Manager</a>
-                <ul class="nav-links">
-                    <li>
-                        <a href="/" class="nav-link active">🏠 Home</a>
-                    </li>
-                    <li>
-                        <a href="/downloads" class="nav-link" hx-get="/downloads" hx-target="#content" hx-push-url="true">⬇️ Downloads</a>
-                    </li>
-                    <li>
-                        <a href="/library" class="nav-link" hx-get="/library" hx-target="#content" hx-push-url="true">📚 Library</a>
-                    </li>
-                    <li>
-                        <a href="/search" class="nav-link" hx-get="/search" hx-target="#content" hx-push-url="true">🔍 Search</a>
-                    </li>
-                </ul>
-            </div>
-        </nav>
 
-        <!-- Main Content -->
-        <main class="main-container">
-            <div id="content">
-                <!-- Content will be loaded here by HTMX -->
-            </div>
-        </main>
+<body>
+    <!-- Navigation -->
+    <nav class="nav-container">
+        <div class="nav-header">
+            <a href="/" class="nav-brand">📺 Media Manager</a>
+            <ul class="nav-links">
+                <li>
+                    <a href="/" class="nav-link active">🏠 Home</a>
+                </li>
+                <li>
+                    <a href="/downloads" class="nav-link" hx-get="/downloads" hx-target="#content" hx-push-url="true">⬇️
+                        Downloads</a>
+                </li>
+                <li>
+                    <a href="/library" class="nav-link" hx-get="/library" hx-target="#content" hx-push-url="true">📚
+                        Library</a>
+                </li>
+                <li>
+                    <a href="/search" class="nav-link" hx-get="/search" hx-target="#content" hx-push-url="true">🔍
+                        Search</a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-container">
+        <div id="content">
+            <!-- Content will be loaded here by HTMX -->
+        </div>
+    </main>
 
     <!-- Toast Container -->
     <div id="toast" class="toast"></div>
@@ -44,7 +50,7 @@
         function updateActiveNav() {
             const currentPath = window.location.pathname;
             const navLinks = document.querySelectorAll('.nav-link');
-            
+
             navLinks.forEach(link => {
                 link.classList.remove('active');
                 const linkPath = new URL(link.href).pathname;
@@ -55,13 +61,13 @@
         }
 
         // Load content based on current URL path
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             const content = document.getElementById('content');
             const currentPath = window.location.pathname;
-            
+
             // Update active nav on page load
             updateActiveNav();
-            
+
             // Use HTMX to load the current path
             htmx.ajax('GET', currentPath, {
                 target: '#content',
@@ -70,12 +76,12 @@
         });
 
         // Update active nav after HTMX navigation
-        document.addEventListener('htmx:afterSettle', function(event) {
+        document.addEventListener('htmx:afterSettle', function (event) {
             updateActiveNav();
         });
 
         // HTMX event listeners for toasts
-        document.addEventListener('htmx:afterSwap', function(event) {
+        document.addEventListener('htmx:afterSwap', function (event) {
             // Check for toast triggers
             if (event.detail.target) {
                 const toastElement = document.getElementById('toast');
@@ -90,7 +96,7 @@
                                 if (triggerData.showToast) {
                                     toastElement.textContent = triggerData.showToast.message;
                                     toastElement.className = `toast toast-${triggerData.showToast.type} show`;
-                                    
+
                                     // Hide toast after 3 seconds
                                     setTimeout(() => {
                                         toastElement.classList.remove('show');
@@ -107,39 +113,39 @@
 
         // Simple SSE connection for downloads page
         let downloadsEventSource = null;
-        
+
         function connectDownloadsSSE() {
             if (downloadsEventSource) {
                 downloadsEventSource.close();
             }
-            
+
             downloadsEventSource = new EventSource('/api/downloads/stream');
-            
-            downloadsEventSource.addEventListener('message', function(event) {
+
+            downloadsEventSource.addEventListener('message', function (event) {
                 const data = JSON.parse(event.data);
-                
+
                 // Update stats counters if they exist
                 if (data) {
                     const statPending = document.getElementById('stat-pending');
                     const statDownloading = document.getElementById('stat-downloading');
                     const statCompleted = document.getElementById('stat-completed');
                     const statFailed = document.getElementById('stat-failed');
-                    
+
                     if (statPending && data.pending !== undefined) statPending.textContent = data.pending;
                     if (statDownloading && data.downloading !== undefined) statDownloading.textContent = data.downloading;
                     if (statCompleted && data.completed !== undefined) statCompleted.textContent = data.completed;
                     if (statFailed && data.failed !== undefined) statFailed.textContent = data.failed;
                 }
             });
-            
-            downloadsEventSource.addEventListener('error', function(event) {
+
+            downloadsEventSource.addEventListener('error', function (event) {
                 console.error('SSE Error:', event);
                 setTimeout(connectDownloadsSSE, 5000);
             });
         }
 
         // Auto-connect when on downloads page
-        const observer = new MutationObserver(function(mutations) {
+        const observer = new MutationObserver(function (mutations) {
             mutations.forEach(mutation => {
                 if (mutation.type === 'childList') {
                     mutation.addedNodes.forEach(node => {
@@ -153,8 +159,9 @@
                 }
             });
         });
-        
+
         observer.observe(document.body, { childList: true, subtree: true });
     </script>
 </body>
+
 </html>
