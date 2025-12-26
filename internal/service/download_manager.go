@@ -584,6 +584,17 @@ func (dm *DownloadManager) normalizeTitle(title string) string {
 	yearPattern := `\b(19|20)\d{2}\b`
 	title = strings.TrimSpace(strings.Split(title, " (")[0])
 
+	qualityTerms := []string{
+		"1080p", "720p", "2160p", "4k", "uhd", "hdr", "bluray", "brrip", "webrip", "web-dl",
+		"x264", "x265", "h264", "h265", "hevc", "10bit", "dts", "ac3", "aac", "opus",
+		"yify", "rarbg", "galaxyrg", "yts", "proper", "repack", "extended", "unrated",
+		"ddp5.1", "ddp2.0", "dd5.1", "dd2.0", "dts-hd", "dts-x", "truehd", "atmos", "neonoir", "ddp5 1", "neo", "yts", "10bit", "8bit", "hevc", "avc", "x264", "x265",
+	}
+
+	for _, term := range qualityTerms {
+		title = strings.ReplaceAll(title, term, "")
+	}
+
 	replacements := []string{
 		".", " ",
 		"-", " ",
@@ -594,22 +605,14 @@ func (dm *DownloadManager) normalizeTitle(title string) string {
 		title = strings.ReplaceAll(title, replacements[i], replacements[i+1])
 	}
 
-	qualityTerms := []string{
-		"1080p", "720p", "2160p", "4k", "uhd", "hdr", "bluray", "brrip", "webrip", "web-dl",
-		"x264", "x265", "h264", "h265", "hevc", "10bit", "dts", "ac3", "aac", "opus",
-		"yify", "rarbg", "galaxyrg", "yts", "proper", "repack", "extended", "unrated",
-	}
-
-	for _, term := range qualityTerms {
-		title = strings.ReplaceAll(title, term, "")
-	}
-
 	fields := strings.Fields(title)
 	normalized := make([]string, 0, len(fields))
 	for _, field := range fields {
-		if len(field) > 0 && !strings.ContainsAny(field, "[](){}") {
-			if matched, _ := regexp.MatchString(yearPattern, field); !matched {
-				normalized = append(normalized, field)
+		if len(field) > 1 || field == "a" || field == "i" {
+			if !strings.ContainsAny(field, "[](){}") {
+				if matched, _ := regexp.MatchString(yearPattern, field); !matched {
+					normalized = append(normalized, field)
+				}
 			}
 		}
 	}
@@ -688,22 +691,62 @@ func (dm *DownloadManager) RestartTask(taskID uint) error {
 func (dm *DownloadManager) SearchWithoutDownload(rule *models.DownloadRule) ([]models.SearchResult, error) {
 	queries := dm.generateSearchQueries(rule.SearchQuery, rule.MediaType)
 	log.Printf("[SEARCH] Generated %d search queries", len(queries))
+	startTime := time.Now()
 
+	// Use worker pool to limit concurrent Jackett requests (prevents overwhelming Jackett)
+	maxConcurrentSearches := 5 // Limit to 5 concurrent Jackett requests
+	type searchJob struct {
+		index int
+		query string
+	}
+
+	type searchResult struct {
+		query   string
+		results []models.SearchResult
+		err     error
+	}
+
+	jobsChan := make(chan searchJob, len(queries))
+	resultsChan := make(chan searchResult, len(queries))
+
+	// Start worker pool
+	for w := 0; w < maxConcurrentSearches; w++ {
+		go func(workerID int) {
+			for job := range jobsChan {
+				log.Printf("[SEARCH] Worker %d: Search %d/%d: %s", workerID+1, job.index+1, len(queries), job.query)
+				searchStart := time.Now()
+
+				results, err := dm.torrentSearcher.Search(job.query, rule.MediaType, 100)
+
+				searchDuration := time.Since(searchStart)
+				if err != nil {
+					log.Printf("[WARN] Worker %d: Search %d/%d failed for '%s' (%.2fs): %v", workerID+1, job.index+1, len(queries), job.query, searchDuration.Seconds(), err)
+				} else {
+					log.Printf("[SEARCH] Worker %d: Search %d/%d found %d results for '%s' (%.2fs)", workerID+1, job.index+1, len(queries), len(results), job.query, searchDuration.Seconds())
+				}
+
+				resultsChan <- searchResult{query: job.query, results: results, err: err}
+			}
+		}(w)
+	}
+
+	// Send jobs to workers
+	for i, query := range queries {
+		jobsChan <- searchJob{index: i, query: query}
+	}
+	close(jobsChan)
+
+	// Collect all results
 	allResults := make([]models.SearchResult, 0)
 	seenHashes := make(map[string]bool)
 
-	for i, query := range queries {
-		log.Printf("[SEARCH] Search %d/%d: %s", i+1, len(queries), query)
-
-		results, err := dm.torrentSearcher.Search(query, rule.MediaType, 100)
-		if err != nil {
-			log.Printf("[WARN] Search failed for '%s': %v", query, err)
+	for range queries {
+		sr := <-resultsChan
+		if sr.err != nil {
 			continue
 		}
 
-		log.Printf("[SEARCH] Found %d results for query '%s'", len(results), query)
-
-		for _, result := range results {
+		for _, result := range sr.results {
 			if result.InfoHash != "" && !seenHashes[result.InfoHash] {
 				allResults = append(allResults, result)
 				seenHashes[result.InfoHash] = true
@@ -712,11 +755,14 @@ func (dm *DownloadManager) SearchWithoutDownload(rule *models.DownloadRule) ([]m
 			}
 		}
 	}
+	close(resultsChan)
 
-	log.Printf("[SEARCH] Total unique results across all queries: %d", len(allResults))
+	searchDuration := time.Since(startTime)
+	log.Printf("[SEARCH] Total unique results across all queries: %d (%.2fs)", len(allResults), searchDuration.Seconds())
 
+	filterStart := time.Now()
 	filtered := dm.filterResults(allResults, rule)
-	log.Printf("[SEARCH] %d results after filtering", len(filtered))
+	log.Printf("[SEARCH] %d results after filtering (%.2fs)", len(filtered), time.Since(filterStart).Seconds())
 
 	dm.sortResults(filtered, rule.SortBy)
 
@@ -724,13 +770,18 @@ func (dm *DownloadManager) SearchWithoutDownload(rule *models.DownloadRule) ([]m
 	if maxResultsPerTitle == 0 {
 		maxResultsPerTitle = 1
 	}
+
+	dedupeStart := time.Now()
 	uniqueFiltered := dm.deduplicateResults(filtered, maxResultsPerTitle)
-	log.Printf("[SEARCH] %d results after deduplication", len(uniqueFiltered))
+	log.Printf("[SEARCH] %d results after deduplication (%.2fs)", len(uniqueFiltered), time.Since(dedupeStart).Seconds())
 
 	maxResults := rule.MaxResults
 	if maxResults > 0 && len(uniqueFiltered) > maxResults {
 		uniqueFiltered = uniqueFiltered[:maxResults]
 	}
+
+	totalDuration := time.Since(startTime)
+	log.Printf("[SEARCH] Search completed in %.2fs total", totalDuration.Seconds())
 
 	return uniqueFiltered, nil
 }
@@ -850,7 +901,7 @@ func (dm *DownloadManager) ProcessPendingDownloads() {
 		log.Printf("[DOWNLOAD] Starting pending download: %s", task.Title)
 
 		// Add torrent to client
-		torrentID, err := dm.torrentClient.AddTorrent(task.MagnetLink, "/mnt/media/Downloads")
+		torrentID, err := dm.torrentClient.AddTorrent(task.MagnetLink, dm.serviceConfig.DownloadPath)
 		if err != nil {
 			log.Printf("[DOWNLOAD] Failed to add torrent for task %d: %v", task.ID, err)
 			// Mark as failed
@@ -900,24 +951,24 @@ func (dm *DownloadManager) postProcessForPlex(task *models.DownloadTask) {
 	}
 
 	// Get source directory (where torrent downloaded to)
-	sourceDir := filepath.Join("/mnt/media/Downloads", task.Title)
+	sourcePath := filepath.Join(dm.serviceConfig.DownloadPath, task.Title)
 
 	// Create destination directory
-	destDir := filepath.Join("/mnt/media/Movies", folderName)
+	destDir := filepath.Join(dm.serviceConfig.LibraryPath, folderName)
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		log.Printf("[POSTPROCESS] Failed to create directory %s: %v", destDir, err)
 		return
 	}
 
 	// Find video file in source directory
-	videoFiles, err := dm.findVideoFiles(sourceDir)
+	videoFiles, err := dm.findVideoFiles(sourcePath)
 	if err != nil {
-		log.Printf("[POSTPROCESS] Failed to find video files in %s: %v", sourceDir, err)
+		log.Printf("[POSTPROCESS] Failed to find video files in %s: %v", sourcePath, err)
 		return
 	}
 
 	if len(videoFiles) == 0 {
-		log.Printf("[POSTPROCESS] No video files found in %s", sourceDir)
+		log.Printf("[POSTPROCESS] No video files found in %s", sourcePath)
 		return
 	}
 
@@ -996,14 +1047,35 @@ func (dm *DownloadManager) refreshJellyfinMetadata(movieDir string) {
 }
 
 func (dm *DownloadManager) extractMovieNameAndYear(title string) (string, string) {
-	// Extract year first - look for (YYYY) or [YYYY]
-	yearRegex := regexp.MustCompile(`[\[\(](\d{4})[\]\)]`)
-	yearMatches := yearRegex.FindStringSubmatch(title)
 	var year string
-	if len(yearMatches) > 1 {
-		year = yearMatches[1]
-		// Remove ALL occurrences of year with brackets/parens from title
-		title = yearRegex.ReplaceAllString(title, "")
+
+	// 1. Try to find year in brackets or parentheses
+	bracketYearRegex := regexp.MustCompile(`[\[\(](\d{4})[\]\)]`)
+	matches := bracketYearRegex.FindStringSubmatch(title)
+	if len(matches) > 1 {
+		year = matches[1]
+		title = bracketYearRegex.ReplaceAllString(title, " ")
+	}
+
+	// 2. If not found, try to find a naked year (4 digits surrounded by dots/spaces)
+	if year == "" {
+		nakedYearRegex := regexp.MustCompile(`(?:\.|\s)(\d{4})(?:\.|\s|$)`)
+		matches := nakedYearRegex.FindAllStringSubmatch(title, -1)
+		if len(matches) > 0 {
+			// Take the last match that is likely a year (between 1900 and current year + 2)
+			currentYear := time.Now().Year()
+			for i := len(matches) - 1; i >= 0; i-- {
+				yStr := matches[i][1]
+				yInt := 0
+				fmt.Sscanf(yStr, "%d", &yInt)
+				if yInt >= 1900 && yInt <= currentYear+2 {
+					year = yStr
+					// Replace ONLY this occurrence
+					title = strings.Replace(title, yStr, " ", 1)
+					break
+				}
+			}
+		}
 	}
 
 	// Remove file extensions that might be in the title
@@ -1025,8 +1097,8 @@ func (dm *DownloadManager) extractMovieNameAndYear(title string) (string, string
 	title = regexp.MustCompile(`(?i)(AAC|AC3|DD|DDP|EAC3|TrueHD|DTS|FLAC|MP3|Atmos)`).ReplaceAllString(title, "")
 	title = regexp.MustCompile(`(?i)[\[\(]?(5\.1|7\.1|2\.0|Stereo)[\]\)]?`).ReplaceAllString(title, "")
 
-	// Remove scene/release group tags
-	title = regexp.MustCompile(`(?i)(EN-RGB|EniaHD|FLUX|GalaxyRG|DEFLATE|STUTTERSHIT|VARYG)`).ReplaceAllString(title, "")
+	// Remove scene/release group tags and quality indicators that escaped previous filters
+	title = regexp.MustCompile(`(?i)(EN-RGB|EniaHD|FLUX|GalaxyRG|DEFLATE|STUTTERSHIT|VARYG|NeoNoir|DDP5\.1|10Bit|WEBRip|Bluray|X265|X264|H264|H265|HEVC|AVC|Neo|YTS)`).ReplaceAllString(title, "")
 
 	// Remove file size indicators
 	title = regexp.MustCompile(`(?i)\d+(\.\d+)?\s?(GB|MB|GiB|MiB)`).ReplaceAllString(title, "")
@@ -1034,7 +1106,7 @@ func (dm *DownloadManager) extractMovieNameAndYear(title string) (string, string
 	// Remove language codes and subtitles info
 	title = regexp.MustCompile(`(?i)[\[\(]?(Multi|Dual|Eng|English|Sub|Subs|Subtitle)[\]\)]?`).ReplaceAllString(title, "")
 
-	// Remove common abbreviations that appear in weird formats
+	// Remove common abbreviations that appear in weird formats - be careful with standalone chars
 	title = regexp.MustCompile(`(?i)\s+(MB|DD|HC)\s+`).ReplaceAllString(title, " ")
 
 	// Remove empty brackets and parentheses (including nested ones)
@@ -1062,35 +1134,56 @@ func (dm *DownloadManager) extractMovieNameAndYear(title string) (string, string
 	// Remove trailing/leading brackets, parentheses, and special chars
 	title = regexp.MustCompile(`^[\[\(\{]+|[\]\)\}]+$`).ReplaceAllString(title, "")
 	title = regexp.MustCompile(`^[\s\-_,]+|[\s\-_,]+$`).ReplaceAllString(title, "")
-	title = strings.TrimSpace(title)
 
-	return title, year
+	// Final pass: Remove standalone "p" or other single chars often left from resolutions
+	fields := strings.Fields(title)
+	cleanFields := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if len(f) > 1 || strings.ContainsAny(strings.ToLower(f), "ai") { // Keep short words like "A", "I" if they are likely part of title
+			cleanFields = append(cleanFields, f)
+		} else if strings.ToLower(f) == "a" || strings.ToLower(f) == "i" {
+			cleanFields = append(cleanFields, f)
+		}
+	}
+	title = strings.Join(cleanFields, " ")
+
+	return strings.TrimSpace(title), year
 }
 
-func (dm *DownloadManager) findVideoFiles(dir string) ([]string, error) {
+func (dm *DownloadManager) findVideoFiles(path string) ([]string, error) {
 	var videoFiles []string
 	videoExtensions := map[string]bool{
 		".mp4": true, ".mkv": true, ".avi": true, ".mov": true,
 		".m4v": true, ".wmv": true, ".flv": true, ".webm": true,
 	}
 
-	// Check if dir is actually a file
-	info, err := os.Stat(dir)
+	// Check if path exists
+	info, err := os.Stat(path)
 	if err != nil {
+		// If path doesn't exist, it might be that the torrent name didn't include the extension
+		// but the file on disk does. Try common extensions.
+		if os.IsNotExist(err) {
+			for ext := range videoExtensions {
+				testPath := path + ext
+				if _, err := os.Stat(testPath); err == nil {
+					return []string{testPath}, nil
+				}
+			}
+		}
 		return nil, err
 	}
 
 	if !info.IsDir() {
 		// It's a single file
-		ext := strings.ToLower(filepath.Ext(dir))
+		ext := strings.ToLower(filepath.Ext(path))
 		if videoExtensions[ext] {
-			return []string{dir}, nil
+			return []string{path}, nil
 		}
 		return nil, nil
 	}
 
 	// It's a directory, scan for video files
-	err = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(path, func(walkPath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -1100,15 +1193,15 @@ func (dm *DownloadManager) findVideoFiles(dir string) ([]string, error) {
 		}
 
 		// Skip .part files (incomplete downloads)
-		if strings.HasSuffix(strings.ToLower(path), ".part") {
+		if strings.HasSuffix(strings.ToLower(walkPath), ".part") {
 			return nil
 		}
 
-		ext := strings.ToLower(filepath.Ext(path))
+		ext := strings.ToLower(filepath.Ext(walkPath))
 		if videoExtensions[ext] {
 			// Skip sample files
-			if !strings.Contains(strings.ToLower(path), "sample") {
-				videoFiles = append(videoFiles, path)
+			if !strings.Contains(strings.ToLower(walkPath), "sample") {
+				videoFiles = append(videoFiles, walkPath)
 			}
 		}
 

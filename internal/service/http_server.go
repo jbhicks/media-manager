@@ -2042,10 +2042,23 @@ func (s *HTTPServer) handleSearchPartial(w http.ResponseWriter, r *http.Request)
 					`, result.ID, result.ID)
 				}
 
+				// Add info icon if TMDb ID exists
+				infoIcon := ""
+				if result.TMDbID > 0 {
+					infoIcon = fmt.Sprintf(`
+						<button class="info-icon" 
+							onclick="openModal(%d, '%s', '%s')"
+							title="More info">
+							ℹ️
+						</button>
+					`, result.TMDbID, result.ContentType, result.Title)
+				}
+
 				fmt.Fprintf(w, `
 					<div class="media-card" style="position: relative;">
 						%s
 						<div class="poster-container" style="position: relative; padding-bottom: 150%%; overflow: hidden; border-bottom: 1px solid rgba(48, 54, 61, 0.3);">
+							%s
 							%s
 						</div>
 						<div class="media-content">
@@ -2059,7 +2072,7 @@ func (s *HTTPServer) handleSearchPartial(w http.ResponseWriter, r *http.Request)
 							%s
 						</div>
 					</div>
-				`, checkbox, posterHtml, result.Title, sizeGB, result.Seeders, statusBadge, actions)
+				`, checkbox, posterHtml, infoIcon, result.Title, sizeGB, result.Seeders, statusBadge, actions)
 			}
 			fmt.Fprintf(w, `</div>`)
 		}

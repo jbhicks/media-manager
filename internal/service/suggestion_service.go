@@ -95,6 +95,7 @@ func (s *SuggestionService) CalculateTorrentQualityScore(title string, size int6
 
 func (s *SuggestionService) GenerateSuggestions(rule *models.DownloadRule, skipAlreadyDownloaded bool) (int, error) {
 	log.Printf("[SUGGESTIONS] Generating suggestions for rule: %s (skipAlreadyDownloaded=%v)", rule.Name, skipAlreadyDownloaded)
+	startTime := time.Now()
 
 	results, err := s.downloadManager.SearchWithoutDownload(rule)
 	if err != nil {
@@ -111,24 +112,70 @@ func (s *SuggestionService) GenerateSuggestions(rule *models.DownloadRule, skipA
 		qualityScore float64
 	}
 
+	// Parallelize TMDb fetches using worker pool
+	tmdbStart := time.Now()
+	numWorkers := 10 // 10 concurrent TMDb API requests (TMDb allows 50 req/s)
+	if len(results) < numWorkers {
+		numWorkers = len(results)
+	}
+
+	type tmdbResult struct {
+		index     int
+		posterURL string
+		tmdbID    int
+		err       error
+	}
+
+	resultsChan := make(chan int, len(results))
+	tmdbChan := make(chan tmdbResult, len(results))
+
+	// Start workers
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			for idx := range resultsChan {
+				if s.tmdbService != nil {
+					posterURL, tmdbID, err := s.tmdbService.FetchPosterForTask(results[idx].Title)
+					tmdbChan <- tmdbResult{index: idx, posterURL: posterURL, tmdbID: tmdbID, err: err}
+				} else {
+					tmdbChan <- tmdbResult{index: idx, err: fmt.Errorf("no tmdb service")}
+				}
+			}
+		}()
+	}
+
+	// Send work to workers
+	for i := range results {
+		resultsChan <- i
+	}
+	close(resultsChan)
+
+	// Collect results
+	tmdbResults := make(map[int]tmdbResult)
+	for range results {
+		tr := <-tmdbChan
+		tmdbResults[tr.index] = tr
+		if tr.err != nil && tr.err.Error() != "no tmdb service" {
+			log.Printf("[SUGGESTIONS] Failed to fetch TMDb for %s: %v", results[tr.index].Title, tr.err)
+		}
+	}
+	close(tmdbChan)
+
+	tmdbDuration := time.Since(tmdbStart)
+	log.Printf("[SUGGESTIONS] TMDb metadata fetched for %d results (%.2fs)", len(results), tmdbDuration.Seconds())
+
+	// Build candidates with TMDb data
 	candidatesByTMDbID := make(map[int][]*candidateSuggestion)
 	candidatesWithoutTMDb := []*candidateSuggestion{}
 
-	for _, result := range results {
+	for i, result := range results {
 		candidate := &candidateSuggestion{
 			result:       result,
 			qualityScore: s.CalculateTorrentQualityScore(result.Title, result.Size, result.Seeders),
 		}
 
-		// Fetch poster from TMDB
-		if s.tmdbService != nil {
-			posterURL, tmdbID, err := s.tmdbService.FetchPosterForTask(result.Title)
-			if err == nil {
-				candidate.tmdbID = tmdbID
-				candidate.poster = posterURL
-			} else {
-				log.Printf("[SUGGESTIONS] Failed to fetch poster for %s: %v", result.Title, err)
-			}
+		if tr, ok := tmdbResults[i]; ok && tr.err == nil {
+			candidate.tmdbID = tr.tmdbID
+			candidate.poster = tr.posterURL
 		}
 
 		if candidate.tmdbID > 0 {
@@ -210,7 +257,8 @@ func (s *SuggestionService) GenerateSuggestions(rule *models.DownloadRule, skipA
 		created++
 	}
 
-	log.Printf("[SUGGESTIONS] Created %d new suggestions, skipped %d already downloaded", created, skipped)
+	totalDuration := time.Since(startTime)
+	log.Printf("[SUGGESTIONS] Created %d new suggestions, skipped %d already downloaded (total: %.2fs)", created, skipped, totalDuration.Seconds())
 	return created, nil
 }
 
