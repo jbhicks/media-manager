@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -66,6 +67,7 @@ func (s *HTTPServer) Start() error {
 
 	// Search/torrent API endpoints
 	mux.HandleFunc("/api/search", s.handleSearch)
+	mux.HandleFunc("/api/search/poster", s.handleFetchSearchPoster)
 	mux.HandleFunc("/api/search/approve", s.handleApproveSearchResult)
 	mux.HandleFunc("/api/search/reject", s.handleRejectSearchResult)
 	mux.HandleFunc("/api/search/bulk-approve", s.handleBulkApprove)
@@ -73,12 +75,18 @@ func (s *HTTPServer) Start() error {
 	mux.HandleFunc("/api/search/clear", s.handleClearByStatus)
 	mux.HandleFunc("/api/search/clear-rejected", s.handleClearRejected)
 
-	// Legacy suggestions routes (redirect to search)
-	mux.HandleFunc("/suggestions", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/search", http.StatusMovedPermanently)
-	})
+	// Suggestions API endpoints (used by suggestions.html)
+	mux.HandleFunc("/suggestions", s.handleSuggestionsPage)
+	mux.HandleFunc("/api/suggestions", s.handleSuggestionsAPI)
+	mux.HandleFunc("/api/suggestions/stats", s.handleSuggestionsStatsAPI)
+	mux.HandleFunc("/api/suggestions/search", s.handleSearchSuggestionsAPI)
+	mux.HandleFunc("/api/suggestions/recommendations", s.handleRecommendationsAPI)
+	mux.HandleFunc("/api/suggestions/quality-score", s.handleQualityScoreAPI)
+	mux.HandleFunc("/api/suggestions/generate", s.handleGenerateSuggestions)
 	mux.HandleFunc("/api/suggestions/approve", s.handleApproveSearchResult)
 	mux.HandleFunc("/api/suggestions/reject", s.handleRejectSearchResult)
+	mux.HandleFunc("/api/suggestions/approve-batch", s.handleBulkApprove)
+	mux.HandleFunc("/api/suggestions/reject-batch", s.handleBulkReject)
 	mux.HandleFunc("/api/suggestions/clear-rejected", s.handleClearRejected)
 	mux.HandleFunc("/api/suggestions/refresh-posters", s.handleRefreshSearchPosters)
 	mux.HandleFunc("/api/movie/details", s.handleMovieDetails)
@@ -244,14 +252,145 @@ func (s *HTTPServer) handleDownloadsPage(w http.ResponseWriter, r *http.Request)
 func (s *HTTPServer) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	s.servePageOrPartial(w, r, s.handleSettingsPartial, "settings")
 }
-func (s *HTTPServer) handleSuggestions(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "Not implemented", http.StatusNotImplemented)
+func (s *HTTPServer) handleSuggestionsAPI(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	limitStr := r.URL.Query().Get("limit")
+	offsetStr := r.URL.Query().Get("offset")
+
+	limit := 20
+	offset := 0
+
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = l
+		}
+	}
+
+	if offsetStr != "" {
+		if o, err := strconv.Atoi(offsetStr); err == nil {
+			offset = o
+		}
+	}
+
+	suggestions, total, err := s.suggestionService.ListSuggestions(status, limit, offset)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to list suggestions: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"suggestions": suggestions,
+		"total":       total,
+		"limit":       limit,
+		"offset":      offset,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
-func (s *HTTPServer) handleSearchSuggestions(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "Not implemented", http.StatusNotImplemented)
+func (s *HTTPServer) handleSearchSuggestionsAPI(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	status := r.URL.Query().Get("status")
+	sortBy := r.URL.Query().Get("sort_by")
+	minSeedersStr := r.URL.Query().Get("min_seeders")
+	limitStr := r.URL.Query().Get("limit")
+	offsetStr := r.URL.Query().Get("offset")
+
+	limit := 20
+	offset := 0
+	minSeeders := 0
+
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = l
+		}
+	}
+
+	if offsetStr != "" {
+		if o, err := strconv.Atoi(offsetStr); err == nil {
+			offset = o
+		}
+	}
+
+	if minSeedersStr != "" {
+		if m, err := strconv.Atoi(minSeedersStr); err == nil {
+			minSeeders = m
+		}
+	}
+
+	suggestions, total, err := s.suggestionService.SearchSuggestions(query, status, sortBy, minSeeders, limit, offset)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to search suggestions: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"suggestions": suggestions,
+		"total":       total,
+		"limit":       limit,
+		"offset":      offset,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
-func (s *HTTPServer) handleRecommendations(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "Not implemented", http.StatusNotImplemented)
+func (s *HTTPServer) handleRecommendationsAPI(w http.ResponseWriter, r *http.Request) {
+	limitStr := r.URL.Query().Get("limit")
+	limit := 5
+
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = l
+		}
+	}
+
+	suggestions, err := s.suggestionService.GetTopRecommendations(limit)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get recommendations: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Format as recommendations with quality scores
+	recommendations := make([]map[string]interface{}, 0, len(suggestions))
+	for _, suggestion := range suggestions {
+		score := s.suggestionService.CalculateTorrentQualityScore(suggestion.Title, suggestion.Size, suggestion.Seeders)
+		recommendations = append(recommendations, map[string]interface{}{
+			"suggestion":    suggestion,
+			"quality_score": score,
+		})
+	}
+
+	response := map[string]interface{}{
+		"recommendations": recommendations,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// handleQualityScoreAPI returns the quality score for a suggestion
+func (s *HTTPServer) handleQualityScoreAPI(w http.ResponseWriter, r *http.Request) {
+	idStr := r.URL.Query().Get("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id == 0 {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	var suggestion models.DownloadSuggestion
+	if err := s.db.GetDB().First(&suggestion, id).Error; err != nil {
+		http.Error(w, "Suggestion not found", http.StatusNotFound)
+		return
+	}
+
+	score := s.suggestionService.CalculateTorrentQualityScore(suggestion.Title, suggestion.Size, suggestion.Seeders)
+
+	response := map[string]interface{}{
+		"quality_score": score,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 func (s *HTTPServer) handleGenerateSuggestions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -282,8 +421,15 @@ func (s *HTTPServer) handleGenerateSuggestions(w http.ResponseWriter, r *http.Re
 	w.Header().Set("HX-Redirect", "/suggestions?status=pending")
 	w.WriteHeader(http.StatusOK)
 }
-func (s *HTTPServer) handleSuggestionsStats(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "Not implemented", http.StatusNotImplemented)
+func (s *HTTPServer) handleSuggestionsStatsAPI(w http.ResponseWriter, r *http.Request) {
+	stats, err := s.suggestionService.GetStats()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get stats: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
 }
 func (s *HTTPServer) handleApproveSuggestion(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -495,32 +641,18 @@ func (s *HTTPServer) handleRefreshSearchPosters(w http.ResponseWriter, r *http.R
 	failedCount := 0
 
 	for _, suggestion := range suggestions {
-		// Clean the title to search TMDb
-		cleanName, year := s.tmdbService.ExtractMovieInfo(suggestion.Title)
-		if cleanName == "" {
-			log.Printf("[HTTP] Skipping suggestion with no clean name: %s", suggestion.Title)
+		log.Printf("[HTTP] Processing suggestion: %s", suggestion.Title)
+
+		// Use FetchPosterForTask which automatically detects TV vs Movie
+		posterURL, tmdbID, err := s.tmdbService.FetchPosterForTask(suggestion.Title)
+		if err != nil {
+			log.Printf("[HTTP] Failed to find on TMDb: %s - %v", suggestion.Title, err)
 			failedCount++
 			continue
-		}
-
-		log.Printf("[HTTP] Processing: %s -> cleaned: %s (%d)", suggestion.Title, cleanName, year)
-
-		// Search TMDb for the correct movie
-		movie, err := s.tmdbService.SearchMovie(cleanName, year)
-		if err != nil || movie == nil {
-			log.Printf("[HTTP] Failed to find movie on TMDb: %s (%d) - %v", cleanName, year, err)
-			failedCount++
-			continue
-		}
-
-		// Get the poster URL from TMDb
-		posterURL := ""
-		if movie.PosterPath != "" {
-			posterURL = fmt.Sprintf("https://image.tmdb.org/t/p/w500%s", movie.PosterPath)
 		}
 
 		if posterURL == "" {
-			log.Printf("[HTTP] No poster available for: %s", cleanName)
+			log.Printf("[HTTP] No poster available for: %s", suggestion.Title)
 			failedCount++
 			continue
 		}
@@ -530,7 +662,7 @@ func (s *HTTPServer) handleRefreshSearchPosters(w http.ResponseWriter, r *http.R
 			Where("id = ?", suggestion.ID).
 			Updates(map[string]interface{}{
 				"poster_url": posterURL,
-				"tmdb_id":    movie.ID,
+				"tmdb_id":    tmdbID,
 			})
 
 		if updateResult.Error != nil {
@@ -539,7 +671,7 @@ func (s *HTTPServer) handleRefreshSearchPosters(w http.ResponseWriter, r *http.R
 			continue
 		}
 
-		log.Printf("[HTTP] Updated poster for '%s': %s", cleanName, posterURL)
+		log.Printf("[HTTP] Updated poster for '%s': %s", suggestion.Title, posterURL)
 		successCount++
 
 		// Add delay to avoid rate limiting TMDb
@@ -598,13 +730,6 @@ func (s *HTTPServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 	// Save results to database as suggestions (for approve/reject functionality)
 	created := 0
 	for _, result := range results {
-		// Fetch poster from TMDb
-		var posterURL string
-		var tmdbID int
-		if s.tmdbService != nil {
-			posterURL, tmdbID, _ = s.tmdbService.FetchPosterForTask(result.Title)
-		}
-
 		suggestion := &models.DownloadSuggestion{
 			SourceID:   result.SourceID,
 			Title:      result.Title,
@@ -617,8 +742,8 @@ func (s *HTTPServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 			Category:   result.Category,
 			UploadDate: result.UploadDate,
 			Status:     "pending",
-			PosterURL:  posterURL,
-			TMDbID:     tmdbID,
+			PosterURL:  "",
+			TMDbID:     0,
 		}
 
 		// Use FirstOrCreate to avoid duplicates
@@ -634,8 +759,43 @@ func (s *HTTPServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[SEARCH] Saved %d search results to database", created)
 
 	// Redirect to search results view with pending filter (query preserved in form)
-	w.Header().Set("HX-Redirect", "/search?status=pending")
+	w.Header().Set("HX-Redirect", fmt.Sprintf("/search?status=pending&q=%s", url.QueryEscape(query)))
 	w.WriteHeader(http.StatusOK)
+}
+
+func (s *HTTPServer) handleFetchSearchPoster(w http.ResponseWriter, r *http.Request) {
+	idStr := r.URL.Query().Get("id")
+	id, _ := strconv.Atoi(idStr)
+	if id == 0 {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	var suggestion models.DownloadSuggestion
+	if err := s.db.GetDB().First(&suggestion, id).Error; err != nil {
+		http.Error(w, "Suggestion not found", http.StatusNotFound)
+		return
+	}
+
+	// Fetch poster from TMDb if not already present
+	if suggestion.PosterURL == "" && s.tmdbService != nil {
+		posterURL, tmdbID, err := s.tmdbService.FetchPosterForTask(suggestion.Title)
+		if err == nil && posterURL != "" {
+			suggestion.PosterURL = posterURL
+			suggestion.TMDbID = tmdbID
+			s.db.GetDB().Save(&suggestion)
+		}
+	}
+
+	// If still empty, use placeholder
+	posterURL := suggestion.PosterURL
+	if posterURL == "" {
+		posterURL = "/web/images/placeholder-movie.jpg"
+	}
+
+	// Return ONLY the updated poster image part to be swapped in
+	fmt.Fprintf(w, `<img src="%s" alt="%s" class="poster-image" style="width: 100%%; height: 100%%; object-fit: cover;">`,
+		posterURL, suggestion.Title)
 }
 
 func (s *HTTPServer) handleApproveSearchResult(w http.ResponseWriter, r *http.Request) {
@@ -1647,10 +1807,13 @@ func (s *HTTPServer) handleSearchPartial(w http.ResponseWriter, r *http.Request)
 		
 		<div class="controls" style="margin-bottom: 20px;">
 			<!-- Search Form -->
-			<form hx-get="/api/search" hx-target="#search-results" style="display: flex; gap: 10px; margin-bottom: 16px;">
+			<form hx-get="/api/search" hx-target="#search-results" hx-indicator="#search-indicator" style="display: flex; gap: 10px; margin-bottom: 16px; position: relative;">
 				<input type="text" name="q" value="%s" placeholder="Search for movies (e.g., Interstellar, Matrix 1999)..." 
 					style="flex: 1; padding: 12px 16px; background: rgba(22, 27, 34, 0.6); border: 1px solid rgba(48, 54, 61, 0.3); border-radius: 8px; color: var(--text-primary); font-size: 14px;"
 					required>
+				<div id="search-indicator" class="htmx-indicator">
+					<div class="spinner"></div>
+				</div>
 				<button type="submit" class="btn btn-primary" style="min-width: 120px;">
 					🔍 Search
 				</button>
@@ -1746,13 +1909,13 @@ func (s *HTTPServer) handleSearchPartial(w http.ResponseWriter, r *http.Request)
 	`,
 		query,
 		// Status filter buttons with sort preservation
-		ternary(status == "pending", "active", ""), sortBy,
+		ternary(status == "pending" || (query != "" && status == ""), "active", ""), sortBy,
 		stats["pending"],
 		ternary(status == "approved", "active", ""), sortBy,
 		stats["approved"],
 		ternary(status == "rejected", "active", ""), sortBy,
 		stats["rejected"],
-		ternary(status == "", "active", ""), sortBy,
+		ternary(status == "" && query == "", "active", ""), sortBy,
 		stats["total"],
 		// Sort dropdown
 		status,
@@ -1770,53 +1933,75 @@ func (s *HTTPServer) handleSearchPartial(w http.ResponseWriter, r *http.Request)
 	)
 
 	// Show search results or filtered saved results
-	if showResults || status != "" {
+	if showResults || status != "" || query != "" {
 		// Determine which status to show
 		filterStatus := status
-		if showResults && filterStatus == "" {
+		if (showResults || query != "") && filterStatus == "" {
 			filterStatus = "pending"
 		}
 
-		// Get results from database
-		results, _, err := s.suggestionService.ListSuggestions(filterStatus, 1000, 0)
+		// Get results from database - use SearchSuggestions if query is present, otherwise ListSuggestions
+		var results []models.DownloadSuggestion
+		var err error
+		if query != "" {
+			results, _, err = s.suggestionService.SearchSuggestions(query, filterStatus, sortBy, 0, 1000, 0)
+		} else {
+			results, _, err = s.suggestionService.ListSuggestions(filterStatus, 1000, 0)
+
+			// Custom manual sorting for ListSuggestions since it only does seeders by default
+			sort.Slice(results, func(i, j int) bool {
+				switch sortBy {
+				case "size-desc":
+					return results[i].Size > results[j].Size
+				case "size-asc":
+					return results[i].Size < results[j].Size
+				case "date-desc":
+					return results[i].CreatedAt.After(results[j].CreatedAt)
+				case "date-asc":
+					return results[i].CreatedAt.Before(results[j].CreatedAt)
+				case "seeders":
+					fallthrough
+				default:
+					return results[i].Seeders > results[j].Seeders
+				}
+			})
+		}
+
 		if err != nil {
 			log.Printf("[SEARCH] Failed to list results: %v", err)
 			results = []models.DownloadSuggestion{}
 		}
 
-		// Apply sorting
-		sort.Slice(results, func(i, j int) bool {
-			switch sortBy {
-			case "size-desc":
-				return results[i].Size > results[j].Size
-			case "size-asc":
-				return results[i].Size < results[j].Size
-			case "date-desc":
-				return results[i].CreatedAt.After(results[j].CreatedAt)
-			case "date-asc":
-				return results[i].CreatedAt.Before(results[j].CreatedAt)
-			case "seeders":
-				fallthrough
-			default:
-				return results[i].Seeders > results[j].Seeders
-			}
-		})
-
 		if len(results) == 0 {
+			emptyMsg := "Try searching for movies or TV shows above"
+			if query != "" {
+				emptyMsg = fmt.Sprintf("No results found for '%s'. Try a different search term.", query)
+			}
 			fmt.Fprintf(w, `
 				<div class="empty-state">
 					<div class="empty-state-icon">🔍</div>
 					<h2>No Results Found</h2>
-					<p>Try searching for movies or TV shows above</p>
+					<p>%s</p>
 				</div>
-			`)
+			`, emptyMsg)
 		} else {
 			fmt.Fprintf(w, `<div class="media-grid">`)
 			for _, result := range results {
 				sizeGB := float64(result.Size) / (1024 * 1024 * 1024)
-				posterURL := result.PosterURL
-				if posterURL == "" {
-					posterURL = "/web/images/placeholder-movie.jpg"
+
+				// Poster logic: if empty, show skeleton and lazy load
+				posterHtml := ""
+				if result.PosterURL != "" {
+					posterHtml = fmt.Sprintf(`<img src="%s" alt="%s" class="poster-image" style="width: 100%%; height: 100%%; object-fit: cover;">`,
+						result.PosterURL, result.Title)
+				} else {
+					posterHtml = fmt.Sprintf(`
+						<div class="skeleton-card" 
+							 hx-get="/api/search/poster?id=%d" 
+							 hx-trigger="load" 
+							 hx-swap="outerHTML">
+							<div class="shimmer"></div>
+						</div>`, result.ID)
 				}
 
 				statusBadge := ""
@@ -1860,8 +2045,8 @@ func (s *HTTPServer) handleSearchPartial(w http.ResponseWriter, r *http.Request)
 				fmt.Fprintf(w, `
 					<div class="media-card" style="position: relative;">
 						%s
-						<div class="poster-container">
-							<img src="%s" alt="%s" class="poster-image" loading="lazy">
+						<div class="poster-container" style="position: relative; padding-bottom: 150%%; overflow: hidden; border-bottom: 1px solid rgba(48, 54, 61, 0.3);">
+							%s
 						</div>
 						<div class="media-content">
 							<h3 class="media-title">%s</h3>
@@ -1874,7 +2059,7 @@ func (s *HTTPServer) handleSearchPartial(w http.ResponseWriter, r *http.Request)
 							%s
 						</div>
 					</div>
-				`, checkbox, posterURL, result.Title, result.Title, sizeGB, result.Seeders, statusBadge, actions)
+				`, checkbox, posterHtml, result.Title, sizeGB, result.Seeders, statusBadge, actions)
 			}
 			fmt.Fprintf(w, `</div>`)
 		}
