@@ -19,6 +19,8 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	xwidget "fyne.io/x/fyne/widget"
+
+	"github.com/user/media-manager/internal/ffmpeg"
 )
 
 // logToDebugFile appends a message to app_debug.log for error tracking
@@ -147,13 +149,31 @@ func (mc *MediaCard) generateImageThumbnail() {
 	thumbPath := filepath.Join(thumbDir, thumbFileName)
 	// Only generate if not exists
 	if _, err := os.Stat(thumbPath); os.IsNotExist(err) {
-		// Use ffmpeg to generate a thumbnail for any image type
+		// Use embedded ffmpeg to generate a thumbnail for any image type
 		var stderr bytes.Buffer
-		cmd := exec.Command("ffmpeg", "-i", mc.filePath, "-vf", "scale=180:180:force_original_aspect_ratio=increase,crop=180:180", "-frames:v", "1", thumbPath)
+		cmd, err := ffmpeg.NewFFmpegCommand("-i", mc.filePath, "-vf", "scale=216:216:force_original_aspect_ratio=increase,crop=216:216", "-frames:v", "1", thumbPath)
+		if err != nil {
+			logToDebugFile(fmt.Sprintf("[ERROR] Failed to get ffmpeg: %v\n", err))
+			mc.content = widget.NewIcon(theme.FileImageIcon())
+			mc.Refresh()
+			return
+		}
 		cmd.Stderr = &stderr
-		err := cmd.Run()
+		err = cmd.Run()
 		if err != nil {
 			logToDebugFile(fmt.Sprintf("[ERROR] ffmpeg failed to generate thumbnail for %s: %v\n[ffmpeg stderr]: %s\n", mc.filePath, err, stderr.String()))
+			// Try to show the original image as fallback
+			if file, err := os.Open(mc.filePath); err == nil {
+				defer file.Close()
+				if _, _, err := image.DecodeConfig(file); err == nil {
+					img := canvas.NewImageFromFile(mc.filePath)
+					img.FillMode = canvas.ImageFillContain
+					mc.content = img
+					mc.Refresh()
+					return
+				}
+			}
+			// Last resort: show icon
 			mc.content = widget.NewIcon(theme.FileImageIcon())
 			mc.Refresh()
 			return
@@ -200,16 +220,25 @@ func (mc *MediaCard) generateGifPreview() {
 
 	if _, err := os.Stat(gifPath); os.IsNotExist(err) {
 		var stderr bytes.Buffer
-		cmd := exec.Command("ffmpeg",
+		cmd, err := ffmpeg.NewFFmpegCommand(
 			"-i", mc.filePath,
-			"-vf", "fps=12,scale=180:180:force_original_aspect_ratio=increase,crop=180:180",
+			"-vf", "fps=12,scale=216:216:force_original_aspect_ratio=increase,crop=216:216",
 			"-frames:v", "24",
 			gifPath)
+		if err != nil {
+			logToDebugFile(fmt.Sprintf("[ERROR] Failed to get ffmpeg: %v\n", err))
+			mc.content = widget.NewIcon(theme.FileVideoIcon())
+			mc.Refresh()
+			return
+		}
 		cmd.Stderr = &stderr
-		err := cmd.Run()
+		err = cmd.Run()
 		if err != nil {
 			logToDebugFile(fmt.Sprintf("[ERROR] ffmpeg failed to generate GIF for %s: %v\n[ffmpeg stderr]: %s\n", mc.filePath, err, stderr.String()))
-			mc.content = widget.NewIcon(theme.FileImageIcon())
+			// Show video icon as fallback with a loading indicator style
+			icon := widget.NewIcon(theme.FileVideoIcon())
+			mc.content = icon
+			mc.hasAnimation = false
 			mc.Refresh()
 			return
 		}
@@ -338,7 +367,7 @@ func (mc *MediaCard) openFile() error {
 }
 
 func (mc *MediaCard) MinSize() fyne.Size {
-	return fyne.NewSize(180, 101)
+	return fyne.NewSize(216, 121)
 }
 
 func (mc *MediaCard) CreateRenderer() fyne.WidgetRenderer {
@@ -367,25 +396,15 @@ func (r *mediaCardRenderer) Layout(size fyne.Size) {
 	r.background.Resize(size)
 	r.background.Move(fyne.NewPos(0, 0))
 
-	contentH := h - 40 // leave space for label
+	contentH := h - 48 // leave space for label (20% bigger)
 	contentW := w - 2*padding
 	if r.content != nil {
 		r.content.Resize(fyne.NewSize(contentW, contentH))
 		r.content.Move(fyne.NewPos(padding, padding))
 	}
-<<<<<<< HEAD
-	canvas.Refresh(r.content)
-
-	labelX := padding
-	labelY := padding + contentH + padding
-	labelWidth := contentW
-	labelHeight := labelSize.Height
-=======
-
-	labelHeight := float32(32)
+	labelHeight := float32(38) // 20% bigger
 	labelY := h - labelHeight - padding
 	labelWidth := w - 2*padding
->>>>>>> d178e5b02ff1acf1b056cfc23338296a936dc80d
 
 	r.labelBackground.Resize(fyne.NewSize(labelWidth, labelHeight))
 	r.labelBackground.Move(fyne.NewPos(padding, labelY))
@@ -395,21 +414,21 @@ func (r *mediaCardRenderer) Layout(size fyne.Size) {
 }
 
 func (r *mediaCardRenderer) MinSize() fyne.Size {
-	return fyne.NewSize(180, 180)
+	return fyne.NewSize(216, 216)
 }
 
 func (r *mediaCardRenderer) Refresh() {
-	r.content = r.card.content
-	canvas.Refresh(r.background)
-	if r.content != nil {
-		canvas.Refresh(r.content)
-	}
-	canvas.Refresh(r.labelBackground)
-	canvas.Refresh(r.label)
-
-	r.Layout(r.background.Size())
+	fyne.Do(func() {
+		r.content = r.card.content
+		canvas.Refresh(r.background)
+		if r.content != nil {
+			canvas.Refresh(r.content)
+		}
+		canvas.Refresh(r.labelBackground)
+		canvas.Refresh(r.label)
+		r.Layout(r.background.Size())
+	})
 }
-
 func (r *mediaCardRenderer) Objects() []fyne.CanvasObject {
 	return []fyne.CanvasObject{r.background, r.content, r.labelBackground, r.label}
 }
@@ -423,9 +442,9 @@ func (r *mediaCardRenderer) Destroy() {
 func GetMediaType(filename string) MediaType {
 	ext := strings.ToLower(filepath.Ext(filename))
 	switch ext {
-	case ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp":
+	case ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif", ".ico", ".svg":
 		return MediaTypeImage
-	case ".mp4", ".webm", ".ogv", ".flv", ".mov", ".avi", ".mkv", ".ts", ".3gp":
+	case ".mp4", ".webm", ".ogv", ".flv", ".mov", ".avi", ".mkv", ".ts", ".3gp", ".mpeg", ".mpg", ".wmv", ".m4v", ".vob", ".divx":
 		return MediaTypeVideo
 	default:
 		return MediaTypeFile

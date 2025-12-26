@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"github.com/user/media-manager/pkg/models"
@@ -21,7 +21,19 @@ func NewDatabase(dbPath string) (*Database, error) {
 	}
 
 	// Auto-migrate database schema
-	err = db.AutoMigrate(&models.MediaFile{}, &models.Tag{}, &models.Folder{})
+	err = db.AutoMigrate(
+		&models.MediaFile{},
+		&models.Tag{},
+		&models.Folder{},
+		&models.ServiceConfig{},
+		&models.DownloadSource{},
+		&models.DownloadRule{},
+		&models.DownloadTask{},
+		&models.SearchResult{},
+		&models.DownloadSuggestion{},
+		&models.DownloadHistory{},
+		&models.MovieMetadata{},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}

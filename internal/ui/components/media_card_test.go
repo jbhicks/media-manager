@@ -14,14 +14,14 @@ func TestMediaCardLayout(t *testing.T) {
 	imageCard := NewMediaCard("/fake/path/test.jpg", "test.jpg", MediaTypeImage, "")
 
 	// Test card minimum size
-	expectedCardSize := fyne.NewSize(180, 101)
+	expectedCardSize := fyne.NewSize(216, 121)
 	if imageCard.MinSize() != expectedCardSize {
 		t.Errorf("Expected card MinSize to be %v, got %v", expectedCardSize, imageCard.MinSize())
 	}
 
 	// Create renderer to test layout
 	renderer := imageCard.CreateRenderer()
-	cardSize := fyne.NewSize(180, 180)
+	cardSize := fyne.NewSize(216, 216)
 
 	// Apply layout
 	renderer.Layout(cardSize)
@@ -43,7 +43,7 @@ func TestMediaCardUniformSizing(t *testing.T) {
 	fileCard := NewMediaCard("/fake/path/test.txt", "test.txt", MediaTypeFile, "")
 
 	cards := []*MediaCard{imageCard, videoCard, fileCard}
-	expectedSize := fyne.NewSize(180, 101)
+	expectedSize := fyne.NewSize(216, 121)
 
 	for i, card := range cards {
 		if card.MinSize() != expectedSize {
@@ -52,7 +52,7 @@ func TestMediaCardUniformSizing(t *testing.T) {
 
 		// Test renderer layout
 		renderer := imageCard.CreateRenderer()
-		renderer.Layout(fyne.NewSize(180, 180))
+		renderer.Layout(fyne.NewSize(216, 216))
 
 		objects := renderer.Objects()
 		if len(objects) != 4 {

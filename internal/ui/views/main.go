@@ -162,8 +162,8 @@ func (v *MainView) RefreshMediaGrid() {
 }
 
 func (v *MainView) createMediaGrid() *fyne.Container {
-	const cardWidth = 180
-	const cardHeight = 160
+	const cardWidth = 216
+	const cardHeight = 192
 	var cards []fyne.CanvasObject
 	if v.mediaDir != "" {
 		mediaDir := v.mediaDir
