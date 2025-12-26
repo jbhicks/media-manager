@@ -268,11 +268,6 @@ func (mc *MediaCard) MinSize() fyne.Size {
 	return fyne.NewSize(216, 121)
 }
 
-	label           *widget.Label
-	durationLabel   *widget.Label
-	extensionLabel  *widget.Label
-}
-
 func (mc *MediaCard) CreateRenderer() fyne.WidgetRenderer {
 	return &mediaCardRenderer{
 		card:            mc,

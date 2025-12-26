@@ -34,7 +34,8 @@ func NewMediaManagerApp(mediaDir string) (*MediaManagerApp, error) {
 
 	// Initialize FFmpeg
 	if err := ffmpeg.Initialize(); err != nil {
-		fmt.Printf("[ERROR] Failed to initialize ffmpeg: %v\n", err)
+		fmt.Printf("[WARN] Failed to initialize ffmpeg: %v\n", err)
+		fmt.Printf("[WARN] Video preview generation will not work\n")
 	}
 
 	cfg, err := config.LoadConfig(mediaDir)

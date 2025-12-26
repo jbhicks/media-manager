@@ -21,10 +21,10 @@ all: dev
 dev:
 ifeq ($(OS),Windows_NT)
 	if not exist tmp mkdir tmp
-	air
+	air -c .air.toml
 else
 	mkdir -p tmp
-	air
+	air -c .air.toml
 endif
 
 build:

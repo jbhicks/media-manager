@@ -147,16 +147,19 @@ func (v *MainView) RefreshMediaGrid() {
 					continue
 				}
 
-				mediaType := components.GetMediaType(fileName)
-				var thumbPath string
-				// Look up in database to get existing thumbnail/preview path
+				// Look up in database to get existing media file or create a new one
+				var mediaFile models.MediaFile
 				if dbFile, err := v.database.GetMediaFileByPath(filePath); err == nil {
-					if dbFile.PreviewPath != "" {
-						thumbPath = dbFile.PreviewPath
+					mediaFile = *dbFile
+				} else {
+					// Create a minimal MediaFile struct for files not in DB yet
+					mediaFile = models.MediaFile{
+						Path:     filePath,
+						Filename: fileName,
 					}
 				}
 
-				card := components.NewMediaCard(filePath, fileName, mediaType, thumbPath, v.config.ThumbnailDir)
+				card := components.NewMediaCard(mediaFile, v.config.ThumbnailDir)
 				card.SetOnDelete(func() {
 					v.mediaGridContainer.Remove(card)
 					v.mediaGridContainer.Refresh()
@@ -206,16 +209,19 @@ func (v *MainView) createMediaGrid() *fyne.Container {
 				continue
 			}
 
-			mediaType := components.GetMediaType(fileName)
-			var thumbPath string
-			// Look up in database to get existing thumbnail/preview path
+			// Look up in database to get existing media file or create a new one
+			var mediaFile models.MediaFile
 			if dbFile, err := v.database.GetMediaFileByPath(filePath); err == nil {
-				if dbFile.PreviewPath != "" {
-					thumbPath = dbFile.PreviewPath
+				mediaFile = *dbFile
+			} else {
+				// Create a minimal MediaFile struct for files not in DB yet
+				mediaFile = models.MediaFile{
+					Path:     filePath,
+					Filename: fileName,
 				}
 			}
 
-			card := components.NewMediaCard(filePath, fileName, mediaType, thumbPath, v.config.ThumbnailDir)
+			card := components.NewMediaCard(mediaFile, v.config.ThumbnailDir)
 			card.SetOnDelete(func() {
 				v.RefreshMediaGrid()
 			})

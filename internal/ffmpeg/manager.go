@@ -55,7 +55,7 @@ func getBinaryInfo() (ffmpegInfo, ffprobeInfo binaryInfo, err error) {
 			err = fmt.Errorf("unsupported macOS architecture: %s", runtime.GOARCH)
 		}
 	case "linux":
-		err = fmt.Errorf("Linux binaries not available yet")
+		err = fmt.Errorf("Linux binaries not available, will try system PATH")
 	case "windows":
 		err = fmt.Errorf("Windows binaries not available yet")
 	default:
@@ -73,6 +73,18 @@ func Initialize() error {
 }
 
 func ensureBinaries() error {
+	// On Linux, try system PATH first before attempting downloads
+	if runtime.GOOS == "linux" {
+		if path, err := exec.LookPath("ffmpeg"); err == nil {
+			if probePath, err := exec.LookPath("ffprobe"); err == nil {
+				ffmpegPath = path
+				ffprobePath = probePath
+				fmt.Printf("[INFO] Using system ffmpeg from PATH: %s\n", path)
+				return nil
+			}
+		}
+	}
+
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("failed to get home directory: %w", err)
@@ -228,6 +240,9 @@ func NewFFmpegCommand(args ...string) (*exec.Cmd, error) {
 	path, err := GetFFmpegPath()
 	if err != nil {
 		return nil, err
+	}
+	if path == "" {
+		return nil, fmt.Errorf("ffmpeg path is empty")
 	}
 	return exec.Command(path, args...), nil
 }
