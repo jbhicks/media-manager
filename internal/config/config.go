@@ -92,7 +92,7 @@ func LoadConfig(mediaDir string) (*Config, error) {
 		DatabasePath:           filepath.Join(filepath.Dir(configFilePath), "media.db"),
 		ThumbnailDir:           filepath.Join(filepath.Dir(configFilePath), "thumbnails"),
 		ThumbnailSize:          300,
-		MediaDirs:              []string{mediaDir},
+		MediaDirs:              []string{}, // Start with empty, will be set below
 		MainContentSplitOffset: 0.25,
 		SidebarSplitOffset:     0.95,
 		WindowWidth:            0, // Initialize with 0, meaning no saved size
@@ -103,9 +103,12 @@ func LoadConfig(mediaDir string) (*Config, error) {
 
 	data, err := os.ReadFile(configFilePath)
 	if err != nil {
-		// If file doesn't exist, return default config
+		// If file doesn't exist, return default config with mediaDir if provided
 		if os.IsNotExist(err) {
 			fmt.Printf("[DEBUG] config.json not found at %s, creating default config.\n", configFilePath)
+			if mediaDir != "" {
+				cfg.MediaDirs = []string{mediaDir}
+			}
 			return cfg, nil
 		}
 		fmt.Printf("[DEBUG] Failed to read config file %s: %v\n", configFilePath, err)
@@ -120,10 +123,12 @@ func LoadConfig(mediaDir string) (*Config, error) {
 	}
 
 	fmt.Printf("[DEBUG] Config loaded: %+v\n", cfg)
-	// Ensure MediaDirs is set from the command line argument if provided
+	// Only override MediaDirs if mediaDir was explicitly provided (not empty)
 	if mediaDir != "" {
 		cfg.MediaDirs = []string{mediaDir}
 		fmt.Printf("[DEBUG] MediaDirs overridden by command line argument: %v\n", cfg.MediaDirs)
+	} else {
+		fmt.Printf("[DEBUG] Using saved MediaDirs from config: %v\n", cfg.MediaDirs)
 	}
 
 	return cfg, nil

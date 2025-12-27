@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func getProjectRoot() (string, error) {
@@ -141,5 +142,164 @@ func TestRemove1x1Frames(t *testing.T) {
 	}
 	if _, err := os.Stat(frame1x1Path); !os.IsNotExist(err) {
 		t.Errorf("1x1 frame was not deleted")
+	}
+}
+
+func TestSceneDetection(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not found, skipping test")
+	}
+
+	tempDir := t.TempDir()
+	videoPath := filepath.Join(tempDir, "test.mp4")
+
+	// Create a test video with distinct scenes (color changes)
+	// Scene 1: black (0-2s), Scene 2: white (2-4s), Scene 3: red (4-6s)
+	cmd := exec.Command("ffmpeg",
+		"-f", "lavfi", "-i", "color=c=black:s=320x240:d=2",
+		"-f", "lavfi", "-i", "color=c=white:s=320x240:d=2",
+		"-f", "lavfi", "-i", "color=c=red:s=320x240:d=2",
+		"-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1:a=0",
+		"-c:v", "libx264", "-t", "6", videoPath,
+	)
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to create test video with scenes: %v", err)
+	}
+
+	scenes, err := detectScenes(videoPath, 0.3)
+	if err != nil {
+		t.Fatalf("Scene detection failed: %v", err)
+	}
+
+	// Should detect at least 2 scene changes (black->white, white->red)
+	if len(scenes) < 2 {
+		t.Errorf("Expected at least 2 scenes, got %d", len(scenes))
+	}
+
+	fmt.Printf("[DEBUG] Detected scenes: %+v\n", scenes)
+}
+
+func TestSelectRepresentativeScenes(t *testing.T) {
+	// Test with many scenes - should pick top N by score
+	scenes := []SceneTimestamp{
+		{Time: 1.0, Score: 0.5},
+		{Time: 2.0, Score: 0.9},
+		{Time: 3.0, Score: 0.3},
+		{Time: 4.0, Score: 0.8},
+		{Time: 5.0, Score: 0.6},
+	}
+
+	duration := 10 * time.Second
+	selected := selectRepresentativeScenes(scenes, duration, 3)
+
+	if len(selected) != 3 {
+		t.Errorf("Expected 3 scenes, got %d", len(selected))
+	}
+
+	// Should select scenes with highest scores: 2.0 (0.9), 4.0 (0.8), 5.0 (0.6)
+	// Sorted by time: 2.0, 4.0, 5.0
+	expected := []float64{2.0, 4.0, 5.0}
+	for i, exp := range expected {
+		if selected[i] != exp {
+			t.Errorf("Scene %d: expected %.1f, got %.1f", i, exp, selected[i])
+		}
+	}
+}
+
+func TestEvenlyDistributedTimestamps(t *testing.T) {
+	duration := 100 * time.Second
+	timestamps := evenlyDistributedTimestamps(duration, 4)
+
+	if len(timestamps) != 4 {
+		t.Fatalf("Expected 4 timestamps, got %d", len(timestamps))
+	}
+
+	// Should be at 20%, 40%, 60%, 80% (10%, 40%, 70%, 90% would also be valid)
+	// Our implementation uses (i+1)/(count+1), so: 1/5=20%, 2/5=40%, 3/5=60%, 4/5=80%
+	expected := []float64{20.0, 40.0, 60.0, 80.0}
+	for i, exp := range expected {
+		if timestamps[i] != exp {
+			t.Errorf("Timestamp %d: expected %.1f, got %.1f", i, exp, timestamps[i])
+		}
+	}
+}
+
+func TestGenerateSmartPreview(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not found, skipping test")
+	}
+
+	tempDir := t.TempDir()
+	videoPath := filepath.Join(tempDir, "test.mp4")
+	gifPath := filepath.Join(tempDir, "preview.gif")
+
+	// Create test video
+	cmd := exec.Command("ffmpeg",
+		"-f", "lavfi", "-i", "color=c=blue:s=320x240:d=5",
+		"-c:v", "libx264", videoPath,
+	)
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to create test video: %v", err)
+	}
+
+	opts := DefaultPreviewOptions()
+	err := GenerateSmartPreview(videoPath, gifPath, opts)
+	if err != nil {
+		t.Fatalf("GenerateSmartPreview failed: %v", err)
+	}
+
+	if _, err := os.Stat(gifPath); os.IsNotExist(err) {
+		t.Errorf("GIF preview not created: %s", gifPath)
+	}
+}
+
+func TestGenerateSceneMosaic(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not found, skipping test")
+	}
+
+	tempDir := t.TempDir()
+	videoPath := filepath.Join(tempDir, "test.mp4")
+	mosaicPath := filepath.Join(tempDir, "mosaic.jpg")
+
+	// Create test video
+	cmd := exec.Command("ffmpeg",
+		"-f", "lavfi", "-i", "color=c=green:s=320x240:d=5",
+		"-c:v", "libx264", videoPath,
+	)
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to create test video: %v", err)
+	}
+
+	opts := DefaultPreviewOptions()
+	opts.UseMosaic = true
+
+	err := GenerateSmartPreview(videoPath, mosaicPath, opts)
+	if err != nil {
+		t.Fatalf("GenerateSmartPreview (mosaic) failed: %v", err)
+	}
+
+	if _, err := os.Stat(mosaicPath); os.IsNotExist(err) {
+		t.Errorf("Mosaic preview not created: %s", mosaicPath)
+	}
+}
+
+func TestDefaultPreviewOptions(t *testing.T) {
+	opts := DefaultPreviewOptions()
+
+	if opts.SceneThreshold != 0.4 {
+		t.Errorf("Expected SceneThreshold 0.4, got %.2f", opts.SceneThreshold)
+	}
+	if opts.MaxScenes != 4 {
+		t.Errorf("Expected MaxScenes 4, got %d", opts.MaxScenes)
+	}
+	if opts.FPS != 12 {
+		t.Errorf("Expected FPS 12, got %d", opts.FPS)
+	}
+	if opts.Width != 216 || opts.Height != 216 {
+		t.Errorf("Expected size 216x216, got %dx%d", opts.Width, opts.Height)
+	}
+	if opts.UseGPU {
+		t.Error("Expected UseGPU to be false by default")
 	}
 }

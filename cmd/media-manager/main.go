@@ -56,9 +56,26 @@ func clearCacheAndDb() {
 }
 
 func run(runner func(string)) {
-	dir := getDirectoryFromArgs()
-	log.Printf("Opening directory: %s", dir)
-	cfg, _ := config.LoadConfig(dir)
+	dir, explicitDir := getDirectoryFromArgs()
+
+	// Load config first to check for saved MediaDirs
+	cfg, _ := config.LoadConfig("")
+
+	// If no explicit directory was provided and config has saved directories, use the last one
+	if !explicitDir && cfg != nil && len(cfg.MediaDirs) > 0 {
+		lastDir := cfg.MediaDirs[len(cfg.MediaDirs)-1]
+		if lastDir != "" {
+			dir = lastDir
+			log.Printf("Opening last directory from config: %s", dir)
+		}
+	}
+
+	if explicitDir || (cfg == nil || len(cfg.MediaDirs) == 0) {
+		log.Printf("Opening directory: %s", dir)
+	}
+
+	// Reload config with the final directory
+	cfg, _ = config.LoadConfig(dir)
 	if cfg != nil {
 		log.Printf("[DEBUG] main.go: Using DB path: %s", cfg.DatabasePath)
 	} else {
@@ -69,11 +86,11 @@ func run(runner func(string)) {
 	}
 }
 
-func getDirectoryFromArgs() string {
+func getDirectoryFromArgs() (string, bool) {
 	if len(os.Args) > 1 {
 		for _, arg := range os.Args[1:] {
 			if !strings.HasPrefix(arg, "-") {
-				return arg
+				return arg, true // Explicit directory provided
 			}
 		}
 	}
@@ -82,7 +99,7 @@ func getDirectoryFromArgs() string {
 	if err != nil {
 		log.Fatalf("Failed to get current directory: %v", err)
 	}
-	return cwd
+	return cwd, false // No explicit directory, using fallback
 }
 
 func runApp(dir string) {

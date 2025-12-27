@@ -110,6 +110,12 @@ func NewMediaManagerApp(mediaDir string) (*MediaManagerApp, error) {
 func (app *MediaManagerApp) Run() {
 	app.setupUI()
 
+	// Save config when window closes
+	app.window.SetOnClosed(func() {
+		fmt.Println("[DEBUG] app.go: Window closing, saving config...")
+		app.SaveConfig()
+	})
+
 	// Initial scan of the media directory
 	fmt.Printf("[DEBUG] app.go: Starting initial scan of %s\n", app.mediaDir)
 	err := app.scanner.ScanDirectory(app.mediaDir)

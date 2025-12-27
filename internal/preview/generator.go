@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -184,7 +185,7 @@ func generateImageThumbnail(srcPath, thumbPath string) error {
 	cmd, err := ffmpeg.NewFFmpegCommand(
 		"-loglevel", "warning",
 		"-i", srcPath,
-		"-vf", "scale=216:216:force_original_aspect_ratio=increase,boxblur=20,setsar=1[bg];[0:v]scale=216:216:force_original_aspect_ratio=decrease,setsar=1[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2",
+		"-filter_complex", "scale=216:216:force_original_aspect_ratio=increase,boxblur=20,setsar=1[bg];[0:v]scale=216:216:force_original_aspect_ratio=decrease,setsar=1[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2",
 		"-vframes", "1",
 		"-y",
 		thumbPath,
@@ -312,6 +313,7 @@ func GenerateAnimatedPreviewCPU(srcPath, gifPath string) error {
 		return fmt.Errorf("failed to get ffmpeg: %w", err)
 	}
 
+	fmt.Printf("[DEBUG] Running ffmpeg command: %v\n", cmd.String())
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("ffmpeg failed to generate 2x2 animated preview: %v, output: %s\n", err, string(output))
@@ -346,9 +348,412 @@ func GetFFmpegHardwareAccelerations() ([]string, error) {
 	return hwaccels, nil
 }
 
+// PreviewOptions configures preview generation behavior
+type PreviewOptions struct {
+	SceneThreshold float64 // 0.0-1.0, scene detection sensitivity (lower = more sensitive)
+	MaxScenes      int     // Maximum number of scenes to include
+	FPS            int     // Output frame rate
+	Width          int     // Output width in pixels
+	Height         int     // Output height in pixels
+	UseGPU         bool    // Enable GPU acceleration
+	GPUType        string  // "cuda", "vaapi", etc.
+	UseMosaic      bool    // Generate static mosaic instead of GIF
+}
+
+// DefaultPreviewOptions returns sensible defaults
+func DefaultPreviewOptions() PreviewOptions {
+	return PreviewOptions{
+		SceneThreshold: 0.4,
+		MaxScenes:      4,
+		FPS:            12,
+		Width:          216,
+		Height:         216,
+		UseGPU:         false,
+		GPUType:        "",
+		UseMosaic:      false,
+	}
+}
+
+// SceneTimestamp represents a scene change detection result
+type SceneTimestamp struct {
+	Time  float64 // Time in seconds
+	Score float64 // Scene change score
+}
+
+// detectScenes analyzes a video and returns timestamps where scene changes occur
+func detectScenes(srcPath string, threshold float64) ([]SceneTimestamp, error) {
+	fmt.Printf("[DEBUG] Detecting scenes in: %s (threshold: %.2f)\n", srcPath, threshold)
+
+	// Use ffmpeg with select filter for scene detection and showinfo to get timestamps
+	cmd, err := ffmpeg.NewFFmpegCommand(
+		"-i", srcPath,
+		"-vf", fmt.Sprintf("select='gt(scene\\,%.2f)',showinfo", threshold),
+		"-vsync", "0",
+		"-f", "null",
+		"-",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ffmpeg command: %w", err)
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Scene detection can succeed even if command returns non-zero
+		// Check if we got output
+		if len(output) == 0 {
+			return nil, fmt.Errorf("scene detection failed: %w", err)
+		}
+	}
+
+	// Parse scene detection output
+	// Format: [Parsed_showinfo_X @ ADDR] n:X pts:Y pts_time:Z.ZZZ ...
+	var scenes []SceneTimestamp
+	lines := strings.Split(string(output), "\n")
+
+	for _, line := range lines {
+		if !strings.Contains(line, "pts_time:") {
+			continue
+		}
+
+		// Extract pts_time value
+		// Example: pts_time:2.04
+		parts := strings.Split(line, "pts_time:")
+		if len(parts) < 2 {
+			continue
+		}
+
+		// Get the time value (next token after pts_time:)
+		timeStr := strings.Fields(parts[1])[0]
+		timeVal, err := strconv.ParseFloat(timeStr, 64)
+		if err != nil {
+			continue
+		}
+
+		// Score is implicitly above threshold since we used select filter
+		scenes = append(scenes, SceneTimestamp{
+			Time:  timeVal,
+			Score: threshold + 0.1, // Approximate score
+		})
+	}
+
+	fmt.Printf("[DEBUG] Detected %d scenes\n", len(scenes))
+	return scenes, nil
+}
+
+// selectRepresentativeScenes picks the most important scenes from the list
+func selectRepresentativeScenes(scenes []SceneTimestamp, duration time.Duration, maxScenes int) []float64 {
+	if len(scenes) == 0 {
+		// Fallback to evenly distributed timestamps
+		fmt.Printf("[DEBUG] No scenes detected, using evenly distributed timestamps\n")
+		return evenlyDistributedTimestamps(duration, maxScenes)
+	}
+
+	if len(scenes) <= maxScenes {
+		// Use all detected scenes
+		timestamps := make([]float64, len(scenes))
+		for i, s := range scenes {
+			timestamps[i] = s.Time
+		}
+		return timestamps
+	}
+
+	// Too many scenes, select most significant ones
+	// Sort by score (descending)
+	sortedScenes := make([]SceneTimestamp, len(scenes))
+	copy(sortedScenes, scenes)
+	sort.Slice(sortedScenes, func(i, j int) bool {
+		return sortedScenes[i].Score > sortedScenes[j].Score
+	})
+
+	// Take top N scenes
+	topScenes := sortedScenes[:maxScenes]
+
+	// Sort by time for chronological order
+	sort.Slice(topScenes, func(i, j int) bool {
+		return topScenes[i].Time < topScenes[j].Time
+	})
+
+	timestamps := make([]float64, len(topScenes))
+	for i, s := range topScenes {
+		timestamps[i] = s.Time
+	}
+
+	fmt.Printf("[DEBUG] Selected %d representative scenes from %d total\n", len(timestamps), len(scenes))
+	return timestamps
+}
+
+// evenlyDistributedTimestamps returns N evenly spaced timestamps across the duration
+func evenlyDistributedTimestamps(duration time.Duration, count int) []float64 {
+	durSec := duration.Seconds()
+	timestamps := make([]float64, count)
+
+	// Distribute evenly: 10%, 40%, 70%, 90% for count=4
+	for i := 0; i < count; i++ {
+		progress := float64(i+1) / float64(count+1)
+		timestamps[i] = durSec * progress
+	}
+
+	return timestamps
+}
+
 func GenerateAnimatedPreview(srcPath, gifPath string) error {
-	// Temporarily disable GPU acceleration for debugging
-	return GenerateAnimatedPreviewCPU(srcPath, gifPath)
+	// Use new smart preview system with default options
+	opts := DefaultPreviewOptions()
+	return GenerateSmartPreview(srcPath, gifPath, opts)
+}
+
+// GenerateSmartPreview creates an optimized preview using scene detection
+func GenerateSmartPreview(srcPath, gifPath string, opts PreviewOptions) error {
+	fmt.Printf("[DEBUG] Generating smart preview for: %s\n", srcPath)
+
+	// Check if preview already exists
+	if _, err := os.Stat(gifPath); err == nil {
+		fmt.Printf("[DEBUG] Preview already exists: %s\n", gifPath)
+		return nil
+	}
+
+	// Ensure output directory exists
+	if err := os.MkdirAll(filepath.Dir(gifPath), 0755); err != nil {
+		return fmt.Errorf("failed to create preview directory: %w", err)
+	}
+
+	// Get video duration
+	duration, err := getVideoDuration(srcPath)
+	if err != nil {
+		return fmt.Errorf("failed to get video duration: %w", err)
+	}
+
+	// Detect scenes
+	scenes, err := detectScenes(srcPath, opts.SceneThreshold)
+	if err != nil {
+		fmt.Printf("[WARN] Scene detection failed: %v, falling back to even distribution\n", err)
+		scenes = nil // Will trigger fallback
+	}
+
+	// Select representative timestamps
+	timestamps := selectRepresentativeScenes(scenes, duration, opts.MaxScenes)
+
+	// Generate preview based on type
+	if opts.UseMosaic {
+		return generateSceneMosaic(srcPath, gifPath, timestamps, opts)
+	}
+
+	// Use GPU or CPU based on options
+	if opts.UseGPU && opts.GPUType != "" {
+		err := generateSceneBasedGIFWithGPU(srcPath, gifPath, timestamps, opts)
+		if err != nil {
+			fmt.Printf("[WARN] GPU generation failed: %v, falling back to CPU\n", err)
+			return generateSceneBasedGIFWithCPU(srcPath, gifPath, timestamps, opts)
+		}
+		return err
+	}
+
+	return generateSceneBasedGIFWithCPU(srcPath, gifPath, timestamps, opts)
+}
+
+// generateSceneBasedGIFWithCPU creates a GIF using two-pass palette encoding
+func generateSceneBasedGIFWithCPU(srcPath, gifPath string, timestamps []float64, opts PreviewOptions) error {
+	fmt.Printf("[DEBUG] Generating scene-based GIF with CPU\n")
+
+	// Step 1: Generate optimal palette
+	paletteFile := filepath.Join(filepath.Dir(gifPath), ".palette_"+filepath.Base(gifPath)+".png")
+	defer os.Remove(paletteFile) // Clean up palette file
+
+	// Build filter for scene extraction
+	var sceneFilters []string
+	cellSize := opts.Width / 2 // 2x2 grid
+
+	for i, ts := range timestamps {
+		sceneFilters = append(sceneFilters, fmt.Sprintf(
+			"[0:v]trim=start=%.2f:duration=0.8,setpts=PTS-STARTPTS,fps=%d,scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d[v%d]",
+			ts, opts.FPS, cellSize, cellSize, cellSize, cellSize, i,
+		))
+	}
+
+	// Create 2x2 grid layout
+	gridFilter := fmt.Sprintf("[v0][v1][v2][v3]xstack=inputs=4:layout=0_0|%d_0|0_%d|%d_%d[stacked]",
+		cellSize, cellSize, cellSize, cellSize)
+
+	paletteFilter := strings.Join(sceneFilters, ";") + ";" + gridFilter + ";[stacked]palettegen=max_colors=256"
+
+	cmd1, err := ffmpeg.NewFFmpegCommand(
+		"-loglevel", "warning",
+		"-i", srcPath,
+		"-filter_complex", paletteFilter,
+		"-y", paletteFile,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create palette command: %w", err)
+	}
+
+	fmt.Printf("[DEBUG] Generating palette...\n")
+	output, err := cmd1.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("palette generation failed: %w\nOutput: %s", err, string(output))
+	}
+
+	// Step 2: Generate GIF using palette
+	gifFilter := strings.Join(sceneFilters, ";") + ";" + gridFilter + ";[stacked][1:v]paletteuse=dither=bayer:bayer_scale=5"
+
+	cmd2, err := ffmpeg.NewFFmpegCommand(
+		"-loglevel", "warning",
+		"-i", srcPath,
+		"-i", paletteFile,
+		"-filter_complex", gifFilter,
+		"-y", gifPath,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create GIF command: %w", err)
+	}
+
+	fmt.Printf("[DEBUG] Generating GIF with palette...\n")
+	output, err = cmd2.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("GIF generation failed: %w\nOutput: %s", err, string(output))
+	}
+
+	fmt.Printf("[DEBUG] Successfully generated scene-based GIF: %s\n", gifPath)
+	return nil
+}
+
+// generateSceneMosaic creates a static image mosaic of scene thumbnails
+func generateSceneMosaic(srcPath, mosaicPath string, timestamps []float64, opts PreviewOptions) error {
+	fmt.Printf("[DEBUG] Generating scene mosaic for: %s\n", srcPath)
+
+	// Use scene detection with thumbnail filter for best frame selection
+	// Create a 2x2 grid (or adjust based on number of scenes)
+	cols := 2
+	rows := 2
+	cellSize := opts.Width / cols
+
+	var sceneFilters []string
+	for i, ts := range timestamps {
+		if i >= cols*rows {
+			break // Limit to grid size
+		}
+		sceneFilters = append(sceneFilters, fmt.Sprintf(
+			"[0:v]trim=start=%.2f:duration=1,thumbnail=25,scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d[v%d]",
+			ts, cellSize, cellSize, cellSize, cellSize, i,
+		))
+	}
+
+	// Create grid
+	gridFilter := fmt.Sprintf("[v0][v1][v2][v3]xstack=inputs=4:layout=0_0|%d_0|0_%d|%d_%d",
+		cellSize, cellSize, cellSize, cellSize)
+
+	filterComplex := strings.Join(sceneFilters, ";") + ";" + gridFilter
+
+	cmd, err := ffmpeg.NewFFmpegCommand(
+		"-loglevel", "warning",
+		"-i", srcPath,
+		"-filter_complex", filterComplex,
+		"-frames:v", "1",
+		"-y", mosaicPath,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create mosaic command: %w", err)
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("mosaic generation failed: %w\nOutput: %s", err, string(output))
+	}
+
+	fmt.Printf("[DEBUG] Successfully generated mosaic: %s\n", mosaicPath)
+	return nil
+}
+
+// generateSceneBasedGIFWithGPU creates a GIF using GPU acceleration
+func generateSceneBasedGIFWithGPU(srcPath, gifPath string, timestamps []float64, opts PreviewOptions) error {
+	fmt.Printf("[DEBUG] Generating scene-based GIF with GPU (%s)\n", opts.GPUType)
+
+	switch opts.GPUType {
+	case "cuda":
+		return generateGIFWithCUDA(srcPath, gifPath, timestamps, opts)
+	case "vaapi":
+		return generateGIFWithVAAPI(srcPath, gifPath, timestamps, opts)
+	default:
+		return fmt.Errorf("unsupported GPU type: %s", opts.GPUType)
+	}
+}
+
+// generateGIFWithCUDA uses NVIDIA GPU acceleration
+func generateGIFWithCUDA(srcPath, gifPath string, timestamps []float64, opts PreviewOptions) error {
+	fmt.Printf("[DEBUG] Generating GIF with CUDA acceleration\n")
+
+	// CUDA pipeline: decode with cuvid, process on GPU, download for GIF encoding
+	cellSize := opts.Width / 2
+
+	var sceneFilters []string
+	for i, ts := range timestamps {
+		sceneFilters = append(sceneFilters, fmt.Sprintf(
+			"[0:v]trim=start=%.2f:duration=0.8,setpts=PTS-STARTPTS,fps=%d,hwupload_cuda,scale_cuda=%d:%d,hwdownload,format=yuv420p[v%d]",
+			ts, opts.FPS, cellSize, cellSize, i,
+		))
+	}
+
+	gridFilter := fmt.Sprintf("[v0][v1][v2][v3]xstack=inputs=4:layout=0_0|%d_0|0_%d|%d_%d",
+		cellSize, cellSize, cellSize, cellSize)
+
+	filterComplex := strings.Join(sceneFilters, ";") + ";" + gridFilter
+
+	cmd, err := ffmpeg.NewFFmpegCommand(
+		"-hwaccel", "cuda",
+		"-hwaccel_output_format", "cuda",
+		"-i", srcPath,
+		"-filter_complex", filterComplex,
+		"-y", gifPath,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create CUDA command: %w", err)
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("CUDA GIF generation failed: %w\nOutput: %s", err, string(output))
+	}
+
+	fmt.Printf("[DEBUG] Successfully generated GIF with CUDA\n")
+	return nil
+}
+
+// generateGIFWithVAAPI uses Intel/AMD GPU acceleration
+func generateGIFWithVAAPI(srcPath, gifPath string, timestamps []float64, opts PreviewOptions) error {
+	fmt.Printf("[DEBUG] Generating GIF with VAAPI acceleration\n")
+
+	cellSize := opts.Width / 2
+
+	var sceneFilters []string
+	for i, ts := range timestamps {
+		sceneFilters = append(sceneFilters, fmt.Sprintf(
+			"[0:v]trim=start=%.2f:duration=0.8,setpts=PTS-STARTPTS,fps=%d,format=nv12,hwupload,scale_vaapi=w=%d:h=%d,hwdownload,format=nv12[v%d]",
+			ts, opts.FPS, cellSize, cellSize, i,
+		))
+	}
+
+	gridFilter := fmt.Sprintf("[v0][v1][v2][v3]xstack=inputs=4:layout=0_0|%d_0|0_%d|%d_%d",
+		cellSize, cellSize, cellSize, cellSize)
+
+	filterComplex := strings.Join(sceneFilters, ";") + ";" + gridFilter
+
+	cmd, err := ffmpeg.NewFFmpegCommand(
+		"-init_hw_device", "vaapi",
+		"-hwaccel", "vaapi",
+		"-i", srcPath,
+		"-filter_complex", filterComplex,
+		"-y", gifPath,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create VAAPI command: %w", err)
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("VAAPI GIF generation failed: %w\nOutput: %s", err, string(output))
+	}
+
+	fmt.Printf("[DEBUG] Successfully generated GIF with VAAPI\n")
+	return nil
 }
 
 // ExtractGifFrames extracts all frames from a GIF into a sequence of PNG images.
