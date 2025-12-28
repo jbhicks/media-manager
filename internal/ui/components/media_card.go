@@ -49,6 +49,7 @@ type MediaCard struct {
 	fileName        string
 	thumbnailPath   string
 	animatedGif     *xwidget.AnimatedGif // fyne-x GIF widget for animated previews
+	forceRegenerate bool
 	icon            *widget.Icon
 	label           *widget.Label
 	labelBackground fyne.CanvasObject
@@ -65,23 +66,28 @@ type MediaCard struct {
 }
 
 func NewMediaCard(file models.MediaFile, thumbDir string) *MediaCard {
+	return NewMediaCardWithForce(file, thumbDir, false)
+}
+
+func NewMediaCardWithForce(file models.MediaFile, thumbDir string, forceRegenerate bool) *MediaCard {
 	mediaType := GetMediaType(file.Filename)
-	fmt.Printf("[DEBUG] NewMediaCard: Creating card for %s (Type: %v)\n", file.Filename, mediaType)
+	fmt.Printf("[DEBUG] NewMediaCard: Creating card for %s (Type: %v, Force: %v)\n", file.Filename, mediaType, forceRegenerate)
 	displayName := file.Filename
 	if len(displayName) > 22 {
 		displayName = displayName[:19] + "..."
 	}
 
 	card := &MediaCard{
-		mediaType:     mediaType,
-		filePath:      file.Path,
-		fileName:      file.Filename,
-		thumbnailPath: file.PreviewPath,
-		thumbDir:      thumbDir,
-		duration:      file.Duration,
-		extension:     strings.ToUpper(strings.TrimPrefix(filepath.Ext(file.Filename), ".")),
-		isHovered:     false,
-		hasAnimation:  false,
+		mediaType:       mediaType,
+		filePath:        file.Path,
+		fileName:        file.Filename,
+		thumbnailPath:   file.PreviewPath,
+		thumbDir:        thumbDir,
+		duration:        file.Duration,
+		extension:       strings.ToUpper(strings.TrimPrefix(filepath.Ext(file.Filename), ".")),
+		isHovered:       false,
+		hasAnimation:    false,
+		forceRegenerate: forceRegenerate,
 	}
 
 	card.setupContent()
@@ -125,8 +131,8 @@ func (mc *MediaCard) setupContent() {
 }
 
 func (mc *MediaCard) loadPreview(mediaTypeStr string) {
-	// If we already have a path from DB, use it initially
-	if mc.thumbnailPath != "" {
+	// If we already have a path from DB and not forcing regenerate, use it initially
+	if mc.thumbnailPath != "" && !mc.forceRegenerate {
 		if _, err := os.Stat(mc.thumbnailPath); err == nil {
 			mc.updateContent(mc.thumbnailPath)
 			return
@@ -134,7 +140,7 @@ func (mc *MediaCard) loadPreview(mediaTypeStr string) {
 	}
 
 	// Request from centralized manager
-	path, err := preview.GetPreview(mc.filePath, mediaTypeStr, mc.thumbDir)
+	path, err := preview.GetPreviewWithForce(mc.filePath, mediaTypeStr, mc.thumbDir, mc.forceRegenerate)
 	if err != nil {
 		fmt.Printf("[ERROR] Failed to get preview for %s: %v\n", mc.filePath, err)
 		return

@@ -2,6 +2,8 @@ package views
 
 import (
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,6 +29,9 @@ type MainView struct {
 	foldersTree        *widget.Tree
 	filter             string
 	recursiveSearch    bool
+	debugLog           *widget.TextGrid
+	debugWriter        io.Writer
+	showDebugLog       bool
 }
 
 func (v *MainView) getChildDirs(path string) []string {
@@ -111,7 +116,15 @@ func (v *MainView) filterMediaFiles(input string) {
 }
 
 func (v *MainView) RefreshMediaGrid() {
-	fmt.Println("[DEBUG] views/main.go: RefreshMediaGrid called.")
+	v.RefreshMediaGridWithForce(false)
+}
+
+func (v *MainView) RefreshMediaGridWithForce(forceRegenerate bool) {
+	if forceRegenerate {
+		log.Println("[INFO] RefreshMediaGrid called with force regenerate")
+	} else {
+		log.Println("[DEBUG] RefreshMediaGrid called")
+	}
 	if v.mediaGridContainer != nil {
 		v.mediaGridContainer.Objects = []fyne.CanvasObject{}
 		if v.mediaDir != "" {
@@ -303,6 +316,11 @@ func (v *MainView) Build() fyne.CanvasObject {
 	refreshBtn := widget.NewButton("Refresh", func() {
 		v.RefreshMediaGrid()
 	})
+
+	forceRegenerateBtn := widget.NewButton("Force Regenerate Previews", func() {
+		log.Println("[INFO] Force regenerating all previews...")
+		v.RefreshMediaGridWithForce(true)
+	})
 	addFolderBtn := widget.NewButton("Add Folder", func() {
 		dialog := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
 			if err != nil || uri == nil {
@@ -329,14 +347,36 @@ func (v *MainView) Build() fyne.CanvasObject {
 		v.RefreshMediaGrid()
 	})
 	recursiveCheck.SetChecked(v.recursiveSearch)
-	buttonBox := container.NewHBox(refreshBtn, addFolderBtn, recursiveCheck)
+
+	debugLogCheck := widget.NewCheck("Show Debug Log", func(checked bool) {
+		v.showDebugLog = checked
+		v.window.SetContent(v.Build())
+	})
+	debugLogCheck.SetChecked(v.showDebugLog)
+
+	buttonBox := container.NewHBox(refreshBtn, forceRegenerateBtn, addFolderBtn, recursiveCheck, debugLogCheck)
 	toolbar := container.NewBorder(nil, nil, nil, buttonBox, filterEntry)
 	if v.mediaDir != "" && v.foldersTree != nil {
 		v.foldersTree.Select(v.mediaDir)
 	} else if v.foldersTree == nil {
 		fmt.Println("[WARN] foldersTree is nil, cannot select root directory")
 	}
-	return container.NewBorder(toolbar, nil, nil, nil, split)
+
+	mainContent := container.NewBorder(toolbar, nil, nil, nil, split)
+
+	// Add debug log panel if enabled
+	if v.showDebugLog {
+		if v.debugLog == nil {
+			v.debugLog = widget.NewTextGridFromString("Debug Log:\n")
+			v.debugWriter = components.NewDebugWriter(v.debugLog)
+			log.SetOutput(io.MultiWriter(os.Stdout, v.debugWriter))
+		}
+		debugScroll := container.NewScroll(v.debugLog)
+		debugScroll.SetMinSize(fyne.NewSize(0, 200))
+		return container.NewBorder(nil, debugScroll, nil, nil, mainContent)
+	}
+
+	return mainContent
 }
 
 func NewMainView(cfg *config.Config, db *db.Database, window fyne.Window, mediaDir string) *MainView {

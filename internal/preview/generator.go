@@ -65,6 +65,11 @@ func GenerateUniqueFilename(filePath, extension string) string {
 
 // GetPreview returns the path to the preview, generating it in the background if it doesn't exist.
 func GetPreview(srcPath string, mediaType string, thumbDir string) (string, error) {
+	return GetPreviewWithForce(srcPath, mediaType, thumbDir, false)
+}
+
+// GetPreviewWithForce returns the path to the preview, optionally forcing regeneration.
+func GetPreviewWithForce(srcPath string, mediaType string, thumbDir string, forceRegenerate bool) (string, error) {
 	initPool()
 
 	ext := ".jpg"
@@ -75,14 +80,21 @@ func GetPreview(srcPath string, mediaType string, thumbDir string) (string, erro
 	destFilename := GenerateUniqueFilename(srcPath, ext)
 	destPath := filepath.Join(thumbDir, destFilename)
 
-	if _, err := os.Stat(destPath); err == nil {
-		return destPath, nil
+	// Check if preview exists and skip if not forcing regeneration
+	if !forceRegenerate {
+		if _, err := os.Stat(destPath); err == nil {
+			return destPath, nil
+		}
+	} else {
+		// Remove existing preview to force regeneration
+		os.Remove(destPath)
+		fmt.Printf("[DEBUG] Force regenerating preview: %s\n", srcPath)
 	}
 
 	// Queue for generation
 	select {
 	case taskChan <- task{srcPath: srcPath, destPath: destPath, mediaType: mediaType}:
-		// Task queued
+		fmt.Printf("[DEBUG] Queued preview generation for: %s\n", filepath.Base(srcPath))
 	default:
 		// Queue full, maybe return error or log
 		fmt.Printf("[WARN] Preview task queue full for: %s\n", srcPath)
