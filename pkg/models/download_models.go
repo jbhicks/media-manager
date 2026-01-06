@@ -98,6 +98,7 @@ type DownloadSuggestion struct {
 	Seeders      int             `json:"seeders" gorm:"index"`
 	Leechers     int             `json:"leechers"`
 	Category     string          `json:"category,omitempty"`
+	ContentType  string          `json:"content_type,omitempty" gorm:"index"`
 	Resolution   string          `json:"resolution,omitempty"`
 	Quality      string          `json:"quality,omitempty"`
 	UploadDate   time.Time       `json:"upload_date,omitempty" gorm:"index"`

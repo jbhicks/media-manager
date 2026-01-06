@@ -17,5 +17,6 @@ Write-Host "Clearing previews..." -ForegroundColor Green
 
 Write-Host "Starting development mode with hot-reload..." -ForegroundColor Green
 $env:CLEAR_DB_ON_START = "true"
-& air
+# Run air through cmd.exe to avoid PowerShell 'start' alias issues
+cmd /c "air"
 

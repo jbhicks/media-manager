@@ -174,7 +174,8 @@ func (r *videoPreviewCardRenderer) Refresh() {
 }
 
 func (r *videoPreviewCardRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.card.background, r.card.container, r.card.labelBackground}
+	// Include all visible objects: background, container, labelBackground, and label
+	return []fyne.CanvasObject{r.card.background, r.card.container, r.card.labelBackground, r.card.label}
 }
 
 func (r *videoPreviewCardRenderer) Destroy() {

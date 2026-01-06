@@ -271,7 +271,7 @@ func (mc *MediaCard) openFile() error {
 }
 
 func (mc *MediaCard) MinSize() fyne.Size {
-	return fyne.NewSize(216, 121)
+	return fyne.NewSize(216, 192)
 }
 
 func (mc *MediaCard) CreateRenderer() fyne.WidgetRenderer {
@@ -335,29 +335,35 @@ func (r *mediaCardRenderer) Layout(size fyne.Size) {
 }
 
 func (r *mediaCardRenderer) MinSize() fyne.Size {
-	return fyne.NewSize(216, 216)
+	return fyne.NewSize(216, 192)
 }
 
 func (r *mediaCardRenderer) Refresh() {
-	fyne.Do(func() {
-		r.content = r.card.content
-		canvas.Refresh(r.background)
-		if r.content != nil {
-			canvas.Refresh(r.content)
-		}
-		canvas.Refresh(r.labelBackground)
-		canvas.Refresh(r.label)
-		if r.durationLabel != nil {
-			canvas.Refresh(r.durationLabel)
-		}
-		if r.extensionLabel != nil {
-			canvas.Refresh(r.extensionLabel)
-		}
-		r.Layout(r.background.Size())
-	})
+	// Update content reference from card (may have changed asynchronously)
+	r.content = r.card.content
+
+	// Refresh all objects - no fyne.Do needed as renderer methods are called on main thread
+	canvas.Refresh(r.background)
+	if r.content != nil {
+		canvas.Refresh(r.content)
+	}
+	canvas.Refresh(r.labelBackground)
+	canvas.Refresh(r.label)
+	if r.durationLabel != nil {
+		canvas.Refresh(r.durationLabel)
+	}
+	if r.extensionLabel != nil {
+		canvas.Refresh(r.extensionLabel)
+	}
+	// Note: Layout() should NOT be called from Refresh() per Fyne docs
 }
 func (r *mediaCardRenderer) Objects() []fyne.CanvasObject {
-	objs := []fyne.CanvasObject{r.background, r.content, r.labelBackground, r.label}
+	// Build objects list, ensuring no nil values (content may be nil during async load)
+	objs := []fyne.CanvasObject{r.background}
+	if r.content != nil {
+		objs = append(objs, r.content)
+	}
+	objs = append(objs, r.labelBackground, r.label)
 	if r.durationLabel != nil {
 		objs = append(objs, r.durationLabel)
 	}

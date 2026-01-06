@@ -45,6 +45,8 @@ type ServiceConfig struct {
 	TorrentClientHost      string    `json:"torrent_client_host" gorm:"default:'localhost:9091'"`
 	TorrentClientUser      string    `json:"torrent_client_user,omitempty"`
 	TorrentClientPass      string    `json:"torrent_client_pass,omitempty"`
+	DownloadPath           string    `json:"download_path" gorm:"default:''"`
+	LibraryPath            string    `json:"library_path" gorm:"default:''"`
 	JellyfinURL            string    `json:"jellyfin_url" gorm:"default:''"`
 	JellyfinAPIKey         string    `json:"jellyfin_api_key,omitempty"`
 	UpdatedAt              time.Time `json:"updated_at"`

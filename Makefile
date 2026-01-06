@@ -21,7 +21,7 @@ all: dev
 dev:
 ifeq ($(OS),Windows_NT)
 	if not exist tmp mkdir tmp
-	air -c .air.toml
+	cmd /c "air -c .air.toml"
 else
 	mkdir -p tmp
 	air -c .air.toml
