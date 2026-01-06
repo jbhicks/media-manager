@@ -28,6 +28,7 @@ type task struct {
 	destPath  string
 	mediaType string
 	done      chan error
+	callback  func(path string, err error) // Callback when complete
 }
 
 func initPool() {
@@ -53,6 +54,9 @@ func worker() {
 		}
 		if t.done != nil {
 			t.done <- err
+		}
+		if t.callback != nil {
+			t.callback(t.destPath, err)
 		}
 	}
 }
@@ -101,6 +105,49 @@ func GetPreviewWithForce(srcPath string, mediaType string, thumbDir string, forc
 	}
 
 	return destPath, nil // Return the path even if it doesn't exist yet
+}
+
+// GetPreviewWithCallback queues preview generation and calls the callback when complete.
+// This is the preferred method as it avoids polling loops.
+func GetPreviewWithCallback(srcPath string, mediaType string, thumbDir string, forceRegenerate bool, callback func(path string, err error)) (string, error) {
+	initPool()
+
+	ext := ".jpg"
+	if mediaType == "video" {
+		ext = ".gif"
+	}
+
+	destFilename := GenerateUniqueFilename(srcPath, ext)
+	destPath := filepath.Join(thumbDir, destFilename)
+
+	// Check if preview exists and skip if not forcing regeneration
+	if !forceRegenerate {
+		if _, err := os.Stat(destPath); err == nil {
+			// File already exists, invoke callback immediately
+			if callback != nil {
+				go callback(destPath, nil)
+			}
+			return destPath, nil
+		}
+	} else {
+		// Remove existing preview to force regeneration
+		os.Remove(destPath)
+		fmt.Printf("[DEBUG] Force regenerating preview: %s\n", srcPath)
+	}
+
+	// Queue for generation with callback
+	select {
+	case taskChan <- task{srcPath: srcPath, destPath: destPath, mediaType: mediaType, callback: callback}:
+		fmt.Printf("[DEBUG] Queued preview generation for: %s\n", filepath.Base(srcPath))
+	default:
+		// Queue full
+		fmt.Printf("[WARN] Preview task queue full for: %s\n", srcPath)
+		if callback != nil {
+			go callback("", fmt.Errorf("preview task queue full"))
+		}
+	}
+
+	return destPath, nil
 }
 
 func getUserConfig(key string, defaultValue int) int {

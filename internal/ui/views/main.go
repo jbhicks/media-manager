@@ -20,7 +20,6 @@ import (
 )
 
 type MainView struct {
-	widget.BaseWidget
 	config             *config.Config
 	database           *db.Database
 	mediaGridContainer *fyne.Container

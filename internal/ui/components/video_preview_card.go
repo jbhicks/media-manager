@@ -65,13 +65,16 @@ func (vpc *VideoPreviewCard) Tapped(*fyne.PointEvent) {
 
 // CreateRenderer creates the renderer for the video preview card
 func (vpc *VideoPreviewCard) CreateRenderer() fyne.WidgetRenderer {
-	return &videoPreviewCardRenderer{
+	r := &videoPreviewCardRenderer{
 		card: vpc,
 	}
+	r.objects = []fyne.CanvasObject{vpc.background, vpc.container, vpc.labelBackground, vpc.label}
+	return r
 }
 
 type videoPreviewCardRenderer struct {
-	card *VideoPreviewCard
+	card    *VideoPreviewCard
+	objects []fyne.CanvasObject // Cached objects slice
 }
 
 func (r *videoPreviewCardRenderer) Layout(size fyne.Size) {
@@ -174,8 +177,7 @@ func (r *videoPreviewCardRenderer) Refresh() {
 }
 
 func (r *videoPreviewCardRenderer) Objects() []fyne.CanvasObject {
-	// Include all visible objects: background, container, labelBackground, and label
-	return []fyne.CanvasObject{r.card.background, r.card.container, r.card.labelBackground, r.card.label}
+	return r.objects
 }
 
 func (r *videoPreviewCardRenderer) Destroy() {

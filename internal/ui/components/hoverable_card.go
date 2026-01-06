@@ -83,18 +83,30 @@ func (hc *HoverableCard) MinSize() fyne.Size {
 
 // CreateRenderer creates the renderer for the hoverable card
 func (hc *HoverableCard) CreateRenderer() fyne.WidgetRenderer {
-	return &hoverableCardRenderer{
+	r := &hoverableCardRenderer{
 		card:  hc,
 		gif:   hc.animatedGif,
 		label: hc.label,
 	}
+	r.updateObjectsCache()
+	return r
 }
 
 // hoverableCardRenderer renders the hoverable card
 type hoverableCardRenderer struct {
-	card  *HoverableCard
-	gif   *xwidget.AnimatedGif
-	label *widget.Label
+	card    *HoverableCard
+	gif     *xwidget.AnimatedGif
+	label   *widget.Label
+	objects []fyne.CanvasObject // Cached objects slice
+}
+
+// updateObjectsCache rebuilds the cached objects slice
+func (r *hoverableCardRenderer) updateObjectsCache() {
+	if r.gif != nil {
+		r.objects = []fyne.CanvasObject{r.gif, r.label}
+	} else {
+		r.objects = []fyne.CanvasObject{r.label}
+	}
 }
 
 func (r *hoverableCardRenderer) Layout(size fyne.Size) {
@@ -126,10 +138,7 @@ func (r *hoverableCardRenderer) Refresh() {
 }
 
 func (r *hoverableCardRenderer) Objects() []fyne.CanvasObject {
-	if r.gif != nil {
-		return []fyne.CanvasObject{r.gif, r.label}
-	}
-	return []fyne.CanvasObject{r.label}
+	return r.objects
 }
 
 func (r *hoverableCardRenderer) Destroy() {

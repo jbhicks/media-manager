@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -139,24 +138,15 @@ func (mc *MediaCard) loadPreview(mediaTypeStr string) {
 		}
 	}
 
-	// Request from centralized manager
-	path, err := preview.GetPreviewWithForce(mc.filePath, mediaTypeStr, mc.thumbDir, mc.forceRegenerate)
-	if err != nil {
-		fmt.Printf("[ERROR] Failed to get preview for %s: %v\n", mc.filePath, err)
-		return
-	}
-
-	// Wait for the file to exist (the worker pool will create it)
-	// For now, we'll just check existence periodically or wait until Refresh is called.
-	// A better way would be a callback, but let's start simple.
-	for i := 0; i < 30; i++ { // Wait up to 30 seconds
-		if _, err := os.Stat(path); err == nil {
-			mc.thumbnailPath = path
-			mc.updateContent(path)
+	// Request from centralized manager with callback - no polling needed
+	preview.GetPreviewWithCallback(mc.filePath, mediaTypeStr, mc.thumbDir, mc.forceRegenerate, func(path string, err error) {
+		if err != nil {
+			fmt.Printf("[ERROR] Failed to generate preview for %s: %v\n", mc.filePath, err)
 			return
 		}
-		time.Sleep(1 * time.Second)
-	}
+		mc.thumbnailPath = path
+		mc.updateContent(path)
+	})
 }
 
 func (mc *MediaCard) updateContent(path string) {
@@ -275,7 +265,7 @@ func (mc *MediaCard) MinSize() fyne.Size {
 }
 
 func (mc *MediaCard) CreateRenderer() fyne.WidgetRenderer {
-	return &mediaCardRenderer{
+	r := &mediaCardRenderer{
 		card:            mc,
 		background:      mc.background,
 		content:         mc.content,
@@ -284,6 +274,8 @@ func (mc *MediaCard) CreateRenderer() fyne.WidgetRenderer {
 		durationLabel:   mc.durationLabel,
 		extensionLabel:  mc.extensionLabel,
 	}
+	r.updateObjectsCache()
+	return r
 }
 
 type mediaCardRenderer struct {
@@ -294,6 +286,7 @@ type mediaCardRenderer struct {
 	label           *widget.Label
 	durationLabel   *widget.Label
 	extensionLabel  *widget.Label
+	objects         []fyne.CanvasObject // Cached objects slice
 }
 
 func (r *mediaCardRenderer) Layout(size fyne.Size) {
@@ -340,7 +333,13 @@ func (r *mediaCardRenderer) MinSize() fyne.Size {
 
 func (r *mediaCardRenderer) Refresh() {
 	// Update content reference from card (may have changed asynchronously)
+	oldContent := r.content
 	r.content = r.card.content
+
+	// Rebuild objects cache if content changed
+	if oldContent != r.content {
+		r.updateObjectsCache()
+	}
 
 	// Refresh all objects - no fyne.Do needed as renderer methods are called on main thread
 	canvas.Refresh(r.background)
@@ -357,8 +356,9 @@ func (r *mediaCardRenderer) Refresh() {
 	}
 	// Note: Layout() should NOT be called from Refresh() per Fyne docs
 }
-func (r *mediaCardRenderer) Objects() []fyne.CanvasObject {
-	// Build objects list, ensuring no nil values (content may be nil during async load)
+
+// updateObjectsCache rebuilds the cached objects slice when content changes
+func (r *mediaCardRenderer) updateObjectsCache() {
 	objs := []fyne.CanvasObject{r.background}
 	if r.content != nil {
 		objs = append(objs, r.content)
@@ -370,7 +370,11 @@ func (r *mediaCardRenderer) Objects() []fyne.CanvasObject {
 	if r.extensionLabel != nil {
 		objs = append(objs, r.extensionLabel)
 	}
-	return objs
+	r.objects = objs
+}
+
+func (r *mediaCardRenderer) Objects() []fyne.CanvasObject {
+	return r.objects
 }
 
 func (r *mediaCardRenderer) Destroy() {
