@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -258,7 +259,7 @@ func TestGenerateSearchQueries(t *testing.T) {
 			baseQuery:     "top {year}",
 			mediaType:     "movie",
 			expectedCount: 1,
-			checkContains: []string{"top 2025"},
+			checkContains: []string{fmt.Sprintf("top %d", time.Now().Year())},
 		},
 	}
 

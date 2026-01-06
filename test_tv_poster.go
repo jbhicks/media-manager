@@ -34,7 +34,7 @@ func main() {
 	}
 
 	fmt.Println("Testing TV Show and Movie Detection:")
-	fmt.Println("=====================================\n")
+	fmt.Println("=====================================")
 
 	for _, title := range testTitles {
 		fmt.Printf("Title: %s\n", title)

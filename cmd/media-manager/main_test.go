@@ -5,11 +5,32 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/user/media-manager/internal/config"
 )
+
+// setTestHomeDir sets the home directory for tests, handling both Unix (HOME)
+// and Windows (USERPROFILE) environment variables
+func setTestHomeDir(t *testing.T, tempDir string) func() {
+	t.Helper()
+	oldHome := os.Getenv("HOME")
+	oldUserProfile := os.Getenv("USERPROFILE")
+
+	os.Setenv("HOME", tempDir)
+	if runtime.GOOS == "windows" {
+		os.Setenv("USERPROFILE", tempDir)
+	}
+
+	return func() {
+		os.Setenv("HOME", oldHome)
+		if runtime.GOOS == "windows" {
+			os.Setenv("USERPROFILE", oldUserProfile)
+		}
+	}
+}
 
 func TestMainDotArgument(t *testing.T) {
 	os.Args = []string{"media-manager", "."}
@@ -20,18 +41,25 @@ func TestMainDotArgument(t *testing.T) {
 }
 
 func TestMainNoArgument(t *testing.T) {
+	// Use isolated temp directory for config
+	tempDir := t.TempDir()
+	cleanup := setTestHomeDir(t, tempDir)
+	defer cleanup()
+
 	os.Args = []string{"media-manager"}
 	logOutput := captureLogOutput(func() { run(nil) })
+	// When no config exists and no argument, it should use current directory
 	if !strings.Contains(logOutput, "Opening directory: ") {
 		t.Errorf("Expected log output to contain 'Opening directory: ', got '%s'", logOutput)
 	}
 }
 
 func TestMainPathArgument(t *testing.T) {
-	os.Args = []string{"media-manager", "/tmp"}
+	testPath := t.TempDir() // Use actual temp dir instead of /tmp for Windows compat
+	os.Args = []string{"media-manager", testPath}
 	logOutput := captureLogOutput(func() { run(nil) })
-	if !strings.Contains(logOutput, "Opening directory: /tmp") {
-		t.Errorf("Expected log output to contain 'Opening directory: /tmp', got '%s'", logOutput)
+	if !strings.Contains(logOutput, "Opening directory: "+testPath) {
+		t.Errorf("Expected log output to contain 'Opening directory: %s', got '%s'", testPath, logOutput)
 	}
 }
 
@@ -39,11 +67,8 @@ func TestMainPathArgument(t *testing.T) {
 func TestLastFolderRemembered(t *testing.T) {
 	// Create a temporary config directory
 	tempDir := t.TempDir()
-
-	// Override HOME to use temp directory
-	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tempDir)
-	defer os.Setenv("HOME", oldHome)
+	cleanup := setTestHomeDir(t, tempDir)
+	defer cleanup()
 
 	testFolder1 := filepath.Join(tempDir, "test-media-1")
 	testFolder2 := filepath.Join(tempDir, "test-media-2")
@@ -109,10 +134,8 @@ func TestLastFolderRemembered(t *testing.T) {
 // TestConfigPersistsMediaDirs verifies that MediaDirs are correctly saved and loaded
 func TestConfigPersistsMediaDirs(t *testing.T) {
 	tempDir := t.TempDir()
-
-	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tempDir)
-	defer os.Setenv("HOME", oldHome)
+	cleanup := setTestHomeDir(t, tempDir)
+	defer cleanup()
 
 	testFolder := filepath.Join(tempDir, "test-media")
 	if err := os.MkdirAll(testFolder, 0755); err != nil {
@@ -148,10 +171,8 @@ func TestConfigPersistsMediaDirs(t *testing.T) {
 // TestNoConfigFileUsesDefault verifies behavior when config file doesn't exist
 func TestNoConfigFileUsesDefault(t *testing.T) {
 	tempDir := t.TempDir()
-
-	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tempDir)
-	defer os.Setenv("HOME", oldHome)
+	cleanup := setTestHomeDir(t, tempDir)
+	defer cleanup()
 
 	// With no config file and no arguments, should use current directory
 	os.Args = []string{"media-manager"}
