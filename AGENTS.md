@@ -216,6 +216,104 @@ Correct:
 	`// UI update code here`
 `})`
 
+### Custom Widget Best Practices
+
+When implementing custom widgets with `fyne.WidgetRenderer`:
+
+1. **Cache the Objects slice**: The `Objects()` method is called frequently. Never rebuild the slice on every call.
+
+```go
+// GOOD: Cache objects in the renderer struct
+type myWidgetRenderer struct {
+    objects []fyne.CanvasObject  // Cached slice
+}
+
+func (r *myWidgetRenderer) Objects() []fyne.CanvasObject {
+    return r.objects  // Return cached slice
+}
+
+func (r *myWidgetRenderer) updateObjectsCache() {
+    r.objects = []fyne.CanvasObject{r.background, r.content, r.label}
+}
+
+// BAD: Rebuilding slice on every call
+func (r *myWidgetRenderer) Objects() []fyne.CanvasObject {
+    return []fyne.CanvasObject{r.background, r.content, r.label}  // Allocates every call!
+}
+```
+
+2. **Use callbacks instead of polling**: For async operations, use callbacks rather than polling loops.
+
+```go
+// GOOD: Callback-based async notification
+preview.GetPreviewWithCallback(path, opts, func(previewPath string, err error) {
+    if err == nil {
+        fyne.CurrentApp().Driver().Do(func() {
+            img.File = previewPath
+            img.Refresh()
+        })
+    }
+})
+
+// BAD: Polling loop that blocks goroutines
+go func() {
+    for i := 0; i < 300; i++ {  // 30 seconds of polling!
+        if path, exists := preview.GetPreview(file); exists {
+            // update UI
+            return
+        }
+        time.Sleep(100 * time.Millisecond)
+    }
+}()
+```
+
+3. **Don't embed widget.BaseWidget unnecessarily**: Only embed `widget.BaseWidget` if you need its functionality. Regular structs with `ExtendBaseWidget()` are sufficient for custom widgets.
+
+4. **Include all rendered objects in Objects()**: Every canvas object that should be displayed must be returned by `Objects()`. Missing objects won't render.
+
+5. **Layout() should not call Refresh()**: The `Layout()` method positions objects but should not trigger refreshes, which can cause infinite loops.
+
+### Fyne Testing Best Practices
+
+1. **Use test.NewApp() for all widget tests**: Creates a test application without displaying windows.
+
+```go
+func TestMyWidget(t *testing.T) {
+    testApp := test.NewApp()
+    defer testApp.Quit()
+    
+    // Test code here
+}
+```
+
+2. **Use test.TempWidgetRenderer()**: Safely creates and cleans up renderers for testing.
+
+```go
+func TestMyWidget_Renderer(t *testing.T) {
+    testApp := test.NewApp()
+    defer testApp.Quit()
+    
+    widget := NewMyWidget()
+    renderer := test.TempWidgetRenderer(t, widget)  // Auto-cleanup
+    
+    objects := renderer.Objects()
+    if len(objects) < 2 {
+        t.Error("Expected at least 2 objects")
+    }
+}
+```
+
+3. **Create testdata directory for test assets**: Store test files (GIFs, images) in `testdata/` subdirectories. Use `runtime.Caller()` to locate them:
+
+```go
+func getTestGifPath() string {
+    _, filename, _, _ := runtime.Caller(0)
+    return filepath.Join(filepath.Dir(filename), "testdata", "test.gif")
+}
+```
+
+4. **Test files location**: `internal/ui/components/testdata/` contains test assets like `test.gif` for widget testing.
+
 ## Testing Guidelines
 - Use Go's built-in `testing` package for unit tests.
 - Leverage `fyne.io/fyne/v2/test` for testing graphical components.
