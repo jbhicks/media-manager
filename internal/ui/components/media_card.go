@@ -294,10 +294,10 @@ func (mc *MediaCard) MouseMoved(*desktop.MouseEvent) {
 }
 
 func (mc *MediaCard) Tapped(*fyne.PointEvent) {
-	// [DEBUG] MediaCard Tapped: %s\n", mc.filePath)
+	fmt.Printf("[DEBUG] MediaCard Tapped: %s\n", mc.filePath)
 	err := mc.openFile()
 	if err != nil {
-		// [DEBUG] Error opening file: %v\n", err)
+		fmt.Printf("[DEBUG] Error opening file: %v\n", err)
 	}
 }
 
@@ -326,15 +326,25 @@ func (mc *MediaCard) openFile() error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
-		cmd = exec.Command("cmd", "/C", "start", "", mc.filePath)
+		fmt.Printf("[DEBUG] Opening file on Windows: %s\n", mc.filePath)
+		// Check if file exists first
+		if _, err := os.Stat(mc.filePath); os.IsNotExist(err) {
+			fmt.Printf("[DEBUG] File does not exist: %s\n", mc.filePath)
+			return fmt.Errorf("file does not exist: %s", mc.filePath)
+		}
+		fmt.Printf("[DEBUG] File exists, attempting to open\n")
+		// Use explorer.exe to open the file with default program
+		cmd = exec.Command("explorer.exe", mc.filePath)
 	case "darwin": // macOS
 		cmd = exec.Command("open", mc.filePath)
 	default: // Linux and others
 		cmd = exec.Command("xdg-open", mc.filePath)
 	}
 
+	fmt.Printf("[DEBUG] Executing command: %v\n", cmd.Args)
 	err := cmd.Start()
 	if err != nil {
+		fmt.Printf("[DEBUG] cmd.Start() failed: %v\n", err)
 		return fmt.Errorf("failed to start command: %w", err)
 	}
 
@@ -342,6 +352,8 @@ func (mc *MediaCard) openFile() error {
 		err := cmd.Wait()
 		if err != nil {
 			fmt.Printf("[DEBUG] Command finished with error: %v\n", err)
+		} else {
+			fmt.Printf("[DEBUG] Command finished successfully\n")
 		}
 	}()
 	return nil

@@ -37,7 +37,7 @@ func DefaultVideoPreviewConfig() VideoPreviewConfig {
 		FPS:          10,
 		ClipDuration: 0.5,
 		NumClips:     4,
-		UseGPU:       true, // Try GPU first, fallback to CPU
+		UseGPU:       false, // TEMPORARILY DISABLED: GPU processing causes mouse lag
 		CRF:          35,   // Good balance of quality and size
 	}
 }

@@ -21,7 +21,7 @@ all: dev
 dev:
 ifeq ($(OS),Windows_NT)
 	if not exist tmp mkdir tmp
-	cmd /c "air -c .air.toml 2>&1 | powershell -Command \"tee tmp/app.log\""
+	powershell -Command "air -c .air.toml *>&1 | Tee-Object tmp/app.log"
 else
 	mkdir -p tmp
 	air -c .air.toml 2>&1 | tee tmp/app.log

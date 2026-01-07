@@ -23,6 +23,11 @@ type Config struct {
 	ThemeName              string  // Theme name (Default, Dark, Light, Adwaita)
 	SortBy                 string  // Sort criteria (Name, Size, Date Modified, etc.)
 	SortAscending          bool    // Sort direction (true = ascending, false = descending)
+	SelectedFolder         string  // Currently selected media folder path
+	SelectedTags           map[string]bool // Currently selected tag filters
+	FilterText             string  // Current filter text
+	RecursiveSearch        bool    // Whether recursive search is enabled
+	ShowDebugLog           bool    // Whether debug log panel is shown
 }
 
 func (c *Config) GetThumbnailDir() string {
@@ -57,6 +62,11 @@ func NewConfig(mediaDir string) *Config {
 		ThemeName:              "Default", // Default theme
 		SortBy:                 "Name",    // Default sort by name
 		SortAscending:          true,      // Default ascending sort
+		SelectedFolder:         "",        // No selected folder initially
+		SelectedTags:           make(map[string]bool), // No selected tags initially
+		FilterText:             "",        // No filter text initially
+		RecursiveSearch:        false,     // Recursive search disabled by default
+		ShowDebugLog:           false,     // Debug log hidden by default
 	}
 	fmt.Printf("[DEBUG] config.go: Config.MediaDirs: %v\n", cfg.MediaDirs)
 
@@ -111,6 +121,11 @@ func LoadConfig(mediaDir string) (*Config, error) {
 		ThemeName:              "Default", // Default theme
 		SortBy:                 "Name",    // Default sort by name
 		SortAscending:          true,      // Default ascending sort
+		SelectedFolder:         "",        // No selected folder initially
+		SelectedTags:           make(map[string]bool), // No selected tags initially
+		FilterText:             "",        // No filter text initially
+		RecursiveSearch:        false,     // Recursive search disabled by default
+		ShowDebugLog:           false,     // Debug log hidden by default
 	}
 
 	data, err := os.ReadFile(configFilePath)

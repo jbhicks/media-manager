@@ -17,6 +17,8 @@ import (
 
 	"github.com/user/media-manager/internal/config"
 	"github.com/user/media-manager/internal/db"
+	"github.com/user/media-manager/internal/preview"
+	"github.com/user/media-manager/internal/tagger"
 	"github.com/user/media-manager/internal/ui/components"
 	"github.com/user/media-manager/pkg/models"
 )
@@ -48,7 +50,32 @@ type MainView struct {
 	sortedFiles   []SortableMediaFile
 	isSorting     bool
 	// UI components for state persistence
-	mainSplit *container.Split // Reference to the main HSplit container
+	mainSplit   *container.Split // Reference to the main HSplit container
+	sidebarSplit *container.Split // Reference to the sidebar HSplit container
+	// Tags filtering
+	selectedTags map[string]bool
+	tagsTree     *widget.Tree
+	tagsScroll   *container.Scroll // Scroll wrapper for tags tree
+	allTags      []models.Tag
+	tagger       *tagger.FilenameTagger
+}
+
+func (v *MainView) SaveConfig() {
+	// Update config with current UI state
+	v.config.SortBy = v.sortBy
+	v.config.SortAscending = v.sortAscending
+	v.config.SelectedFolder = v.mediaDir
+	v.config.SelectedTags = v.selectedTags
+	v.config.FilterText = v.filter
+	v.config.RecursiveSearch = v.recursiveSearch
+	v.config.ShowDebugLog = v.showDebugLog
+	v.config.MainContentSplitOffset = v.GetMainContentSplitOffset()
+	v.config.SidebarSplitOffset = v.GetSidebarSplitOffset()
+	
+	// Save to disk
+	if err := config.SaveConfig(v.config); err != nil {
+		fmt.Printf("[ERROR] Failed to save config: %v\n", err)
+	}
 }
 
 func (v *MainView) getChildDirs(path string) []string {
@@ -126,9 +153,142 @@ func (v *MainView) createFoldersTree() *widget.Tree {
 	return tree
 }
 
+func (v *MainView) refreshTagsList() {
+	// Recreate the tags tree with current directory's tags
+	newTagsTree := v.createTagsList()
+
+	// Update the scroll container's content if it exists
+	if v.tagsScroll != nil {
+		v.tagsScroll.Content = newTagsTree
+		v.tagsScroll.Refresh()
+	}
+}
+
+func (v *MainView) createTagsList() fyne.CanvasObject {
+	// Collect unique tags from current directory's files
+	tagMap := make(map[string]models.Tag)
+	for _, sf := range v.sortedFiles {
+		if sf.MediaFile != nil {
+			for _, tag := range sf.MediaFile.Tags {
+				tagMap[tag.Name] = tag
+			}
+		}
+	}
+
+	// Convert map to slice
+	var tags []models.Tag
+	for _, tag := range tagMap {
+		tags = append(tags, tag)
+	}
+
+	v.allTags = tags
+
+	// Group tags by category
+	tagGroups := make(map[string][]models.Tag)
+	for _, tag := range v.allTags {
+		category := v.getTagCategory(tag.Name)
+		tagGroups[category] = append(tagGroups[category], tag)
+	}
+
+	// Get sorted category names
+	var categories []string
+	for category := range tagGroups {
+		categories = append(categories, category)
+	}
+	sort.Strings(categories)
+
+	// Create tree widget for tags
+	tree := widget.NewTree(
+		func(id string) []string {
+			if id == "" {
+				// Root level: return categories
+				return categories
+			}
+			// Category level: return tag names
+			if tags, exists := tagGroups[id]; exists {
+				var tagNames []string
+				for _, tag := range tags {
+					tagNames = append(tagNames, tag.Name)
+				}
+				return tagNames
+			}
+			return []string{}
+		},
+		func(id string) bool {
+			// Categories are branches, individual tags are leaves
+			if id == "" {
+				return true // Root is always a branch
+			}
+			// Check if this is a category (exists in tagGroups)
+			_, isCategory := tagGroups[id]
+			return isCategory
+		},
+		func(branch bool) fyne.CanvasObject {
+			if branch {
+				return widget.NewLabel("Category")
+			}
+			return widget.NewCheck("", func(bool) {})
+		},
+		func(id string, branch bool, node fyne.CanvasObject) {
+			if branch {
+				// Category branch
+				label := node.(*widget.Label)
+				label.SetText(id)
+			} else {
+				// Individual tag leaf
+				check := node.(*widget.Check)
+				check.SetText(v.getTagDisplayName(id))
+				check.SetChecked(v.selectedTags[id])
+				check.OnChanged = func(checked bool) {
+					if checked {
+						v.selectedTags[id] = true
+					} else {
+						delete(v.selectedTags, id)
+					}
+					v.RefreshMediaGrid()
+					v.SaveConfig() // Save selected tags
+				}
+			}
+		},
+	)
+
+	// Open all categories by default
+	for _, category := range categories {
+		tree.OpenBranch(category)
+	}
+
+	v.tagsTree = tree
+	return tree
+}
+
+func (v *MainView) getTagCategory(tagName string) string {
+	if strings.HasPrefix(tagName, "studio:") {
+		return "Studio"
+	} else if strings.HasPrefix(tagName, "actress:") {
+		return "Actress"
+	} else if strings.HasPrefix(tagName, "date:") {
+		return "Date"
+	} else if strings.HasPrefix(tagName, "quality:") {
+		return "Quality"
+	}
+	return "Other"
+}
+
+func (v *MainView) getTagDisplayName(tagName string) string {
+	// Remove the prefix for display
+	if strings.Contains(tagName, ":") {
+		parts := strings.SplitN(tagName, ":", 2)
+		if len(parts) == 2 {
+			return parts[1]
+		}
+	}
+	return tagName
+}
+
 func (v *MainView) filterMediaFiles(input string) {
 	v.filter = input
 	v.RefreshMediaGrid() // Filtering is fast, no need for async
+	v.SaveConfig() // Save filter text
 }
 
 func (v *MainView) RefreshMediaGrid() {
@@ -163,6 +323,20 @@ func (v *MainView) RefreshMediaGridWithForce(forceRegenerate bool) {
 			// Apply filter
 			if v.filter != "" && !strings.Contains(strings.ToLower(fileName), strings.ToLower(v.filter)) {
 				continue
+			}
+
+			// Apply tag filter
+			if len(v.selectedTags) > 0 && sf.MediaFile != nil {
+				hasMatchingTag := false
+				for _, tag := range sf.MediaFile.Tags {
+					if v.selectedTags[tag.Name] {
+						hasMatchingTag = true
+						break
+					}
+				}
+				if !hasMatchingTag {
+					continue
+				}
 			}
 
 			// Create media file struct
@@ -223,6 +397,20 @@ func (v *MainView) createMediaGrid() fyne.CanvasObject {
 			// Apply filter
 			if v.filter != "" && !strings.Contains(strings.ToLower(fileName), strings.ToLower(v.filter)) {
 				continue
+			}
+
+			// Apply tag filter
+			if len(v.selectedTags) > 0 && sf.MediaFile != nil {
+				hasMatchingTag := false
+				for _, tag := range sf.MediaFile.Tags {
+					if v.selectedTags[tag.Name] {
+						hasMatchingTag = true
+						break
+					}
+				}
+				if !hasMatchingTag {
+					continue
+				}
 			}
 
 			// Create media file struct
@@ -336,10 +524,48 @@ func (v *MainView) loadMediaMetadataAsync(mediaDir string, callback func([]Sorta
 				continue
 			}
 
-			// Load database info
+			// Load database info or create if doesn't exist
 			var mediaFile *models.MediaFile
 			if dbFile, err := v.database.GetMediaFileByPath(filePath); err == nil {
 				mediaFile = dbFile
+			} else {
+				// File doesn't exist in database, create it
+				width, height, duration, _ := preview.GetMetadata(filePath)
+				mediaType := components.GetMediaType(filePath)
+				fileTypeStr := "unknown"
+				switch mediaType {
+				case components.MediaTypeImage:
+					fileTypeStr = "image"
+				case components.MediaTypeVideo:
+					fileTypeStr = "video"
+				}
+				newMediaFile := &models.MediaFile{
+					Path:     filePath,
+					Filename: file.Name(),
+					Size:     info.Size(),
+					ModTime:  info.ModTime(),
+					FileType: fileTypeStr,
+					MimeType: "", // Will be set by preview.GetMetadata if needed
+					Width:    width,
+					Height:   height,
+					Duration: duration,
+				}
+				err := v.database.CreateMediaFile(newMediaFile)
+				if err != nil {
+					fmt.Printf("[WARN] Failed to create media file in DB %s: %v\n", filePath, err)
+					continue
+				}
+				mediaFile = newMediaFile
+			}
+
+			// Tag the file if it doesn't have tags yet
+			if len(mediaFile.Tags) == 0 {
+				err := v.tagger.TagMediaFile(mediaFile)
+				if err != nil {
+					fmt.Printf("[WARN] Failed to tag media file %s: %v\n", filePath, err)
+				} else {
+					fmt.Printf("[DEBUG] Tagged media file: %s\n", filePath)
+				}
 			}
 
 			sortableFiles = append(sortableFiles, SortableMediaFile{
@@ -455,12 +681,15 @@ func (v *MainView) setMediaDirectory(dir string) {
 
 	v.mediaDir = dir
 	v.sortedFiles = nil // Invalidate cache
+	v.SaveConfig() // Save selected folder
 
 	// Load metadata async
 	v.loadMediaMetadataAsync(dir, func(files []SortableMediaFile) {
 		fyne.Do(func() {
 			v.sortedFiles = v.sortLoadedFiles(files)
 			v.RefreshMediaGrid()
+			// Refresh tags list in case new tags were created
+			v.refreshTagsList()
 		})
 	})
 }
@@ -475,12 +704,33 @@ func (v *MainView) Build() fyne.CanvasObject {
 	} else {
 		treeScroll = container.NewVBox(widget.NewLabel("No folders found"))
 	}
+
 	mediaGrid := v.createMediaGrid()
-	split := container.NewHSplit(treeScroll, mediaGrid)
-	split.SetOffset(float64(v.config.MainContentSplitOffset))
-	v.mainSplit = split // Store reference for getting current offset
+
+	// Create tags list on the right
+	tagsList := v.createTagsList()
+	var tagsScroll fyne.CanvasObject
+	if tagsList != nil {
+		scroll := container.NewScroll(tagsList)
+		scroll.SetMinSize(fyne.NewSize(200, 0))
+		tagsScroll = scroll
+		v.tagsScroll = scroll // Store reference for updating content
+	} else {
+		tagsScroll = container.NewVBox(widget.NewLabel("No tags found"))
+		v.tagsScroll = nil // No scroll container when no tags
+	}
+
+	// Create nested split: folders | (media grid | tags)
+	centerSplit := container.NewHSplit(mediaGrid, tagsScroll)
+	centerSplit.SetOffset(float64(v.config.SidebarSplitOffset)) // Load saved offset
+	v.sidebarSplit = centerSplit // Store reference for getting current offset
+
+	mainSplit := container.NewHSplit(treeScroll, centerSplit)
+	mainSplit.SetOffset(float64(v.config.MainContentSplitOffset))
+	v.mainSplit = mainSplit // Store reference for getting current offset
 	filterEntry := widget.NewEntry()
 	filterEntry.SetPlaceHolder("Filter media...")
+	filterEntry.SetText(v.filter) // Load saved filter text
 	filterEntry.OnChanged = func(input string) {
 		v.filterMediaFiles(input)
 	}
@@ -522,12 +772,14 @@ func (v *MainView) Build() fyne.CanvasObject {
 		fmt.Printf("[DEBUG] Recursive Search toggled: %v\n", checked)
 		// Reload metadata when recursive mode changes
 		v.setMediaDirectory(v.mediaDir)
+		v.SaveConfig() // Save recursive search setting
 	})
 	recursiveCheck.SetChecked(v.recursiveSearch)
 
 	debugLogCheck := widget.NewCheck("Show Debug Log", func(checked bool) {
 		v.showDebugLog = checked
 		v.window.SetContent(v.Build())
+		v.SaveConfig() // Save debug log visibility
 	})
 	debugLogCheck.SetChecked(v.showDebugLog)
 
@@ -537,6 +789,7 @@ func (v *MainView) Build() fyne.CanvasObject {
 	}, func(selected string) {
 		v.sortBy = selected
 		v.triggerAsyncSort()
+		v.SaveConfig() // Save sort criteria
 	})
 	sortSelect.SetSelected(v.sortBy)
 
@@ -549,13 +802,23 @@ func (v *MainView) Build() fyne.CanvasObject {
 			sortDirectionBtn.SetIcon(theme.MoveDownIcon())
 		}
 		v.triggerAsyncSort()
+		v.SaveConfig() // Save sort direction
 	}
 
 	sortControls := container.NewHBox(
 		widget.NewLabel("Sort by:"), sortSelect, sortDirectionBtn,
 	)
 
-	buttonBox := container.NewHBox(refreshBtn, forceRegenerateBtn, addFolderBtn, recursiveCheck, debugLogCheck)
+	clearTagsBtn := widget.NewButton("Clear Tags", func() {
+		v.selectedTags = make(map[string]bool)
+		if v.tagsTree != nil {
+			v.tagsTree.Refresh()
+		}
+		v.RefreshMediaGrid()
+		v.SaveConfig() // Save cleared tags
+	})
+
+	buttonBox := container.NewHBox(refreshBtn, forceRegenerateBtn, addFolderBtn, clearTagsBtn, recursiveCheck, debugLogCheck)
 	toolbar := container.NewBorder(nil, nil, sortControls, buttonBox, filterEntry)
 	if v.mediaDir != "" && v.foldersTree != nil {
 		v.foldersTree.Select(v.mediaDir)
@@ -563,7 +826,7 @@ func (v *MainView) Build() fyne.CanvasObject {
 		fmt.Println("[WARN] foldersTree is nil, cannot select root directory")
 	}
 
-	mainContent := container.NewBorder(toolbar, nil, nil, nil, split)
+	mainContent := container.NewBorder(toolbar, nil, nil, nil, mainSplit)
 
 	// Add debug log panel if enabled
 	if v.showDebugLog {
@@ -590,8 +853,10 @@ func (v *MainView) GetMainContentSplitOffset() float32 {
 
 // GetSidebarSplitOffset returns the current offset of the sidebar split (if any)
 func (v *MainView) GetSidebarSplitOffset() float32 {
-	// For now, we don't have a sidebar split, so return the config value
-	return v.config.SidebarSplitOffset
+	if v.sidebarSplit != nil {
+		return float32(v.sidebarSplit.Offset)
+	}
+	return v.config.SidebarSplitOffset // fallback to config value
 }
 
 // GetSortBy returns the current sort criteria
@@ -606,12 +871,21 @@ func (v *MainView) GetSortAscending() bool {
 
 func NewMainView(cfg *config.Config, db *db.Database, window fyne.Window, mediaDir string) *MainView {
 	mv := &MainView{
-		config:        cfg,
-		database:      db,
-		window:        window,
-		mediaDir:      mediaDir,
-		sortBy:        cfg.SortBy,        // Load from config
-		sortAscending: cfg.SortAscending, // Load from config
+		config:          cfg,
+		database:        db,
+		window:          window,
+		mediaDir:        mediaDir,
+		sortBy:          cfg.SortBy,        // Load from config
+		sortAscending:   cfg.SortAscending, // Load from config
+		selectedTags:    cfg.SelectedTags,  // Load from config
+		filter:          cfg.FilterText,    // Load from config
+		recursiveSearch: cfg.RecursiveSearch, // Load from config
+		showDebugLog:    cfg.ShowDebugLog,  // Load from config
+		tagger:          tagger.NewFilenameTagger(db),
+	}
+	// Initialize selectedTags map if nil
+	if mv.selectedTags == nil {
+		mv.selectedTags = make(map[string]bool)
 	}
 	folders, err := db.GetFolders()
 	if err == nil && len(folders) > 0 {
@@ -624,12 +898,16 @@ func NewMainView(cfg *config.Config, db *db.Database, window fyne.Window, mediaD
 			mv.mediaDir = folderPaths[0]
 		}
 	}
+	// Load initial tags
+	mv.refreshTagsList()
 	// Load initial metadata async
 	if mv.mediaDir != "" {
 		mv.loadMediaMetadataAsync(mv.mediaDir, func(files []SortableMediaFile) {
 			fyne.Do(func() {
 				mv.sortedFiles = mv.sortLoadedFiles(files)
 				// Don't call RefreshMediaGrid here as Build() will be called next
+				// Refresh tags list in case new tags were created
+				mv.refreshTagsList()
 			})
 		})
 	}
