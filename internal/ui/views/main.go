@@ -50,7 +50,7 @@ type MainView struct {
 	sortedFiles   []SortableMediaFile
 	isSorting     bool
 	// UI components for state persistence
-	mainSplit   *container.Split // Reference to the main HSplit container
+	mainSplit    *container.Split // Reference to the main HSplit container
 	sidebarSplit *container.Split // Reference to the sidebar HSplit container
 	// Tags filtering
 	selectedTags map[string]bool
@@ -71,7 +71,7 @@ func (v *MainView) SaveConfig() {
 	v.config.ShowDebugLog = v.showDebugLog
 	v.config.MainContentSplitOffset = v.GetMainContentSplitOffset()
 	v.config.SidebarSplitOffset = v.GetSidebarSplitOffset()
-	
+
 	// Save to disk
 	if err := config.SaveConfig(v.config); err != nil {
 		fmt.Printf("[ERROR] Failed to save config: %v\n", err)
@@ -288,7 +288,7 @@ func (v *MainView) getTagDisplayName(tagName string) string {
 func (v *MainView) filterMediaFiles(input string) {
 	v.filter = input
 	v.RefreshMediaGrid() // Filtering is fast, no need for async
-	v.SaveConfig() // Save filter text
+	v.SaveConfig()       // Save filter text
 }
 
 func (v *MainView) RefreshMediaGrid() {
@@ -681,7 +681,7 @@ func (v *MainView) setMediaDirectory(dir string) {
 
 	v.mediaDir = dir
 	v.sortedFiles = nil // Invalidate cache
-	v.SaveConfig() // Save selected folder
+	v.SaveConfig()      // Save selected folder
 
 	// Load metadata async
 	v.loadMediaMetadataAsync(dir, func(files []SortableMediaFile) {
@@ -723,7 +723,7 @@ func (v *MainView) Build() fyne.CanvasObject {
 	// Create nested split: folders | (media grid | tags)
 	centerSplit := container.NewHSplit(mediaGrid, tagsScroll)
 	centerSplit.SetOffset(float64(v.config.SidebarSplitOffset)) // Load saved offset
-	v.sidebarSplit = centerSplit // Store reference for getting current offset
+	v.sidebarSplit = centerSplit                                // Store reference for getting current offset
 
 	mainSplit := container.NewHSplit(treeScroll, centerSplit)
 	mainSplit.SetOffset(float64(v.config.MainContentSplitOffset))
@@ -875,12 +875,12 @@ func NewMainView(cfg *config.Config, db *db.Database, window fyne.Window, mediaD
 		database:        db,
 		window:          window,
 		mediaDir:        mediaDir,
-		sortBy:          cfg.SortBy,        // Load from config
-		sortAscending:   cfg.SortAscending, // Load from config
-		selectedTags:    cfg.SelectedTags,  // Load from config
-		filter:          cfg.FilterText,    // Load from config
+		sortBy:          cfg.SortBy,          // Load from config
+		sortAscending:   cfg.SortAscending,   // Load from config
+		selectedTags:    cfg.SelectedTags,    // Load from config
+		filter:          cfg.FilterText,      // Load from config
 		recursiveSearch: cfg.RecursiveSearch, // Load from config
-		showDebugLog:    cfg.ShowDebugLog,  // Load from config
+		showDebugLog:    cfg.ShowDebugLog,    // Load from config
 		tagger:          tagger.NewFilenameTagger(db),
 	}
 	// Initialize selectedTags map if nil

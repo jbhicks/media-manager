@@ -15,19 +15,19 @@ type Config struct {
 	MediaDirs              []string
 	MainContentSplitOffset float32
 	SidebarSplitOffset     float32
-	WindowWidth            float32 // New field for window width
-	WindowHeight           float32 // New field for window height
-	WindowX                float32 // New field for window X position
-	WindowY                float32 // New field for window Y position
-	ZoomLevel              float32 // UI zoom level (0.5 to 2.0, default 1.0)
-	ThemeName              string  // Theme name (Default, Dark, Light, Adwaita)
-	SortBy                 string  // Sort criteria (Name, Size, Date Modified, etc.)
-	SortAscending          bool    // Sort direction (true = ascending, false = descending)
-	SelectedFolder         string  // Currently selected media folder path
+	WindowWidth            float32         // New field for window width
+	WindowHeight           float32         // New field for window height
+	WindowX                float32         // New field for window X position
+	WindowY                float32         // New field for window Y position
+	ZoomLevel              float32         // UI zoom level (0.5 to 2.0, default 1.0)
+	ThemeName              string          // Theme name (Default, Dark, Light, Adwaita)
+	SortBy                 string          // Sort criteria (Name, Size, Date Modified, etc.)
+	SortAscending          bool            // Sort direction (true = ascending, false = descending)
+	SelectedFolder         string          // Currently selected media folder path
 	SelectedTags           map[string]bool // Currently selected tag filters
-	FilterText             string  // Current filter text
-	RecursiveSearch        bool    // Whether recursive search is enabled
-	ShowDebugLog           bool    // Whether debug log panel is shown
+	FilterText             string          // Current filter text
+	RecursiveSearch        bool            // Whether recursive search is enabled
+	ShowDebugLog           bool            // Whether debug log panel is shown
 }
 
 func (c *Config) GetThumbnailDir() string {
@@ -54,19 +54,19 @@ func NewConfig(mediaDir string) *Config {
 		MediaDirs:              []string{mediaDir},
 		MainContentSplitOffset: 0.25,
 		SidebarSplitOffset:     0.95,
-		WindowWidth:            0,         // Initialize with 0, meaning no saved size
-		WindowHeight:           0,         // Initialize with 0, meaning no saved size
-		WindowX:                0,         // Initialize with 0, meaning no saved position
-		WindowY:                0,         // Initialize with 0, meaning no saved position
-		ZoomLevel:              1.0,       // Default zoom level (100%)
-		ThemeName:              "Default", // Default theme
-		SortBy:                 "Name",    // Default sort by name
-		SortAscending:          true,      // Default ascending sort
-		SelectedFolder:         "",        // No selected folder initially
+		WindowWidth:            0,                     // Initialize with 0, meaning no saved size
+		WindowHeight:           0,                     // Initialize with 0, meaning no saved size
+		WindowX:                0,                     // Initialize with 0, meaning no saved position
+		WindowY:                0,                     // Initialize with 0, meaning no saved position
+		ZoomLevel:              1.0,                   // Default zoom level (100%)
+		ThemeName:              "Default",             // Default theme
+		SortBy:                 "Name",                // Default sort by name
+		SortAscending:          true,                  // Default ascending sort
+		SelectedFolder:         "",                    // No selected folder initially
 		SelectedTags:           make(map[string]bool), // No selected tags initially
-		FilterText:             "",        // No filter text initially
-		RecursiveSearch:        false,     // Recursive search disabled by default
-		ShowDebugLog:           false,     // Debug log hidden by default
+		FilterText:             "",                    // No filter text initially
+		RecursiveSearch:        false,                 // Recursive search disabled by default
+		ShowDebugLog:           false,                 // Debug log hidden by default
 	}
 	fmt.Printf("[DEBUG] config.go: Config.MediaDirs: %v\n", cfg.MediaDirs)
 
@@ -113,19 +113,19 @@ func LoadConfig(mediaDir string) (*Config, error) {
 		MediaDirs:              []string{}, // Start with empty, will be set below
 		MainContentSplitOffset: 0.25,
 		SidebarSplitOffset:     0.95,
-		WindowWidth:            0,         // Initialize with 0, meaning no saved size
-		WindowHeight:           0,         // Initialize with 0, meaning no saved size
-		WindowX:                0,         // Initialize with 0, meaning no saved position
-		WindowY:                0,         // Initialize with 0, meaning no saved position
-		ZoomLevel:              1.0,       // Default zoom level (100%)
-		ThemeName:              "Default", // Default theme
-		SortBy:                 "Name",    // Default sort by name
-		SortAscending:          true,      // Default ascending sort
-		SelectedFolder:         "",        // No selected folder initially
+		WindowWidth:            0,                     // Initialize with 0, meaning no saved size
+		WindowHeight:           0,                     // Initialize with 0, meaning no saved size
+		WindowX:                0,                     // Initialize with 0, meaning no saved position
+		WindowY:                0,                     // Initialize with 0, meaning no saved position
+		ZoomLevel:              1.0,                   // Default zoom level (100%)
+		ThemeName:              "Default",             // Default theme
+		SortBy:                 "Name",                // Default sort by name
+		SortAscending:          true,                  // Default ascending sort
+		SelectedFolder:         "",                    // No selected folder initially
 		SelectedTags:           make(map[string]bool), // No selected tags initially
-		FilterText:             "",        // No filter text initially
-		RecursiveSearch:        false,     // Recursive search disabled by default
-		ShowDebugLog:           false,     // Debug log hidden by default
+		FilterText:             "",                    // No filter text initially
+		RecursiveSearch:        false,                 // Recursive search disabled by default
+		ShowDebugLog:           false,                 // Debug log hidden by default
 	}
 
 	data, err := os.ReadFile(configFilePath)

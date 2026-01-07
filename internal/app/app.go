@@ -317,7 +317,7 @@ func (app *MediaManagerApp) SaveConfig() {
 	if app.mainView != nil {
 		// Update config with current UI state from main view
 		app.mainView.SaveConfig()
-		
+
 		// Save split offsets
 		app.config.MainContentSplitOffset = app.mainView.GetMainContentSplitOffset()
 		app.config.SidebarSplitOffset = app.mainView.GetSidebarSplitOffset()
