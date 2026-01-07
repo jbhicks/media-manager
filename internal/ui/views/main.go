@@ -23,7 +23,7 @@ type MainView struct {
 	config             *config.Config
 	database           *db.Database
 	mediaGridContainer *fyne.Container
-	mediaGridWrapper   *fyne.Container // Wrapper to allow replacing the grid
+	mediaGridWrapper   *container.Scroll // Scroll wrapper for media grid
 	window             fyne.Window
 	mediaDir           string
 	foldersTree        *widget.Tree
@@ -193,16 +193,16 @@ func (v *MainView) RefreshMediaGridWithForce(forceRegenerate bool) {
 	// Recreate the GridWrap container with new dimensions (for zoom support)
 	v.mediaGridContainer = container.NewGridWrap(fyne.NewSize(cardWidth, cardHeight), cards...)
 
-	// Update the wrapper container if it exists
+	// Update the scroll wrapper's content if it exists
 	if v.mediaGridWrapper != nil {
-		v.mediaGridWrapper.Objects = []fyne.CanvasObject{v.mediaGridContainer}
+		v.mediaGridWrapper.Content = v.mediaGridContainer
 		v.mediaGridWrapper.Refresh()
 	}
 
 	fmt.Printf("Media grid refreshed with card size: %.0fx%.0f\n", cardWidth, cardHeight)
 }
 
-func (v *MainView) createMediaGrid() *fyne.Container {
+func (v *MainView) createMediaGrid() fyne.CanvasObject {
 	// Use the card dimensions from the components package for consistency
 	// These are now functions that return scaled values based on zoom level
 	cardWidth := components.CardWidth()
@@ -262,8 +262,9 @@ func (v *MainView) createMediaGrid() *fyne.Container {
 	}
 	v.mediaGridContainer = container.NewGridWrap(fyne.NewSize(cardWidth, cardHeight), cards...)
 
-	// Create a wrapper container so we can replace the grid when zoom changes
-	v.mediaGridWrapper = container.NewMax(v.mediaGridContainer)
+	// Create a scroll container wrapper so the grid can scroll when content exceeds viewport
+	// This prevents the window from expanding past screen bounds with many files
+	v.mediaGridWrapper = container.NewVScroll(v.mediaGridContainer)
 	return v.mediaGridWrapper
 }
 
