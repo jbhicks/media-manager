@@ -49,7 +49,7 @@ func worker() {
 	for t := range taskChan {
 		var err error
 		var result interface{}
-		
+
 		switch t.taskType {
 		case "animated":
 			// Generate animation frames (8 JPG files)
@@ -405,7 +405,7 @@ func getVideoDuration(filePath string) (time.Duration, error) {
 // GenerateAnimatedPreview creates a single animated GIF for video preview
 
 func GenerateAnimatedPreviewCPU(srcPath, gifPath string) error {
-	fmt.Printf("[DEBUG] Generating 2x2 animated grid preview for: %s\n", srcPath)
+	fmt.Printf("[DEBUG] Generating 3x2 animated grid preview for: %s\n", srcPath)
 
 	// Check if animated preview already exists
 	if _, err := os.Stat(gifPath); err == nil {
@@ -425,20 +425,22 @@ func GenerateAnimatedPreviewCPU(srcPath, gifPath string) error {
 	}
 	durSec := duration.Seconds()
 
-	// Capture 4 segments at 10%, 40%, 70%, 90%
-	// Using a shorter segment (e.g. 0.8s) to keep GIF size small
-	segLen := 0.8
-	p1, p4, p7, p9 := durSec*0.1, durSec*0.4, durSec*0.7, durSec*0.9
+	// Capture 6 segments at 12.5%, 25%, 37.5%, 50%, 62.5%, 75%
+	// Using longer segments (1.0s) for smoother animation
+	segLen := 1.0
+	p1, p2, p3, p4, p5, p6 := durSec*0.125, durSec*0.25, durSec*0.375, durSec*0.5, durSec*0.625, durSec*0.75
 
-	// Filtergraph for 2x2 grid
-	// Each quadrant is 108x108 (total 216x216)
+	// Filtergraph for 3x2 grid
+	// Each quadrant is 72x72 (total 216x144)
 	filtergraph := fmt.Sprintf(
-		"[0:v]trim=start=%.2f:end=%.2f,setpts=PTS-STARTPTS,scale=108:108:force_original_aspect_ratio=increase,crop=108:108[v1];"+
-			"[0:v]trim=start=%.2f:end=%.2f,setpts=PTS-STARTPTS,scale=108:108:force_original_aspect_ratio=increase,crop=108:108[v2];"+
-			"[0:v]trim=start=%.2f:end=%.2f,setpts=PTS-STARTPTS,scale=108:108:force_original_aspect_ratio=increase,crop=108:108[v3];"+
-			"[0:v]trim=start=%.2f:end=%.2f,setpts=PTS-STARTPTS,scale=108:108:force_original_aspect_ratio=increase,crop=108:108[v4];"+
-			"[v1][v2][v3][v4]xstack=inputs=4:layout=0_0|108_0|0_108|108_108,fps=12[outv]",
-		p1, p1+segLen, p4, p4+segLen, p7, p7+segLen, p9, p9+segLen,
+		"[0:v]trim=start=%.2f:end=%.2f,setpts=PTS-STARTPTS,scale=72:72:force_original_aspect_ratio=increase,crop=72:72[v1];"+
+			"[0:v]trim=start=%.2f:end=%.2f,setpts=PTS-STARTPTS,scale=72:72:force_original_aspect_ratio=increase,crop=72:72[v2];"+
+			"[0:v]trim=start=%.2f:end=%.2f,setpts=PTS-STARTPTS,scale=72:72:force_original_aspect_ratio=increase,crop=72:72[v3];"+
+			"[0:v]trim=start=%.2f:end=%.2f,setpts=PTS-STARTPTS,scale=72:72:force_original_aspect_ratio=increase,crop=72:72[v4];"+
+			"[0:v]trim=start=%.2f:end=%.2f,setpts=PTS-STARTPTS,scale=72:72:force_original_aspect_ratio=increase,crop=72:72[v5];"+
+			"[0:v]trim=start=%.2f:end=%.2f,setpts=PTS-STARTPTS,scale=72:72:force_original_aspect_ratio=increase,crop=72:72[v6];"+
+			"[v1][v2][v3][v4][v5][v6]xstack=inputs=6:layout=0_0|72_0|144_0|0_72|72_72|144_72,fps=10[outv]",
+		p1, p1+segLen, p2, p2+segLen, p3, p3+segLen, p4, p4+segLen, p5, p5+segLen, p6, p6+segLen,
 	)
 
 	cmd, err := ffmpeg.NewFFmpegCommand(
@@ -456,10 +458,10 @@ func GenerateAnimatedPreviewCPU(srcPath, gifPath string) error {
 	fmt.Printf("[DEBUG] Running ffmpeg command: %v\n", cmd.String())
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("ffmpeg failed to generate 2x2 animated preview: %v, output: %s\n", err, string(output))
+		return fmt.Errorf("ffmpeg failed to generate 3x2 animated preview: %v, output: %s\n", err, string(output))
 	}
 
-	fmt.Printf("[DEBUG] Successfully generated 2x2 animated preview: %s\n", gifPath)
+	fmt.Printf("[DEBUG] Successfully generated 3x2 animated preview: %s\n", gifPath)
 	return nil
 }
 
@@ -503,11 +505,11 @@ type PreviewOptions struct {
 // DefaultPreviewOptions returns sensible defaults
 func DefaultPreviewOptions() PreviewOptions {
 	return PreviewOptions{
-		SceneThreshold: 0.4,
-		MaxScenes:      4,
-		FPS:            12,
-		Width:          216,
-		Height:         216,
+		SceneThreshold: 0.3, // Lower threshold for more sensitive scene detection
+		MaxScenes:      8,   // Increased to 8 scenes for better coverage
+		FPS:            6,   // Reduced to 6 FPS for smoother animation
+		Width:          256, // Increased width for better detail
+		Height:         144, // 16:9 aspect ratio
 		UseGPU:         false,
 		GPUType:        "",
 		UseMosaic:      false,
@@ -627,9 +629,14 @@ func evenlyDistributedTimestamps(duration time.Duration, count int) []float64 {
 	durSec := duration.Seconds()
 	timestamps := make([]float64, count)
 
-	// Distribute evenly: 10%, 40%, 70%, 90% for count=4
+	// Distribute evenly: for count=6, use 12.5%, 25%, 37.5%, 50%, 62.5%, 75%
+	// Skip first 10% and last 15% to avoid intros/outros
+	startPercent := 0.1
+	endPercent := 0.85
+	availableRange := endPercent - startPercent
+
 	for i := 0; i < count; i++ {
-		progress := float64(i+1) / float64(count+1)
+		progress := startPercent + (availableRange * float64(i) / float64(count-1))
 		timestamps[i] = durSec * progress
 	}
 
@@ -637,9 +644,9 @@ func evenlyDistributedTimestamps(duration time.Duration, count int) []float64 {
 }
 
 func GenerateAnimatedPreview(srcPath, gifPath string) error {
-	// Use fast preview generation (skips slow scene detection)
+	// Use smart preview generation with scene detection for better scene representation
 	opts := DefaultPreviewOptions()
-	return GenerateFastPreview(srcPath, gifPath, opts)
+	return GenerateSmartPreview(srcPath, gifPath, opts)
 }
 
 // GenerateFastPreview creates a preview WITHOUT scene detection (much faster)
@@ -735,19 +742,24 @@ func generateSceneBasedGIFWithCPU(srcPath, gifPath string, timestamps []float64,
 
 	// Build filter for scene extraction
 	var sceneFilters []string
-	cellSize := opts.Width / 2 // 2x2 grid
+	cols := 4 // 4x2 horizontal layout for 8 scenes
+	rows := 2
+	cellSize := opts.Width / cols
 
 	for i, ts := range timestamps {
-		// Use scale with pad to avoid green bars - scale to fit, then pad to exact size
+		if i >= cols*rows {
+			break // Limit to grid size
+		}
+		// Increased duration to 1.5 seconds for longer clips
 		sceneFilters = append(sceneFilters, fmt.Sprintf(
-			"[0:v]trim=start=%.2f:duration=0.8,setpts=PTS-STARTPTS,fps=%d,scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,format=rgb24[v%d]",
+			"[0:v]trim=start=%.2f:duration=1.5,setpts=PTS-STARTPTS,fps=%d,scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,format=rgb24[v%d]",
 			ts, opts.FPS, cellSize, cellSize, cellSize, cellSize, i,
 		))
 	}
 
-	// Create 2x2 grid layout
-	gridFilter := fmt.Sprintf("[v0][v1][v2][v3]xstack=inputs=4:layout=0_0|%d_0|0_%d|%d_%d[stacked]",
-		cellSize, cellSize, cellSize, cellSize)
+	// Create 4x2 horizontal layout
+	gridFilter := fmt.Sprintf("[v0][v1][v2][v3][v4][v5][v6][v7]xstack=inputs=8:layout=0_0|%d_0|%d_0|%d_0|0_%d|%d_%d|%d_%d|%d_%d[stacked]",
+		cellSize, cellSize*2, cellSize*3, cellSize, cellSize, cellSize*2, cellSize*3, cellSize)
 
 	paletteFilter := strings.Join(sceneFilters, ";") + ";" + gridFilter + ";[stacked]palettegen=max_colors=256"
 
@@ -796,8 +808,8 @@ func generateSceneMosaic(srcPath, mosaicPath string, timestamps []float64, opts 
 	fmt.Printf("[DEBUG] Generating scene mosaic for: %s\n", srcPath)
 
 	// Use scene detection with thumbnail filter for best frame selection
-	// Create a 2x2 grid (or adjust based on number of scenes)
-	cols := 2
+	// Create a 4x2 grid for 8 scenes
+	cols := 4
 	rows := 2
 	cellSize := opts.Width / cols
 
@@ -806,15 +818,16 @@ func generateSceneMosaic(srcPath, mosaicPath string, timestamps []float64, opts 
 		if i >= cols*rows {
 			break // Limit to grid size
 		}
+		// Increased duration to 1.5 seconds
 		sceneFilters = append(sceneFilters, fmt.Sprintf(
-			"[0:v]trim=start=%.2f:duration=1,thumbnail=25,scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d[v%d]",
+			"[0:v]trim=start=%.2f:duration=1.5,thumbnail=25,scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d[v%d]",
 			ts, cellSize, cellSize, cellSize, cellSize, i,
 		))
 	}
 
-	// Create grid
-	gridFilter := fmt.Sprintf("[v0][v1][v2][v3]xstack=inputs=4:layout=0_0|%d_0|0_%d|%d_%d",
-		cellSize, cellSize, cellSize, cellSize)
+	// Create 4x2 grid
+	gridFilter := fmt.Sprintf("[v0][v1][v2][v3][v4][v5][v6][v7]xstack=inputs=8:layout=0_0|%d_0|%d_0|%d_0|0_%d|%d_%d|%d_%d|%d_%d",
+		cellSize, cellSize*2, cellSize*3, cellSize, cellSize, cellSize*2, cellSize*3, cellSize)
 
 	filterComplex := strings.Join(sceneFilters, ";") + ";" + gridFilter
 
@@ -1045,18 +1058,24 @@ func generateGIFWithCUDA(srcPath, gifPath string, timestamps []float64, opts Pre
 	fmt.Printf("[DEBUG] Generating GIF with CUDA acceleration\n")
 
 	// CUDA pipeline: decode with cuvid, process on GPU, download for GIF encoding
-	cellSize := opts.Width / 2
+	cols := 4
+	rows := 2
+	cellSize := opts.Width / cols
 
 	var sceneFilters []string
 	for i, ts := range timestamps {
+		if i >= cols*rows {
+			break
+		}
+		// Increased duration to 1.5 seconds
 		sceneFilters = append(sceneFilters, fmt.Sprintf(
-			"[0:v]trim=start=%.2f:duration=0.8,setpts=PTS-STARTPTS,fps=%d,hwupload_cuda,scale_cuda=%d:%d,hwdownload,format=yuv420p[v%d]",
+			"[0:v]trim=start=%.2f:duration=1.5,setpts=PTS-STARTPTS,fps=%d,hwupload_cuda,scale_cuda=%d:%d,hwdownload,format=yuv420p[v%d]",
 			ts, opts.FPS, cellSize, cellSize, i,
 		))
 	}
 
-	gridFilter := fmt.Sprintf("[v0][v1][v2][v3]xstack=inputs=4:layout=0_0|%d_0|0_%d|%d_%d",
-		cellSize, cellSize, cellSize, cellSize)
+	gridFilter := fmt.Sprintf("[v0][v1][v2][v3][v4][v5][v6][v7]xstack=inputs=8:layout=0_0|%d_0|%d_0|%d_0|0_%d|%d_%d|%d_%d|%d_%d",
+		cellSize, cellSize*2, cellSize*3, cellSize, cellSize, cellSize*2, cellSize*3, cellSize)
 
 	filterComplex := strings.Join(sceneFilters, ";") + ";" + gridFilter
 
@@ -1084,18 +1103,24 @@ func generateGIFWithCUDA(srcPath, gifPath string, timestamps []float64, opts Pre
 func generateGIFWithVAAPI(srcPath, gifPath string, timestamps []float64, opts PreviewOptions) error {
 	fmt.Printf("[DEBUG] Generating GIF with VAAPI acceleration\n")
 
-	cellSize := opts.Width / 2
+	cols := 4
+	rows := 2
+	cellSize := opts.Width / cols
 
 	var sceneFilters []string
 	for i, ts := range timestamps {
+		if i >= cols*rows {
+			break
+		}
+		// Increased duration to 1.5 seconds
 		sceneFilters = append(sceneFilters, fmt.Sprintf(
-			"[0:v]trim=start=%.2f:duration=0.8,setpts=PTS-STARTPTS,fps=%d,format=nv12,hwupload,scale_vaapi=w=%d:h=%d,hwdownload,format=nv12[v%d]",
+			"[0:v]trim=start=%.2f:duration=1.5,setpts=PTS-STARTPTS,fps=%d,format=nv12,hwupload,scale_vaapi=w=%d:h=%d,hwdownload,format=nv12[v%d]",
 			ts, opts.FPS, cellSize, cellSize, i,
 		))
 	}
 
-	gridFilter := fmt.Sprintf("[v0][v1][v2][v3]xstack=inputs=4:layout=0_0|%d_0|0_%d|%d_%d",
-		cellSize, cellSize, cellSize, cellSize)
+	gridFilter := fmt.Sprintf("[v0][v1][v2][v3][v4][v5][v6][v7]xstack=inputs=8:layout=0_0|%d_0|%d_0|%d_0|0_%d|%d_%d|%d_%d|%d_%d",
+		cellSize, cellSize*2, cellSize*3, cellSize, cellSize, cellSize*2, cellSize*3, cellSize)
 
 	filterComplex := strings.Join(sceneFilters, ";") + ";" + gridFilter
 

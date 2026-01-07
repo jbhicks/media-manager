@@ -18,6 +18,19 @@ When `air` is running for auto-reloading, build messages are logged to `tmp/buil
 ### Important Note
 Agents should never ask for permission to proceed with tasks. Always take action directly unless explicitly instructed otherwise.
 
+### Application Execution Policy
+**CRITICAL**: Agents must NEVER run the media-manager application themselves. The user handles running the dev server using `make dev` for auto-reloading.
+
+**If you need information about app behavior:**
+- Modify logging in the code to capture the needed data
+- Examine logs in `tmp/service.log` and `tmp/build.log`
+- Rely on the user's `make dev` command for auto-reloading during development
+
+**NEVER execute:**
+- `.\bin\media-manager.exe`
+- `go run cmd/media-manager/main.go`
+- Any direct application startup commands
+
 ### Service Auto-Reload
 The service (`cmd/media-manager-service`) runs with `air` for auto-reloading during development. When you make changes to service code:
 - `air` automatically detects changes and rebuilds the service binary
