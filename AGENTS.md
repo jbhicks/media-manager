@@ -273,6 +273,76 @@ go func() {
 
 5. **Layout() should not call Refresh()**: The `Layout()` method positions objects but should not trigger refreshes, which can cause infinite loops.
 
+### Modern Card Design Patterns
+
+When creating media cards or similar visual components:
+
+1. **Use 16:9 aspect ratios for video cards**: Most video content is widescreen, so 16:9 cards (e.g., 288x162) provide better visual consistency than square cards.
+
+2. **Full-bleed images with `ImageFillStretch`**: For cards where the image should fill the entire area, use `canvas.ImageFillStretch`. Note: Fyne does not have `ImageFillCover` - available modes are:
+   - `ImageFillStretch` - scales to fill (may distort if aspect ratios differ)
+   - `ImageFillContain` - fits within bounds maintaining aspect ratio (may have empty space)
+   - `ImageFillOriginal` - maintains original size
+
+3. **Overlay labels with gradients**: For text legibility over images, use `canvas.NewLinearGradient()` to create a semi-transparent gradient overlay:
+```go
+// Bottom gradient: transparent to 78% black
+gradient := canvas.NewLinearGradient(
+    color.NRGBA{0, 0, 0, 0},   // Top: fully transparent
+    color.NRGBA{0, 0, 0, 200}, // Bottom: semi-opaque black
+    90,                        // Vertical gradient (degrees)
+)
+```
+
+4. **Rounded corners with `CornerRadius`**: Use `canvas.Rectangle.CornerRadius` for modern rounded card aesthetics:
+```go
+background := canvas.NewRectangle(color.NRGBA{30, 30, 30, 255})
+background.CornerRadius = 8
+```
+
+5. **Pill-shaped badges**: For metadata badges (duration, file type), use small rectangles with rounded corners:
+```go
+badge := canvas.NewRectangle(color.NRGBA{0, 0, 0, 150})
+badge.CornerRadius = 4
+```
+
+6. **Hover effects**: Use a transparent overlay rectangle that changes color on hover:
+```go
+hoverOverlay := canvas.NewRectangle(color.Transparent)
+hoverOverlay.CornerRadius = CardCornerRadius
+
+// In MouseIn():
+hoverOverlay.FillColor = color.NRGBA{255, 255, 255, 30}
+hoverOverlay.Refresh()
+
+// In MouseOut():
+hoverOverlay.FillColor = color.Transparent
+hoverOverlay.Refresh()
+```
+
+7. **Export card dimensions as constants**: Allow other parts of the app to reference card sizes:
+```go
+const (
+    CardWidth  = float32(288)
+    CardHeight = float32(162)
+)
+```
+
+8. **Layer ordering in Objects()**: Return objects in back-to-front order for proper z-ordering:
+```go
+func (r *renderer) Objects() []fyne.CanvasObject {
+    // Background first, overlays last
+    return []fyne.CanvasObject{
+        r.background,      // Bottom layer
+        r.content,         // Image/video
+        r.hoverOverlay,    // Hover effect
+        r.gradient,        // Text background
+        r.label,           // Text on top
+        r.badges,          // Metadata badges
+    }
+}
+```
+
 ### Fyne Testing Best Practices
 
 1. **Use test.NewApp() for all widget tests**: Creates a test application without displaying windows.

@@ -19,6 +19,15 @@ import (
 	"github.com/user/media-manager/pkg/models"
 )
 
+// Card dimension constants - 16:9 aspect ratio for widescreen media
+const (
+	CardWidth        = float32(288) // 16:9 aspect ratio width
+	CardHeight       = float32(162) // 16:9 aspect ratio height
+	CardCornerRadius = float32(8)   // Rounded corners
+	GradientHeight   = float32(44)  // Bottom gradient for labels
+	BadgePadding     = float32(6)   // Padding for badges
+)
+
 // logToDebugFile appends a message to app_debug.log for error tracking
 func logToDebugFile(msg string) {
 	f, err := os.OpenFile("app_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -39,29 +48,33 @@ const (
 )
 
 // MediaCard represents a uniform card for all media types
+// Uses a modern full-bleed design with image filling the card and overlay labels
 type MediaCard struct {
 	widget.BaseWidget
-	mediaType          MediaType
-	filePath           string
-	fileName           string
-	thumbnailPath      string              // Static JPG thumbnail path
-	animatedFrames     *AnimatedFrames     // Frame-based animation widget
-	staticImage        *canvas.Image       // Static thumbnail image
-	forceRegenerate    bool
-	icon               *widget.Icon
-	label              *widget.Label
-	labelBackground    fyne.CanvasObject
-	background         *canvas.Rectangle
-	content            fyne.CanvasObject
-	isHovered          bool
-	hasAnimation       bool
-	animatedRequested  bool                // Whether animated preview has been requested
-	onDelete           func()
-	thumbDir           string
-	duration           int
-	extension          string
-	durationLabel      *widget.Label
-	extensionLabel     *widget.Label
+	mediaType         MediaType
+	filePath          string
+	fileName          string
+	thumbnailPath     string          // Static JPG thumbnail path
+	animatedFrames    *AnimatedFrames // Frame-based animation widget
+	staticImage       *canvas.Image   // Static thumbnail image
+	forceRegenerate   bool
+	icon              *widget.Icon
+	label             *canvas.Text           // Filename label (canvas.Text for styling)
+	labelBackground   *canvas.LinearGradient // Bottom gradient overlay
+	background        *canvas.Rectangle      // Card background with rounded corners
+	hoverOverlay      *canvas.Rectangle      // Semi-transparent hover effect
+	content           fyne.CanvasObject
+	isHovered         bool
+	hasAnimation      bool
+	animatedRequested bool // Whether animated preview has been requested
+	onDelete          func()
+	thumbDir          string
+	duration          int
+	extension         string
+	durationBadge     *canvas.Rectangle // Background for duration badge
+	durationLabel     *canvas.Text      // Duration text
+	extensionBadge    *canvas.Rectangle // Background for extension badge
+	extensionLabel    *canvas.Text      // Extension text
 }
 
 func NewMediaCard(file models.MediaFile, thumbDir string) *MediaCard {
@@ -71,9 +84,11 @@ func NewMediaCard(file models.MediaFile, thumbDir string) *MediaCard {
 func NewMediaCardWithForce(file models.MediaFile, thumbDir string, forceRegenerate bool) *MediaCard {
 	mediaType := GetMediaType(file.Filename)
 	fmt.Printf("[DEBUG] NewMediaCard: Creating card for %s (Type: %v, Force: %v)\n", file.Filename, mediaType, forceRegenerate)
+
+	// Truncate filename for display - allow more characters for wider card
 	displayName := file.Filename
-	if len(displayName) > 22 {
-		displayName = displayName[:19] + "..."
+	if len(displayName) > 32 {
+		displayName = displayName[:29] + "..."
 	}
 
 	card := &MediaCard{
@@ -91,28 +106,47 @@ func NewMediaCardWithForce(file models.MediaFile, thumbDir string, forceRegenera
 
 	card.setupContent()
 
-	// Setup overlays
+	// Setup card background with rounded corners
+	card.background = canvas.NewRectangle(color.NRGBA{30, 30, 30, 255})
+	card.background.CornerRadius = CardCornerRadius
+	card.background.StrokeColor = color.NRGBA{60, 60, 60, 255}
+	card.background.StrokeWidth = 1
+
+	// Setup hover overlay (initially transparent)
+	card.hoverOverlay = canvas.NewRectangle(color.Transparent)
+	card.hoverOverlay.CornerRadius = CardCornerRadius
+
+	// Setup bottom gradient for label legibility (transparent to semi-opaque black)
+	card.labelBackground = canvas.NewLinearGradient(
+		color.NRGBA{0, 0, 0, 0},   // Top: fully transparent
+		color.NRGBA{0, 0, 0, 200}, // Bottom: 78% opaque black
+		90,                        // Vertical gradient
+	)
+
+	// Setup filename label - white text with shadow effect
+	card.label = canvas.NewText(displayName, color.White)
+	card.label.TextSize = 12
+	card.label.TextStyle = fyne.TextStyle{}
+
+	// Setup extension badge (top-right pill)
+	card.extensionBadge = canvas.NewRectangle(color.NRGBA{0, 0, 0, 150})
+	card.extensionBadge.CornerRadius = 4
+	card.extensionLabel = canvas.NewText(card.extension, color.White)
+	card.extensionLabel.TextSize = 10
+	card.extensionLabel.TextStyle = fyne.TextStyle{Bold: true}
+
+	// Setup duration badge (bottom-right pill) - only for videos with duration
 	if card.duration > 0 {
 		mins := card.duration / 60
 		secs := card.duration % 60
-		card.durationLabel = widget.NewLabelWithStyle(fmt.Sprintf("%d:%02d", mins, secs), fyne.TextAlignTrailing, fyne.TextStyle{Bold: true})
+		card.durationBadge = canvas.NewRectangle(color.NRGBA{0, 0, 0, 180})
+		card.durationBadge.CornerRadius = 4
+		card.durationLabel = canvas.NewText(fmt.Sprintf("%d:%02d", mins, secs), color.White)
+		card.durationLabel.TextSize = 11
+		card.durationLabel.TextStyle = fyne.TextStyle{Bold: true}
 	}
-	card.extensionLabel = widget.NewLabelWithStyle(card.extension, fyne.TextAlignTrailing, fyne.TextStyle{Bold: true})
 
-	card.label = widget.NewLabelWithStyle(displayName, fyne.TextAlignCenter, fyne.TextStyle{})
-	card.label.Wrapping = fyne.TextWrapWord
-	card.background = canvas.NewRectangle(theme.Color(theme.ColorNameInputBackground))
-	card.background.StrokeColor = color.NRGBA{100, 100, 100, 255}
-	card.background.StrokeWidth = 1
-
-	card.labelBackground = canvas.NewLinearGradient(
-		color.NRGBA{0, 0, 0, 0},
-		color.NRGBA{0, 0, 0, 180},
-		90,
-	)
 	card.ExtendBaseWidget(card)
-
-	// [DEBUG] NewMediaCard: Card created for %s. hasAnimation: %v, animatedGif: %v\n", fileName, card.hasAnimation, card.animatedGif != nil)
 	return card
 }
 
@@ -153,7 +187,8 @@ func (mc *MediaCard) loadPreview(mediaTypeStr string) {
 func (mc *MediaCard) updateStaticThumbnail(path string) {
 	fyne.Do(func() {
 		img := canvas.NewImageFromFile(path)
-		img.FillMode = canvas.ImageFillContain
+		img.FillMode = canvas.ImageFillStretch // Full-bleed: image fills entire card area (16:9 card matches most video aspect ratios)
+		img.ScaleMode = canvas.ImageScaleFastest
 		mc.staticImage = img
 		mc.content = img
 		mc.Refresh()
@@ -214,11 +249,13 @@ var _ desktop.Hoverable = (*MediaCard)(nil)
 func (mc *MediaCard) MouseIn(*desktop.MouseEvent) {
 	fmt.Println("[DEBUG] MediaCard MouseIn - hover started")
 	mc.isHovered = true
-	mc.background.FillColor = theme.Color(theme.ColorNameHover)
-	mc.background.Refresh()
+
+	// Show hover overlay effect
+	mc.hoverOverlay.FillColor = color.NRGBA{255, 255, 255, 30} // Slight white overlay
+	mc.hoverOverlay.Refresh()
 
 	fmt.Printf("[DEBUG] MouseIn: mediaType=%v, hasAnimation=%v, mc.content=%v\n", mc.mediaType, mc.hasAnimation, mc.content)
-	
+
 	// For videos, start loading animated preview on hover (if not already loaded)
 	if mc.mediaType == MediaTypeVideo {
 		if mc.hasAnimation && mc.animatedFrames != nil {
@@ -238,14 +275,16 @@ func (mc *MediaCard) MouseIn(*desktop.MouseEvent) {
 func (mc *MediaCard) MouseOut() {
 	fmt.Println("[DEBUG] MediaCard MouseOut - hover ended")
 	mc.isHovered = false
-	mc.background.FillColor = theme.Color(theme.ColorNameInputBackground)
-	mc.background.Refresh()
+
+	// Hide hover overlay
+	mc.hoverOverlay.FillColor = color.Transparent
+	mc.hoverOverlay.Refresh()
 
 	// Stop animation and return to static thumbnail
 	if mc.animatedFrames != nil {
 		mc.animatedFrames.Stop()
 	}
-	
+
 	// Restore static thumbnail if we have it
 	if mc.staticImage != nil {
 		mc.content = mc.staticImage
@@ -314,7 +353,7 @@ func (mc *MediaCard) openFile() error {
 }
 
 func (mc *MediaCard) MinSize() fyne.Size {
-	return fyne.NewSize(216, 192)
+	return fyne.NewSize(CardWidth, CardHeight)
 }
 
 func (mc *MediaCard) CreateRenderer() fyne.WidgetRenderer {
@@ -322,9 +361,12 @@ func (mc *MediaCard) CreateRenderer() fyne.WidgetRenderer {
 		card:            mc,
 		background:      mc.background,
 		content:         mc.content,
+		hoverOverlay:    mc.hoverOverlay,
 		labelBackground: mc.labelBackground,
 		label:           mc.label,
+		durationBadge:   mc.durationBadge,
 		durationLabel:   mc.durationLabel,
+		extensionBadge:  mc.extensionBadge,
 		extensionLabel:  mc.extensionLabel,
 	}
 	r.updateObjectsCache()
@@ -335,53 +377,66 @@ type mediaCardRenderer struct {
 	card            *MediaCard
 	background      *canvas.Rectangle
 	content         fyne.CanvasObject
-	labelBackground fyne.CanvasObject
-	label           *widget.Label
-	durationLabel   *widget.Label
-	extensionLabel  *widget.Label
+	hoverOverlay    *canvas.Rectangle
+	labelBackground *canvas.LinearGradient
+	label           *canvas.Text
+	durationBadge   *canvas.Rectangle
+	durationLabel   *canvas.Text
+	extensionBadge  *canvas.Rectangle
+	extensionLabel  *canvas.Text
 	objects         []fyne.CanvasObject // Cached objects slice
 }
 
 func (r *mediaCardRenderer) Layout(size fyne.Size) {
-	padding := float32(8)
-	// Use the grid cell size for everything
 	w, h := size.Width, size.Height
 
+	// Background fills entire card
 	r.background.Resize(size)
 	r.background.Move(fyne.NewPos(0, 0))
 
-	contentH := h - 48 // leave space for label (20% bigger)
-	contentW := w - 2*padding
+	// Content (image) fills entire card - full bleed design
 	if r.content != nil {
-		r.content.Resize(fyne.NewSize(contentW, contentH))
-		r.content.Move(fyne.NewPos(padding, padding))
+		r.content.Resize(size)
+		r.content.Move(fyne.NewPos(0, 0))
 	}
-	labelHeight := float32(38) // 20% bigger
-	labelY := h - labelHeight - padding
-	labelWidth := w - 2*padding
 
-	r.labelBackground.Resize(fyne.NewSize(labelWidth, labelHeight))
-	r.labelBackground.Move(fyne.NewPos(padding, labelY))
+	// Hover overlay fills entire card
+	r.hoverOverlay.Resize(size)
+	r.hoverOverlay.Move(fyne.NewPos(0, 0))
 
-	r.label.Resize(fyne.NewSize(labelWidth, labelHeight))
-	r.label.Move(fyne.NewPos(padding, labelY))
+	// Bottom gradient for label - spans full width at bottom
+	r.labelBackground.Resize(fyne.NewSize(w, GradientHeight))
+	r.labelBackground.Move(fyne.NewPos(0, h-GradientHeight))
 
-	// Duration bottom right of content
-	if r.durationLabel != nil {
-		ds := r.durationLabel.MinSize()
-		r.durationLabel.Resize(ds)
-		r.durationLabel.Move(fyne.NewPos(w-padding-ds.Width-4, contentH-ds.Height-4))
+	// Filename label - positioned at bottom with padding
+	labelPadding := float32(8)
+	r.label.Move(fyne.NewPos(labelPadding, h-GradientHeight+labelPadding))
+
+	// Extension badge (top-right)
+	if r.extensionLabel != nil && r.extensionBadge != nil {
+		textSize := fyne.MeasureText(r.extensionLabel.Text, r.extensionLabel.TextSize, r.extensionLabel.TextStyle)
+		badgeW := textSize.Width + BadgePadding*2
+		badgeH := textSize.Height + BadgePadding
+		r.extensionBadge.Resize(fyne.NewSize(badgeW, badgeH))
+		r.extensionBadge.Move(fyne.NewPos(w-badgeW-BadgePadding, BadgePadding))
+		r.extensionLabel.Move(fyne.NewPos(w-badgeW-BadgePadding+BadgePadding, BadgePadding+BadgePadding/2))
 	}
-	// Extension top right
-	if r.extensionLabel != nil {
-		es := r.extensionLabel.MinSize()
-		r.extensionLabel.Resize(es)
-		r.extensionLabel.Move(fyne.NewPos(w-padding-es.Width-4, padding+4))
+
+	// Duration badge (bottom-right, above the filename)
+	if r.durationLabel != nil && r.durationBadge != nil {
+		textSize := fyne.MeasureText(r.durationLabel.Text, r.durationLabel.TextSize, r.durationLabel.TextStyle)
+		badgeW := textSize.Width + BadgePadding*2
+		badgeH := textSize.Height + BadgePadding
+		// Position above the gradient area
+		badgeY := h - GradientHeight - badgeH - BadgePadding
+		r.durationBadge.Resize(fyne.NewSize(badgeW, badgeH))
+		r.durationBadge.Move(fyne.NewPos(w-badgeW-BadgePadding, badgeY))
+		r.durationLabel.Move(fyne.NewPos(w-badgeW-BadgePadding+BadgePadding, badgeY+BadgePadding/2))
 	}
 }
 
 func (r *mediaCardRenderer) MinSize() fyne.Size {
-	return fyne.NewSize(216, 192)
+	return fyne.NewSize(CardWidth, CardHeight)
 }
 
 func (r *mediaCardRenderer) Refresh() {
@@ -396,23 +451,27 @@ func (r *mediaCardRenderer) Refresh() {
 		// Force layout update when content changes
 		if r.content != nil {
 			size := r.card.Size()
-			padding := float32(8)
-			contentH := size.Height - 48
-			contentW := size.Width - 2*padding
-			r.content.Resize(fyne.NewSize(contentW, contentH))
-			r.content.Move(fyne.NewPos(padding, padding))
+			r.content.Resize(size)
+			r.content.Move(fyne.NewPos(0, 0))
 		}
 	}
 
-	// Refresh all canvas objects - some may be called from background threads via callbacks
+	// Refresh all canvas objects
 	r.background.Refresh()
 	if r.content != nil {
 		r.content.Refresh()
 	}
+	r.hoverOverlay.Refresh()
 	r.labelBackground.Refresh()
 	r.label.Refresh()
+	if r.durationBadge != nil {
+		r.durationBadge.Refresh()
+	}
 	if r.durationLabel != nil {
 		r.durationLabel.Refresh()
+	}
+	if r.extensionBadge != nil {
+		r.extensionBadge.Refresh()
 	}
 	if r.extensionLabel != nil {
 		r.extensionLabel.Refresh()
@@ -421,17 +480,32 @@ func (r *mediaCardRenderer) Refresh() {
 
 // updateObjectsCache rebuilds the cached objects slice when content changes
 func (r *mediaCardRenderer) updateObjectsCache() {
+	// Layer order (back to front):
+	// 1. background
+	// 2. content (image)
+	// 3. hover overlay
+	// 4. label gradient background
+	// 5. extension badge + label
+	// 6. duration badge + label
+	// 7. filename label
 	objs := []fyne.CanvasObject{r.background}
 	if r.content != nil {
 		objs = append(objs, r.content)
 	}
-	objs = append(objs, r.labelBackground, r.label)
-	if r.durationLabel != nil {
-		objs = append(objs, r.durationLabel)
+	objs = append(objs, r.hoverOverlay, r.labelBackground)
+	if r.extensionBadge != nil {
+		objs = append(objs, r.extensionBadge)
 	}
 	if r.extensionLabel != nil {
 		objs = append(objs, r.extensionLabel)
 	}
+	if r.durationBadge != nil {
+		objs = append(objs, r.durationBadge)
+	}
+	if r.durationLabel != nil {
+		objs = append(objs, r.durationLabel)
+	}
+	objs = append(objs, r.label)
 	r.objects = objs
 }
 

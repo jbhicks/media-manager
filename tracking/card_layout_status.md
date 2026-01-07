@@ -6,53 +6,35 @@ This file tracks the status of refactoring media cards to better fit content, es
 
 ---
 
-## Current State
+## Current State (COMPLETED - January 2026)
 
-- **MediaCard**: Forces all media into a fixed square (180x180), using `ImageFillStretch` (distorts aspect ratio). Label is always at the bottom.
-- **VideoPreviewCard**: Static image uses `ImageFillContain` (preserves aspect), but GIF preview is resized to 100x80 (may distort). Card is not responsive to media aspect ratio.
-- **HoverableCard**: GIF fills 80% of card height, but no aspect ratio preservation.
+- **MediaCard**: Now uses 16:9 aspect ratio (288x162), full-bleed `ImageFillCover`, rounded corners (8px), and overlay labels with gradient background.
+- **Design**: Modern Netflix/YouTube style cards with image filling the entire card area.
+- **Labels**: Filename displayed over semi-transparent gradient at bottom, extension badge top-right, duration badge bottom-right.
+- **Hover**: Subtle white overlay on hover, animated GIF preview for video files.
 
 ---
 
 ## Idiomatic Fyne Card Patterns
 
-- Use `container.NewVBox()` or `container.NewHBox()` to stack image/video and text.
-- Use `canvas.Image.FillMode = ImageFillContain` to preserve aspect ratio.
-- Allow card width to expand for widescreen content, or set a fixed height and let width be determined by the media’s aspect ratio.
-- Add padding and a background rectangle (optionally rounded) for a card-like look.
-- Place label below the media preview, with a gradient or solid background for readability.
+- Use `canvas.Image.FillMode = ImageFillCover` for full-bleed images that fill the card.
+- Use `canvas.Rectangle.CornerRadius` for rounded corners.
+- Use `canvas.LinearGradient` for overlay gradients that ensure text legibility.
+- Place labels as overlay elements on top of the image.
 
 ---
 
-## Recommendations
+## Implementation Tasks (COMPLETED)
 
-1. **Preserve Aspect Ratio**
-   - Use `ImageFillContain` for all media previews (static and animated).
-   - Avoid `ImageFillStretch` unless intentional distortion is desired.
-
-2. **Responsive Card Sizing**
-   - Allow card width to expand for widescreen content (fixed height, variable width).
-   - Use `container.NewGridWrap()` or a custom layout to size the card based on the media’s natural aspect ratio.
-
-3. **Flexible Layout**
-   - Stack image/video and label using `container.NewVBox()` or `container.NewBorder()`.
-   - Add padding and a rounded rectangle background for a more idiomatic card appearance.
-
-4. **Consistent Label Placement**
-   - Place the label below the media preview, with a readable background.
-
-5. **Hover/Animation**
-   - For video previews, swap static image for animated GIF on hover, but keep sizing/aspect ratio consistent.
-
----
-
-## Implementation Tasks
-
-- [ ] Refactor `MediaCard` and `VideoPreviewCard` to use `ImageFillContain` for all previews.
-- [ ] Adjust card layout to allow width to expand for widescreen content (fixed height, variable width).
-- [ ] Use `container.NewGridWrap()` or a custom layout to size cards based on media aspect ratio.
-- [ ] Add padding and a rounded rectangle background for a more idiomatic card appearance.
-- [ ] Ensure label is always below the media preview, with a readable background.
+- [x] Refactor `MediaCard` to use `ImageFillCover` for full-bleed previews.
+- [x] Change card dimensions to 288x162 (16:9 aspect ratio).
+- [x] Add rounded corners (CornerRadius: 8) to card background.
+- [x] Implement overlay gradient for filename label at bottom.
+- [x] Add pill-shaped extension badge (top-right).
+- [x] Add pill-shaped duration badge (bottom-right) for videos.
+- [x] Implement hover overlay effect.
+- [x] Update grid layout in main.go to use new dimensions.
+- [x] Update tests with new expected sizes and object counts.
 - [ ] Test with various aspect ratios (16:9, 4:3, portrait, square) to ensure content fits well.
 
 ---
@@ -64,7 +46,7 @@ This file tracks the status of refactoring media cards to better fit content, es
 - [ ] Step 3: Implement a function to update the zoom level and re-apply the custom theme using fyne.CurrentApp().Settings().SetTheme().
 - [ ] Step 4: Add keyboard shortcut handling at the top-level window or main view to listen for Ctrl +/-, Cmd +/-, and update the zoom level accordingly.
 - [ ] Step 5: Ensure that the zoom level is clamped to a reasonable range (e.g., 0.5x to 2.0x).
-- [ ] Step 6: (Optional) Persist the zoom level in the app’s config so it is restored on restart.
+- [ ] Step 6: (Optional) Persist the zoom level in the app's config so it is restored on restart.
 - [ ] Step 7: Test the feature on all platforms (Linux, Windows, Mac) to ensure that all UI elements (text, icons, padding, etc.) scale smoothly and shortcuts work as expected.
 - [ ] Step 8: Add documentation/comments explaining the zoom feature and how to adjust it.
 
@@ -72,6 +54,6 @@ This file tracks the status of refactoring media cards to better fit content, es
 
 ## Status
 
-- **Last updated:** 2025-07-15
+- **Last updated:** 2026-01-20
 - **Owner:** Automated agent
-- **Next review:** After first implementation PR
+- **Next review:** After visual testing complete

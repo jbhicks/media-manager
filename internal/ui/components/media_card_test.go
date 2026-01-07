@@ -41,8 +41,8 @@ func TestMediaCard_MinSize_WidgetAndRendererConsistent(t *testing.T) {
 	renderer := test.TempWidgetRenderer(t, card)
 	rendererMinSize := renderer.MinSize()
 
-	// Both should return (216, 192)
-	expectedSize := fyne.NewSize(216, 192)
+	// Both should return the new 16:9 card size (288, 162)
+	expectedSize := fyne.NewSize(CardWidth, CardHeight)
 	if widgetMinSize != expectedSize {
 		t.Errorf("widget.MinSize()=%v, expected %v", widgetMinSize, expectedSize)
 	}
@@ -107,16 +107,16 @@ func TestMediaCard_Renderer_BaseObjectCount(t *testing.T) {
 	testApp := test.NewApp()
 	defer testApp.Quit()
 
-	// Card without duration (no durationLabel)
+	// Card without duration (no durationLabel/Badge)
 	file := testMediaFile("/fake/path/test.jpg", "test.jpg")
 	card := NewMediaCard(file, "/tmp/thumbs")
 
 	renderer := test.TempWidgetRenderer(t, card)
 	objects := renderer.Objects()
 
-	// Base objects: background, content, labelBackground, label, extensionLabel
-	// Minimum should be 5 (or 4 if extensionLabel is conditional)
-	minExpected := 4 // background, content, labelBackground, label
+	// New design objects: background, content, hoverOverlay, labelBackground, extensionBadge, extensionLabel, label
+	// Minimum should be 6 (background + hoverOverlay + labelBackground + extensionBadge + extensionLabel + label)
+	minExpected := 6
 	if len(objects) < minExpected {
 		t.Errorf("Expected at least %d base objects, got %d", minExpected, len(objects))
 	}
@@ -126,22 +126,25 @@ func TestMediaCard_Renderer_WithDurationHasExtraLabel(t *testing.T) {
 	testApp := test.NewApp()
 	defer testApp.Quit()
 
-	// Card with duration should have durationLabel
+	// Card with duration should have durationLabel and durationBadge
 	file := testMediaFileWithDuration("/fake/path/test.mp4", "test.mp4", 120)
 	card := NewMediaCard(file, "/tmp/thumbs")
 
 	renderer := test.TempWidgetRenderer(t, card)
 	objects := renderer.Objects()
 
-	// Should have: background, content, labelBackground, label, durationLabel, extensionLabel
-	expectedMin := 5
+	// Should have: background, content, hoverOverlay, labelBackground, extensionBadge, extensionLabel, durationBadge, durationLabel, label
+	expectedMin := 8
 	if len(objects) < expectedMin {
 		t.Errorf("Card with duration should have at least %d objects, got %d", expectedMin, len(objects))
 	}
 
-	// Verify durationLabel is not nil when duration > 0
+	// Verify durationLabel and durationBadge are not nil when duration > 0
 	if card.durationLabel == nil {
 		t.Error("durationLabel should not be nil when duration > 0")
+	}
+	if card.durationBadge == nil {
+		t.Error("durationBadge should not be nil when duration > 0")
 	}
 }
 
@@ -356,7 +359,7 @@ func BenchmarkMediaCard_Renderer_Layout(b *testing.B) {
 	file := testMediaFile("/fake/path/test.jpg", "test.jpg")
 	card := NewMediaCard(file, "/tmp/thumbs")
 	renderer := card.CreateRenderer()
-	size := fyne.NewSize(216, 216)
+	size := fyne.NewSize(CardWidth, CardHeight)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
