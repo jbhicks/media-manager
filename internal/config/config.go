@@ -21,6 +21,8 @@ type Config struct {
 	WindowY                float32 // New field for window Y position
 	ZoomLevel              float32 // UI zoom level (0.5 to 2.0, default 1.0)
 	ThemeName              string  // Theme name (Default, Dark, Light, Adwaita)
+	SortBy                 string  // Sort criteria (Name, Size, Date Modified, etc.)
+	SortAscending          bool    // Sort direction (true = ascending, false = descending)
 }
 
 func (c *Config) GetThumbnailDir() string {
@@ -53,6 +55,8 @@ func NewConfig(mediaDir string) *Config {
 		WindowY:                0,         // Initialize with 0, meaning no saved position
 		ZoomLevel:              1.0,       // Default zoom level (100%)
 		ThemeName:              "Default", // Default theme
+		SortBy:                 "Name",    // Default sort by name
+		SortAscending:          true,      // Default ascending sort
 	}
 	fmt.Printf("[DEBUG] config.go: Config.MediaDirs: %v\n", cfg.MediaDirs)
 
@@ -105,6 +109,8 @@ func LoadConfig(mediaDir string) (*Config, error) {
 		WindowY:                0,         // Initialize with 0, meaning no saved position
 		ZoomLevel:              1.0,       // Default zoom level (100%)
 		ThemeName:              "Default", // Default theme
+		SortBy:                 "Name",    // Default sort by name
+		SortAscending:          true,      // Default ascending sort
 	}
 
 	data, err := os.ReadFile(configFilePath)

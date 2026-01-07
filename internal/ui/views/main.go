@@ -6,11 +6,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/user/media-manager/internal/config"
@@ -18,6 +20,14 @@ import (
 	"github.com/user/media-manager/internal/ui/components"
 	"github.com/user/media-manager/pkg/models"
 )
+
+// SortableMediaFile holds pre-loaded metadata for efficient sorting
+type SortableMediaFile struct {
+	Entry     os.DirEntry
+	Info      os.FileInfo
+	MediaFile *models.MediaFile
+	SortKey   interface{}
+}
 
 type MainView struct {
 	config             *config.Config
@@ -32,6 +42,13 @@ type MainView struct {
 	debugLog           *widget.TextGrid
 	debugWriter        io.Writer
 	showDebugLog       bool
+	// Sorting state
+	sortBy        string
+	sortAscending bool
+	sortedFiles   []SortableMediaFile
+	isSorting     bool
+	// UI components for state persistence
+	mainSplit *container.Split // Reference to the main HSplit container
 }
 
 func (v *MainView) getChildDirs(path string) []string {
@@ -103,8 +120,7 @@ func (v *MainView) createFoldersTree() *widget.Tree {
 	)
 	tree.OnSelected = func(id string) {
 		fmt.Printf("[DEBUG] Selected folder: %s\n", id)
-		v.mediaDir = id
-		v.RefreshMediaGrid()
+		v.setMediaDirectory(id)
 		tree.OpenBranch(id)
 	}
 	return tree
@@ -112,7 +128,7 @@ func (v *MainView) createFoldersTree() *widget.Tree {
 
 func (v *MainView) filterMediaFiles(input string) {
 	v.filter = input
-	v.RefreshMediaGrid()
+	v.RefreshMediaGrid() // Filtering is fast, no need for async
 }
 
 func (v *MainView) RefreshMediaGrid() {
@@ -132,45 +148,29 @@ func (v *MainView) RefreshMediaGridWithForce(forceRegenerate bool) {
 
 	// Collect all cards
 	var cards []fyne.CanvasObject
-	if v.mediaDir != "" {
-		mediaDir := v.mediaDir
-		var files []os.DirEntry
-		var err error
-		var limitReached bool
-		if v.recursiveSearch {
-			files, limitReached = getAllMediaFilesRecursive(mediaDir)
-			if limitReached {
-				v.showRecursiveLimitWarning()
-			}
-		} else {
-			files, err = os.ReadDir(mediaDir)
-			if err != nil {
-				files = nil
-			}
-		}
-		for _, file := range files {
+	if v.mediaDir != "" && len(v.sortedFiles) > 0 {
+		for _, sf := range v.sortedFiles {
 			var fileName string
 			var filePath string
 			if v.recursiveSearch {
-				filePath = file.Name() // full path
+				filePath = sf.Entry.Name() // full path for recursive
 				fileName = filepath.Base(filePath)
 			} else {
-				if file.IsDir() {
-					continue
-				}
-				fileName = file.Name()
-				filePath = filepath.Join(mediaDir, file.Name())
+				fileName = sf.Entry.Name()
+				filePath = filepath.Join(v.mediaDir, sf.Entry.Name())
 			}
+
+			// Apply filter
 			if v.filter != "" && !strings.Contains(strings.ToLower(fileName), strings.ToLower(v.filter)) {
 				continue
 			}
 
-			// Look up in database to get existing media file or create a new one
+			// Create media file struct
 			var mediaFile models.MediaFile
-			if dbFile, err := v.database.GetMediaFileByPath(filePath); err == nil {
-				mediaFile = *dbFile
+			if sf.MediaFile != nil {
+				mediaFile = *sf.MediaFile
 			} else {
-				// Create a minimal MediaFile struct for files not in DB yet
+				// Create minimal MediaFile struct for files not in DB
 				mediaFile = models.MediaFile{
 					Path:     filePath,
 					Filename: fileName,
@@ -199,7 +199,7 @@ func (v *MainView) RefreshMediaGridWithForce(forceRegenerate bool) {
 		v.mediaGridWrapper.Refresh()
 	}
 
-	fmt.Printf("Media grid refreshed with card size: %.0fx%.0f\n", cardWidth, cardHeight)
+	fmt.Printf("Media grid refreshed with card size: %.0fx%.0f, %d files\n", cardWidth, cardHeight, len(cards))
 }
 
 func (v *MainView) createMediaGrid() fyne.CanvasObject {
@@ -208,45 +208,29 @@ func (v *MainView) createMediaGrid() fyne.CanvasObject {
 	cardWidth := components.CardWidth()
 	cardHeight := components.CardHeight()
 	var cards []fyne.CanvasObject
-	if v.mediaDir != "" {
-		mediaDir := v.mediaDir
-		var files []os.DirEntry
-		var err error
-		var limitReached bool
-		if v.recursiveSearch {
-			files, limitReached = getAllMediaFilesRecursive(mediaDir)
-			if limitReached {
-				v.showRecursiveLimitWarning()
-			}
-		} else {
-			files, err = os.ReadDir(mediaDir)
-			if err != nil {
-				files = nil
-			}
-		}
-		for _, file := range files {
+	if v.mediaDir != "" && len(v.sortedFiles) > 0 {
+		for _, sf := range v.sortedFiles {
 			var fileName string
 			var filePath string
 			if v.recursiveSearch {
-				filePath = file.Name() // full path
+				filePath = sf.Entry.Name() // full path for recursive
 				fileName = filepath.Base(filePath)
 			} else {
-				if file.IsDir() {
-					continue
-				}
-				fileName = file.Name()
-				filePath = filepath.Join(mediaDir, file.Name())
+				fileName = sf.Entry.Name()
+				filePath = filepath.Join(v.mediaDir, sf.Entry.Name())
 			}
+
+			// Apply filter
 			if v.filter != "" && !strings.Contains(strings.ToLower(fileName), strings.ToLower(v.filter)) {
 				continue
 			}
 
-			// Look up in database to get existing media file or create a new one
+			// Create media file struct
 			var mediaFile models.MediaFile
-			if dbFile, err := v.database.GetMediaFileByPath(filePath); err == nil {
-				mediaFile = *dbFile
+			if sf.MediaFile != nil {
+				mediaFile = *sf.MediaFile
 			} else {
-				// Create a minimal MediaFile struct for files not in DB yet
+				// Create minimal MediaFile struct for files not in DB
 				mediaFile = models.MediaFile{
 					Path:     filePath,
 					Filename: fileName,
@@ -318,6 +302,169 @@ func (v *MainView) showRecursiveLimitWarning() {
 	dialog.Show()
 }
 
+// loadMediaMetadataAsync loads all file metadata in background to avoid blocking UI
+func (v *MainView) loadMediaMetadataAsync(mediaDir string, callback func([]SortableMediaFile)) {
+	go func() {
+		var sortableFiles []SortableMediaFile
+
+		var files []os.DirEntry
+		var err error
+		if v.recursiveSearch {
+			files, _ = getAllMediaFilesRecursive(mediaDir)
+		} else {
+			files, err = os.ReadDir(mediaDir)
+			if err != nil {
+				callback([]SortableMediaFile{})
+				return
+			}
+		}
+
+		for _, file := range files {
+			var filePath string
+			if v.recursiveSearch {
+				filePath = file.Name() // full path for recursive
+			} else {
+				if file.IsDir() {
+					continue
+				}
+				filePath = filepath.Join(mediaDir, file.Name())
+			}
+
+			// Load filesystem info
+			info, err := file.Info()
+			if err != nil {
+				continue
+			}
+
+			// Load database info
+			var mediaFile *models.MediaFile
+			if dbFile, err := v.database.GetMediaFileByPath(filePath); err == nil {
+				mediaFile = dbFile
+			}
+
+			sortableFiles = append(sortableFiles, SortableMediaFile{
+				Entry:     file,
+				Info:      info,
+				MediaFile: mediaFile,
+			})
+		}
+
+		callback(sortableFiles)
+	}()
+}
+
+// computeSortKey calculates the sort value for a file
+func (v *MainView) computeSortKey(sf *SortableMediaFile) interface{} {
+	switch v.sortBy {
+	case "Name":
+		return strings.ToLower(sf.Entry.Name())
+	case "Size":
+		return sf.Info.Size()
+	case "Date Modified":
+		return sf.Info.ModTime()
+	case "Date Created":
+		if sf.MediaFile != nil {
+			return sf.MediaFile.CreatedAt
+		}
+		return sf.Info.ModTime() // fallback
+	case "Type":
+		if sf.MediaFile != nil {
+			return sf.MediaFile.FileType
+		}
+		// fallback to extension
+		return strings.ToLower(filepath.Ext(sf.Entry.Name()))
+	case "Duration":
+		if sf.MediaFile != nil {
+			return sf.MediaFile.Duration
+		}
+		return 0 // fallback
+	case "Dimensions":
+		if sf.MediaFile != nil {
+			return int64(sf.MediaFile.Width) * int64(sf.MediaFile.Height)
+		}
+		return int64(0) // fallback
+	default:
+		return strings.ToLower(sf.Entry.Name())
+	}
+}
+
+// sortLoadedFiles sorts pre-loaded files in memory (fast, no I/O)
+func (v *MainView) sortLoadedFiles(files []SortableMediaFile) []SortableMediaFile {
+	// Pre-compute sort keys
+	for i := range files {
+		files[i].SortKey = v.computeSortKey(&files[i])
+	}
+
+	// Sort in memory
+	sort.Slice(files, func(i, j int) bool {
+		less := v.compareSortKeys(files[i].SortKey, files[j].SortKey)
+		if !v.sortAscending {
+			less = !less
+		}
+		return less
+	})
+
+	return files
+}
+
+// compareSortKeys compares two sort keys of potentially different types
+func (v *MainView) compareSortKeys(a, b interface{}) bool {
+	switch va := a.(type) {
+	case string:
+		if vb, ok := b.(string); ok {
+			return va < vb
+		}
+	case int64:
+		if vb, ok := b.(int64); ok {
+			return va < vb
+		}
+	case int:
+		if vb, ok := b.(int); ok {
+			return va < vb
+		}
+	}
+	// Fallback: convert to string and compare
+	return fmt.Sprintf("%v", a) < fmt.Sprintf("%v", b)
+}
+
+// triggerAsyncSort starts background sorting without blocking UI
+func (v *MainView) triggerAsyncSort() {
+	if v.isSorting || len(v.sortedFiles) == 0 {
+		return // Already sorting or no data loaded
+	}
+
+	v.isSorting = true
+
+	go func() {
+		sortedFiles := v.sortLoadedFiles(v.sortedFiles)
+
+		// Update UI on main thread
+		fyne.Do(func() {
+			v.sortedFiles = sortedFiles
+			v.isSorting = false
+			v.RefreshMediaGrid()
+		})
+	}()
+}
+
+// setMediaDirectory changes directory and loads metadata async
+func (v *MainView) setMediaDirectory(dir string) {
+	if v.mediaDir == dir {
+		return
+	}
+
+	v.mediaDir = dir
+	v.sortedFiles = nil // Invalidate cache
+
+	// Load metadata async
+	v.loadMediaMetadataAsync(dir, func(files []SortableMediaFile) {
+		fyne.Do(func() {
+			v.sortedFiles = v.sortLoadedFiles(files)
+			v.RefreshMediaGrid()
+		})
+	})
+}
+
 func (v *MainView) Build() fyne.CanvasObject {
 	v.foldersTree = v.createFoldersTree()
 	var treeScroll fyne.CanvasObject
@@ -331,6 +478,7 @@ func (v *MainView) Build() fyne.CanvasObject {
 	mediaGrid := v.createMediaGrid()
 	split := container.NewHSplit(treeScroll, mediaGrid)
 	split.SetOffset(float64(v.config.MainContentSplitOffset))
+	v.mainSplit = split // Store reference for getting current offset
 	filterEntry := widget.NewEntry()
 	filterEntry.SetPlaceHolder("Filter media...")
 	filterEntry.OnChanged = func(input string) {
@@ -362,7 +510,7 @@ func (v *MainView) Build() fyne.CanvasObject {
 				return
 			}
 			v.config.MediaDirs = append(v.config.MediaDirs, folderPath)
-			v.mediaDir = folderPath
+			v.setMediaDirectory(folderPath)
 			v.foldersTree = v.createFoldersTree()
 			v.window.SetContent(v.Build())
 		}, v.window)
@@ -372,7 +520,8 @@ func (v *MainView) Build() fyne.CanvasObject {
 	recursiveCheck := widget.NewCheck("Recursive Search", func(checked bool) {
 		v.recursiveSearch = checked
 		fmt.Printf("[DEBUG] Recursive Search toggled: %v\n", checked)
-		v.RefreshMediaGrid()
+		// Reload metadata when recursive mode changes
+		v.setMediaDirectory(v.mediaDir)
 	})
 	recursiveCheck.SetChecked(v.recursiveSearch)
 
@@ -382,8 +531,32 @@ func (v *MainView) Build() fyne.CanvasObject {
 	})
 	debugLogCheck.SetChecked(v.showDebugLog)
 
+	// Sorting controls
+	sortSelect := widget.NewSelect([]string{
+		"Name", "Size", "Date Modified", "Date Created", "Type", "Duration", "Dimensions",
+	}, func(selected string) {
+		v.sortBy = selected
+		v.triggerAsyncSort()
+	})
+	sortSelect.SetSelected(v.sortBy)
+
+	sortDirectionBtn := widget.NewButtonWithIcon("", theme.MoveUpIcon(), nil)
+	sortDirectionBtn.OnTapped = func() {
+		v.sortAscending = !v.sortAscending
+		if v.sortAscending {
+			sortDirectionBtn.SetIcon(theme.MoveUpIcon())
+		} else {
+			sortDirectionBtn.SetIcon(theme.MoveDownIcon())
+		}
+		v.triggerAsyncSort()
+	}
+
+	sortControls := container.NewHBox(
+		widget.NewLabel("Sort by:"), sortSelect, sortDirectionBtn,
+	)
+
 	buttonBox := container.NewHBox(refreshBtn, forceRegenerateBtn, addFolderBtn, recursiveCheck, debugLogCheck)
-	toolbar := container.NewBorder(nil, nil, nil, buttonBox, filterEntry)
+	toolbar := container.NewBorder(nil, nil, sortControls, buttonBox, filterEntry)
 	if v.mediaDir != "" && v.foldersTree != nil {
 		v.foldersTree.Select(v.mediaDir)
 	} else if v.foldersTree == nil {
@@ -407,12 +580,38 @@ func (v *MainView) Build() fyne.CanvasObject {
 	return mainContent
 }
 
+// GetMainContentSplitOffset returns the current offset of the main content split
+func (v *MainView) GetMainContentSplitOffset() float32 {
+	if v.mainSplit != nil {
+		return float32(v.mainSplit.Offset)
+	}
+	return v.config.MainContentSplitOffset // fallback to config value
+}
+
+// GetSidebarSplitOffset returns the current offset of the sidebar split (if any)
+func (v *MainView) GetSidebarSplitOffset() float32 {
+	// For now, we don't have a sidebar split, so return the config value
+	return v.config.SidebarSplitOffset
+}
+
+// GetSortBy returns the current sort criteria
+func (v *MainView) GetSortBy() string {
+	return v.sortBy
+}
+
+// GetSortAscending returns the current sort direction
+func (v *MainView) GetSortAscending() bool {
+	return v.sortAscending
+}
+
 func NewMainView(cfg *config.Config, db *db.Database, window fyne.Window, mediaDir string) *MainView {
 	mv := &MainView{
-		config:   cfg,
-		database: db,
-		window:   window,
-		mediaDir: mediaDir,
+		config:        cfg,
+		database:      db,
+		window:        window,
+		mediaDir:      mediaDir,
+		sortBy:        cfg.SortBy,        // Load from config
+		sortAscending: cfg.SortAscending, // Load from config
 	}
 	folders, err := db.GetFolders()
 	if err == nil && len(folders) > 0 {
@@ -424,6 +623,15 @@ func NewMainView(cfg *config.Config, db *db.Database, window fyne.Window, mediaD
 		if mv.mediaDir == "" {
 			mv.mediaDir = folderPaths[0]
 		}
+	}
+	// Load initial metadata async
+	if mv.mediaDir != "" {
+		mv.loadMediaMetadataAsync(mv.mediaDir, func(files []SortableMediaFile) {
+			fyne.Do(func() {
+				mv.sortedFiles = mv.sortLoadedFiles(files)
+				// Don't call RefreshMediaGrid here as Build() will be called next
+			})
+		})
 	}
 	if window.Content() == nil {
 		window.Resize(fyne.NewSize(1200, 800))

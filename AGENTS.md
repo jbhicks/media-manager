@@ -31,6 +31,36 @@ Agents should never ask for permission to proceed with tasks. Always take action
 - `go run cmd/media-manager/main.go`
 - Any direct application startup commands
 
+---
+
+## 🚨 **ABSOLUTE AGENT RESTRICTIONS** 🚨
+
+**AGENTS ARE FORBIDDEN FROM RUNNING THE MEDIA-MANAGER APPLICATION UNDER ANY CIRCUMSTANCES**
+
+This is not optional. This is not negotiable. This is a **HARD RULE**.
+
+**WHY THIS MATTERS:**
+- The application is managed exclusively by the user via `make dev`
+- Agents running the app violates the development workflow
+- It can cause conflicts, resource issues, and unexpected behavior
+- The user controls the development environment and testing
+
+**IF YOU EVER FEEL TEMPTED TO RUN THE APP:**
+- STOP
+- Ask the user to run `make dev` instead
+- Modify logging to capture needed information
+- Examine existing logs for behavior analysis
+
+**VIOLATION CONSEQUENCES:**
+- Breaks the established development process
+- Can interfere with user's testing and debugging
+- Creates confusion about application state
+- Wastes time and resources
+
+**REMEMBER:** Your job is to modify code, examine logs, and provide insights. **NOT** to run applications.
+
+---
+
 ### Service Auto-Reload
 The service (`cmd/media-manager-service`) runs with `air` for auto-reloading during development. When you make changes to service code:
 - `air` automatically detects changes and rebuilds the service binary
@@ -526,7 +556,7 @@ func getTestGifPath() string {
 ### TODOs for Agents
 - Optimize thumbnail generation for large media libraries.
 - Implement advanced tagging features (bulk tagging, color-coded tags).
-- Develop robust sorting and filtering options (by date, size, tags, etc.).
+- ✅ **COMPLETED**: Develop robust sorting and filtering options (by date, size, tags, etc.) - Added sorting by Name, Size, Date Modified, Date Created, Type, Duration, Dimensions with persistence
 - Enhance UI/UX for media browsing.
 - Add support for additional media formats.
 - Improve thumbnail caching mechanism.

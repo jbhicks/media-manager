@@ -315,9 +315,15 @@ func (app *MediaManagerApp) RescanMediaDirectory() {
 func (app *MediaManagerApp) SaveConfig() {
 	fmt.Println("[DEBUG] app.go: Saving configuration...")
 	if app.mainView != nil {
-		// app.config.MainContentSplitOffset = app.mainView.GetMainContentSplitOffset() // Disabled: not implemented
-		// app.config.SidebarSplitOffset = app.mainView.GetSidebarSplitOffset() // Disabled: not implemented
+		// Save split offsets
+		app.config.MainContentSplitOffset = app.mainView.GetMainContentSplitOffset()
+		app.config.SidebarSplitOffset = app.mainView.GetSidebarSplitOffset()
 		fmt.Printf("[DEBUG] app.go: Retrieved MainContentSplitOffset: %f, SidebarSplitOffset: %f\n", app.config.MainContentSplitOffset, app.config.SidebarSplitOffset)
+
+		// Save sorting state
+		app.config.SortBy = app.mainView.GetSortBy()
+		app.config.SortAscending = app.mainView.GetSortAscending()
+		fmt.Printf("[DEBUG] app.go: Retrieved SortBy: %s, SortAscending: %v\n", app.config.SortBy, app.config.SortAscending)
 	}
 
 	// Save window size and position

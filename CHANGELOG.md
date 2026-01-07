@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+- **Sorting Functionality**: Added comprehensive media file sorting with persistence
+  - Sort by Name, Size, Date Modified, Date Created, Type, Duration, Dimensions
+  - Ascending/descending toggle with visual indicators (↑↓)
+  - Async sorting with background metadata loading to avoid UI blocking
+  - Sorting state persistence across app restarts (saved to config.json)
+  - Side navigation bar size persistence (split offset saved to config)
+
+### Fixed
+- **LSP Issues**: Resolved format string errors in FFmpeg filter generation
+  - Fixed fmt.Sprintf argument mismatches in scene-based GIF generation
+  - Corrected grid layout filter strings for 4x2 mosaic generation
+  - All static analysis issues resolved (go vet passes cleanly)
+
 ## [0.3.0] - 2026-01-06
 ### Added
 - **Modern Media Card Design**: 16:9 aspect ratio cards (288x162) with full-bleed images

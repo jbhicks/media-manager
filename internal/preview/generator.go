@@ -759,7 +759,7 @@ func generateSceneBasedGIFWithCPU(srcPath, gifPath string, timestamps []float64,
 
 	// Create 4x2 horizontal layout
 	gridFilter := fmt.Sprintf("[v0][v1][v2][v3][v4][v5][v6][v7]xstack=inputs=8:layout=0_0|%d_0|%d_0|%d_0|0_%d|%d_%d|%d_%d|%d_%d[stacked]",
-		cellSize, cellSize*2, cellSize*3, cellSize, cellSize, cellSize*2, cellSize*3, cellSize)
+		cellSize, cellSize*2, cellSize*3, cellSize, cellSize, cellSize, cellSize*2, cellSize, cellSize*3, cellSize)
 
 	paletteFilter := strings.Join(sceneFilters, ";") + ";" + gridFilter + ";[stacked]palettegen=max_colors=256"
 
@@ -827,7 +827,7 @@ func generateSceneMosaic(srcPath, mosaicPath string, timestamps []float64, opts 
 
 	// Create 4x2 grid
 	gridFilter := fmt.Sprintf("[v0][v1][v2][v3][v4][v5][v6][v7]xstack=inputs=8:layout=0_0|%d_0|%d_0|%d_0|0_%d|%d_%d|%d_%d|%d_%d",
-		cellSize, cellSize*2, cellSize*3, cellSize, cellSize, cellSize*2, cellSize*3, cellSize)
+		cellSize, cellSize*2, cellSize*3, cellSize, cellSize, cellSize, cellSize*2, cellSize, cellSize*3, cellSize)
 
 	filterComplex := strings.Join(sceneFilters, ";") + ";" + gridFilter
 
@@ -1075,7 +1075,7 @@ func generateGIFWithCUDA(srcPath, gifPath string, timestamps []float64, opts Pre
 	}
 
 	gridFilter := fmt.Sprintf("[v0][v1][v2][v3][v4][v5][v6][v7]xstack=inputs=8:layout=0_0|%d_0|%d_0|%d_0|0_%d|%d_%d|%d_%d|%d_%d",
-		cellSize, cellSize*2, cellSize*3, cellSize, cellSize, cellSize*2, cellSize*3, cellSize)
+		cellSize, cellSize*2, cellSize*3, cellSize, cellSize, cellSize, cellSize*2, cellSize, cellSize*3, cellSize)
 
 	filterComplex := strings.Join(sceneFilters, ";") + ";" + gridFilter
 
@@ -1120,7 +1120,7 @@ func generateGIFWithVAAPI(srcPath, gifPath string, timestamps []float64, opts Pr
 	}
 
 	gridFilter := fmt.Sprintf("[v0][v1][v2][v3][v4][v5][v6][v7]xstack=inputs=8:layout=0_0|%d_0|%d_0|%d_0|0_%d|%d_%d|%d_%d|%d_%d",
-		cellSize, cellSize*2, cellSize*3, cellSize, cellSize, cellSize*2, cellSize*3, cellSize)
+		cellSize, cellSize*2, cellSize*3, cellSize, cellSize, cellSize, cellSize*2, cellSize, cellSize*3, cellSize)
 
 	filterComplex := strings.Join(sceneFilters, ";") + ";" + gridFilter
 
