@@ -303,3 +303,214 @@ func TestDefaultPreviewOptions(t *testing.T) {
 		t.Error("Expected UseGPU to be false by default")
 	}
 }
+
+// Tests for Method 1: Scene-Based Preview
+
+func TestDefaultScenePreviewOptions(t *testing.T) {
+	opts := DefaultScenePreviewOptions()
+
+	if opts.SceneThreshold != 0.4 {
+		t.Errorf("Expected SceneThreshold 0.4, got %.2f", opts.SceneThreshold)
+	}
+	if opts.TileWidth != 160 {
+		t.Errorf("Expected TileWidth 160, got %d", opts.TileWidth)
+	}
+	if opts.TileHeight != 120 {
+		t.Errorf("Expected TileHeight 120, got %d", opts.TileHeight)
+	}
+	if opts.Cols != 4 {
+		t.Errorf("Expected Cols 4, got %d", opts.Cols)
+	}
+	if opts.Rows != 4 {
+		t.Errorf("Expected Rows 4, got %d", opts.Rows)
+	}
+}
+
+func TestScenePreviewOptions_GetOutputSize(t *testing.T) {
+	opts := &ScenePreviewOptions{
+		TileWidth:  160,
+		TileHeight: 120,
+		Cols:       4,
+		Rows:       3,
+	}
+
+	width, height := opts.GetOutputSize()
+	expectedWidth := 640  // 160 * 4
+	expectedHeight := 360 // 120 * 3
+
+	if width != expectedWidth {
+		t.Errorf("Expected width %d, got %d", expectedWidth, width)
+	}
+	if height != expectedHeight {
+		t.Errorf("Expected height %d, got %d", expectedHeight, height)
+	}
+}
+
+func TestGenerateSceneBasedPreview(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not found, skipping test")
+	}
+
+	tempDir := t.TempDir()
+	videoPath := filepath.Join(tempDir, "test_scenes.mp4")
+	outputPath := filepath.Join(tempDir, "scene_preview.png")
+
+	// Create a test video with distinct scenes (color changes)
+	// Scene 1: black (0-2s), Scene 2: white (2-4s), Scene 3: red (4-6s), Scene 4: blue (6-8s)
+	cmd := exec.Command("ffmpeg",
+		"-f", "lavfi", "-i", "color=c=black:s=320x240:d=2",
+		"-f", "lavfi", "-i", "color=c=white:s=320x240:d=2",
+		"-f", "lavfi", "-i", "color=c=red:s=320x240:d=2",
+		"-f", "lavfi", "-i", "color=c=blue:s=320x240:d=2",
+		"-filter_complex", "[0:v][1:v][2:v][3:v]concat=n=4:v=1:a=0",
+		"-c:v", "libx264", "-t", "8", videoPath,
+	)
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to create test video with scenes: %v", err)
+	}
+
+	opts := &ScenePreviewOptions{
+		SceneThreshold: 0.3,
+		TileWidth:      80,
+		TileHeight:     60,
+		Cols:           2,
+		Rows:           2,
+	}
+
+	err := GenerateSceneBasedPreview(videoPath, outputPath, opts)
+	if err != nil {
+		t.Fatalf("GenerateSceneBasedPreview failed: %v", err)
+	}
+
+	// Verify output was created
+	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+		t.Errorf("Scene preview not created: %s", outputPath)
+	}
+
+	// Verify output is a valid image
+	file, err := os.Open(outputPath)
+	if err != nil {
+		t.Fatalf("Failed to open output: %v", err)
+	}
+	defer file.Close()
+
+	img, _, err := image.Decode(file)
+	if err != nil {
+		t.Fatalf("Failed to decode output image: %v", err)
+	}
+
+	bounds := img.Bounds()
+	expectedWidth := opts.TileWidth * opts.Cols
+	expectedHeight := opts.TileHeight * opts.Rows
+
+	// Allow some tolerance for FFmpeg's output dimensions
+	if bounds.Dx() < expectedWidth/2 || bounds.Dy() < expectedHeight/2 {
+		t.Errorf("Output image too small: expected at least %dx%d, got %dx%d",
+			expectedWidth/2, expectedHeight/2, bounds.Dx(), bounds.Dy())
+	}
+}
+
+func TestGenerateSceneBasedPreview_NilOptions(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not found, skipping test")
+	}
+
+	tempDir := t.TempDir()
+	videoPath := filepath.Join(tempDir, "test.mp4")
+	outputPath := filepath.Join(tempDir, "scene_preview.png")
+
+	// Create a simple test video
+	cmd := exec.Command("ffmpeg",
+		"-f", "lavfi", "-i", "color=c=blue:s=320x240:d=3",
+		"-c:v", "libx264", videoPath,
+	)
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to create test video: %v", err)
+	}
+
+	// Call with nil options - should use defaults
+	err := GenerateSceneBasedPreview(videoPath, outputPath, nil)
+	if err != nil {
+		t.Fatalf("GenerateSceneBasedPreview with nil options failed: %v", err)
+	}
+
+	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+		t.Errorf("Scene preview not created: %s", outputPath)
+	}
+}
+
+func TestGenerateSceneBasedPreview_ExistingFile(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not found, skipping test")
+	}
+
+	tempDir := t.TempDir()
+	videoPath := filepath.Join(tempDir, "test.mp4")
+	outputPath := filepath.Join(tempDir, "scene_preview.png")
+
+	// Create a simple test video
+	cmd := exec.Command("ffmpeg",
+		"-f", "lavfi", "-i", "color=c=green:s=320x240:d=2",
+		"-c:v", "libx264", videoPath,
+	)
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to create test video: %v", err)
+	}
+
+	// Create existing output file
+	if err := os.WriteFile(outputPath, []byte("existing content"), 0644); err != nil {
+		t.Fatalf("Failed to create existing file: %v", err)
+	}
+
+	originalInfo, _ := os.Stat(outputPath)
+	originalModTime := originalInfo.ModTime()
+
+	// Should skip regeneration
+	err := GenerateSceneBasedPreview(videoPath, outputPath, nil)
+	if err != nil {
+		t.Fatalf("GenerateSceneBasedPreview failed: %v", err)
+	}
+
+	// Verify file was not modified
+	newInfo, _ := os.Stat(outputPath)
+	if !newInfo.ModTime().Equal(originalModTime) {
+		t.Error("Existing file was modified when it should have been skipped")
+	}
+}
+
+func TestGenerateSceneBasedPreview_Fallback(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not found, skipping test")
+	}
+
+	tempDir := t.TempDir()
+	videoPath := filepath.Join(tempDir, "test_static.mp4")
+	outputPath := filepath.Join(tempDir, "scene_preview.png")
+
+	// Create a static video (no scene changes) - should trigger fallback
+	cmd := exec.Command("ffmpeg",
+		"-f", "lavfi", "-i", "color=c=red:s=320x240:d=5",
+		"-c:v", "libx264", videoPath,
+	)
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to create test video: %v", err)
+	}
+
+	// Use very high threshold to force fallback
+	opts := &ScenePreviewOptions{
+		SceneThreshold: 0.99,
+		TileWidth:      80,
+		TileHeight:     60,
+		Cols:           2,
+		Rows:           2,
+	}
+
+	err := GenerateSceneBasedPreview(videoPath, outputPath, opts)
+	if err != nil {
+		t.Fatalf("GenerateSceneBasedPreview with fallback failed: %v", err)
+	}
+
+	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+		t.Errorf("Scene preview not created even with fallback: %s", outputPath)
+	}
+}

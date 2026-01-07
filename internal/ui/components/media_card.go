@@ -12,10 +12,8 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/driver/desktop"
-	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	xwidget "fyne.io/x/fyne/widget"
 
 	"github.com/user/media-manager/internal/preview"
 	"github.com/user/media-manager/pkg/models"
@@ -43,25 +41,27 @@ const (
 // MediaCard represents a uniform card for all media types
 type MediaCard struct {
 	widget.BaseWidget
-	mediaType       MediaType
-	filePath        string
-	fileName        string
-	thumbnailPath   string
-	animatedGif     *xwidget.AnimatedGif // fyne-x GIF widget for animated previews
-	forceRegenerate bool
-	icon            *widget.Icon
-	label           *widget.Label
-	labelBackground fyne.CanvasObject
-	background      *canvas.Rectangle
-	content         fyne.CanvasObject
-	isHovered       bool
-	hasAnimation    bool
-	onDelete        func()
-	thumbDir        string
-	duration        int
-	extension       string
-	durationLabel   *widget.Label
-	extensionLabel  *widget.Label
+	mediaType          MediaType
+	filePath           string
+	fileName           string
+	thumbnailPath      string              // Static JPG thumbnail path
+	animatedFrames     *AnimatedFrames     // Frame-based animation widget
+	staticImage        *canvas.Image       // Static thumbnail image
+	forceRegenerate    bool
+	icon               *widget.Icon
+	label              *widget.Label
+	labelBackground    fyne.CanvasObject
+	background         *canvas.Rectangle
+	content            fyne.CanvasObject
+	isHovered          bool
+	hasAnimation       bool
+	animatedRequested  bool                // Whether animated preview has been requested
+	onDelete           func()
+	thumbDir           string
+	duration           int
+	extension          string
+	durationLabel      *widget.Label
+	extensionLabel     *widget.Label
 }
 
 func NewMediaCard(file models.MediaFile, thumbDir string) *MediaCard {
@@ -133,43 +133,79 @@ func (mc *MediaCard) loadPreview(mediaTypeStr string) {
 	// If we already have a path from DB and not forcing regenerate, use it initially
 	if mc.thumbnailPath != "" && !mc.forceRegenerate {
 		if _, err := os.Stat(mc.thumbnailPath); err == nil {
-			mc.updateContent(mc.thumbnailPath)
+			mc.updateStaticThumbnail(mc.thumbnailPath)
 			return
 		}
 	}
 
-	// Request from centralized manager with callback - no polling needed
+	// Request static JPG thumbnail from centralized manager with callback
 	preview.GetPreviewWithCallback(mc.filePath, mediaTypeStr, mc.thumbDir, mc.forceRegenerate, func(path string, err error) {
 		if err != nil {
 			fmt.Printf("[ERROR] Failed to generate preview for %s: %v\n", mc.filePath, err)
 			return
 		}
 		mc.thumbnailPath = path
-		mc.updateContent(path)
+		mc.updateStaticThumbnail(path)
 	})
 }
 
-func (mc *MediaCard) updateContent(path string) {
+// updateStaticThumbnail updates the card with a static JPG thumbnail
+func (mc *MediaCard) updateStaticThumbnail(path string) {
 	fyne.Do(func() {
-		if mc.mediaType == MediaTypeVideo {
-			uri := storage.NewFileURI(path)
-			animatedGif, err := xwidget.NewAnimatedGif(uri)
-			if err == nil {
-				animatedGif.Stop()
-				mc.animatedGif = animatedGif
-				mc.content = animatedGif
-				mc.hasAnimation = true
-			} else {
-				img := canvas.NewImageFromFile(path)
-				img.FillMode = canvas.ImageFillContain
-				mc.content = img
-			}
-		} else {
-			img := canvas.NewImageFromFile(path)
-			img.FillMode = canvas.ImageFillContain
-			mc.content = img
-		}
+		img := canvas.NewImageFromFile(path)
+		img.FillMode = canvas.ImageFillContain
+		mc.staticImage = img
+		mc.content = img
 		mc.Refresh()
+	})
+}
+
+// loadAnimatedPreview loads animation frames on hover (for videos)
+func (mc *MediaCard) loadAnimatedPreview() {
+	if mc.animatedRequested {
+		fmt.Printf("[DEBUG] loadAnimatedPreview: Already requested for %s\n", mc.fileName)
+		return // Already requested
+	}
+	mc.animatedRequested = true
+	fmt.Printf("[DEBUG] loadAnimatedPreview: Requesting frames for %s\n", mc.fileName)
+
+	// Request frame extraction for animated preview
+	preview.GetAnimatedPreviewWithCallback(mc.filePath, mc.thumbDir, mc.forceRegenerate, func(framePaths []string, err error) {
+		fmt.Printf("[DEBUG] loadAnimatedPreview callback: got %d frames, err=%v\n", len(framePaths), err)
+		if err != nil {
+			fmt.Printf("[ERROR] Failed to generate animation frames for %s: %v\n", mc.filePath, err)
+			return
+		}
+		if len(framePaths) == 0 {
+			fmt.Printf("[WARN] No animation frames generated for %s\n", mc.filePath)
+			return
+		}
+		mc.updateAnimatedContent(framePaths)
+	})
+}
+
+// updateAnimatedContent updates the card to show animated preview using frames
+func (mc *MediaCard) updateAnimatedContent(framePaths []string) {
+	fmt.Printf("[DEBUG] updateAnimatedContent: Creating AnimatedFrames with %d frames, isHovered=%v\n", len(framePaths), mc.isHovered)
+	fyne.Do(func() {
+		// Create AnimatedFrames widget
+		animFrames := NewAnimatedFrames(framePaths)
+		if animFrames == nil {
+			fmt.Printf("[ERROR] NewAnimatedFrames returned nil\n")
+			return
+		}
+		mc.animatedFrames = animFrames
+		mc.hasAnimation = true
+
+		// If still hovering, start animation - use the display image directly
+		if mc.isHovered {
+			fmt.Printf("[DEBUG] updateAnimatedContent: Starting animation\n")
+			mc.content = animFrames.CurrentImage()
+			animFrames.Start()
+			mc.Refresh()
+		} else {
+			fmt.Printf("[DEBUG] updateAnimatedContent: Not hovering, animation ready but not started\n")
+		}
 	})
 }
 
@@ -182,10 +218,20 @@ func (mc *MediaCard) MouseIn(*desktop.MouseEvent) {
 	mc.background.Refresh()
 
 	fmt.Printf("[DEBUG] MouseIn: mediaType=%v, hasAnimation=%v, mc.content=%v\n", mc.mediaType, mc.hasAnimation, mc.content)
-	if mc.hasAnimation && mc.animatedGif != nil {
-		mc.content = mc.animatedGif
-		mc.animatedGif.Start()
-		mc.Refresh()
+	
+	// For videos, start loading animated preview on hover (if not already loaded)
+	if mc.mediaType == MediaTypeVideo {
+		if mc.hasAnimation && mc.animatedFrames != nil {
+			// Animation frames ready - use the animated frames' display image directly
+			fmt.Printf("[DEBUG] MouseIn: Switching content to animatedFrames.displayImage and starting animation\n")
+			mc.content = mc.animatedFrames.CurrentImage()
+			mc.animatedFrames.Start()
+			// Force full widget refresh to update renderer's content reference
+			mc.BaseWidget.Refresh()
+		} else if !mc.animatedRequested {
+			// Request animated frame extraction
+			go mc.loadAnimatedPreview()
+		}
 	}
 }
 
@@ -195,11 +241,18 @@ func (mc *MediaCard) MouseOut() {
 	mc.background.FillColor = theme.Color(theme.ColorNameInputBackground)
 	mc.background.Refresh()
 
-	if mc.hasAnimation && mc.animatedGif != nil {
-		mc.animatedGif.Stop()
+	// Stop animation and return to static thumbnail
+	if mc.animatedFrames != nil {
+		mc.animatedFrames.Stop()
+	}
+	
+	// Restore static thumbnail if we have it
+	if mc.staticImage != nil {
+		mc.content = mc.staticImage
+		mc.Refresh()
 	}
 
-	fmt.Printf("[DEBUG] MouseOut: mediaType=%v, hasAnimation=%v, animatedGif=%v\n", mc.mediaType, mc.hasAnimation, mc.animatedGif != nil)
+	fmt.Printf("[DEBUG] MouseOut: mediaType=%v, hasAnimation=%v, animatedFrames=%v\n", mc.mediaType, mc.hasAnimation, mc.animatedFrames != nil)
 }
 
 func (mc *MediaCard) MouseMoved(*desktop.MouseEvent) {
@@ -338,23 +391,32 @@ func (r *mediaCardRenderer) Refresh() {
 
 	// Rebuild objects cache if content changed
 	if oldContent != r.content {
+		fmt.Printf("[DEBUG] mediaCardRenderer.Refresh: Content changed from %T to %T\n", oldContent, r.content)
 		r.updateObjectsCache()
+		// Force layout update when content changes
+		if r.content != nil {
+			size := r.card.Size()
+			padding := float32(8)
+			contentH := size.Height - 48
+			contentW := size.Width - 2*padding
+			r.content.Resize(fyne.NewSize(contentW, contentH))
+			r.content.Move(fyne.NewPos(padding, padding))
+		}
 	}
 
-	// Refresh all objects - no fyne.Do needed as renderer methods are called on main thread
-	canvas.Refresh(r.background)
+	// Refresh all canvas objects - some may be called from background threads via callbacks
+	r.background.Refresh()
 	if r.content != nil {
-		canvas.Refresh(r.content)
+		r.content.Refresh()
 	}
-	canvas.Refresh(r.labelBackground)
-	canvas.Refresh(r.label)
+	r.labelBackground.Refresh()
+	r.label.Refresh()
 	if r.durationLabel != nil {
-		canvas.Refresh(r.durationLabel)
+		r.durationLabel.Refresh()
 	}
 	if r.extensionLabel != nil {
-		canvas.Refresh(r.extensionLabel)
+		r.extensionLabel.Refresh()
 	}
-	// Note: Layout() should NOT be called from Refresh() per Fyne docs
 }
 
 // updateObjectsCache rebuilds the cached objects slice when content changes
@@ -378,8 +440,8 @@ func (r *mediaCardRenderer) Objects() []fyne.CanvasObject {
 }
 
 func (r *mediaCardRenderer) Destroy() {
-	if r.card.animatedGif != nil {
-		r.card.animatedGif.Stop()
+	if r.card.animatedFrames != nil {
+		r.card.animatedFrames.Stop()
 	}
 }
 
@@ -388,7 +450,7 @@ func GetMediaType(filename string) MediaType {
 	switch ext {
 	case ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif", ".ico", ".svg":
 		return MediaTypeImage
-	case ".mp4", ".webm", ".ogv", ".flv", ".mov", ".avi", ".mkv", ".ts", ".3gp", ".mpeg", ".mpg", ".wmv", ".m4v", ".vob", ".divx":
+	case ".mp4", ".webm", ".ogv", ".flv", ".mov", ".avi", ".mkv", ".ts", ".3gp", ".mpeg", ".mpg", ".wmv", ".m4v", ".vob", ".divx", ".asf", ".dv", ".mp2", ".rm":
 		return MediaTypeVideo
 	default:
 		return MediaTypeFile

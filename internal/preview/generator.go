@@ -27,8 +27,9 @@ type task struct {
 	srcPath   string
 	destPath  string
 	mediaType string
+	taskType  string // "thumbnail" or "animated"
 	done      chan error
-	callback  func(path string, err error) // Callback when complete
+	callback  func(result interface{}, err error) // Callback when complete (string for thumbnail, []string for frames)
 }
 
 func initPool() {
@@ -47,16 +48,37 @@ func initPool() {
 func worker() {
 	for t := range taskChan {
 		var err error
-		if t.mediaType == "video" {
-			err = GenerateAnimatedPreview(t.srcPath, t.destPath)
-		} else {
-			err = GenerateThumbnail(t.srcPath, t.destPath)
+		var result interface{}
+		
+		switch t.taskType {
+		case "animated":
+			// Generate animation frames (8 JPG files)
+			config := DefaultFrameExtractionConfig()
+			frames, frameErr := GenerateAnimationFrames(t.srcPath, t.destPath, config)
+			err = frameErr
+			result = frames // []string of frame paths
+		case "thumbnail":
+			if t.mediaType == "video" {
+				// Generate static video thumbnail (fast)
+				err = GenerateVideoThumbnail(t.srcPath, t.destPath, 320)
+			} else {
+				err = GenerateThumbnail(t.srcPath, t.destPath)
+			}
+			result = t.destPath
+		default:
+			// Legacy behavior
+			if t.mediaType == "video" {
+				err = GenerateVideoThumbnail(t.srcPath, t.destPath, 320)
+			} else {
+				err = GenerateThumbnail(t.srcPath, t.destPath)
+			}
+			result = t.destPath
 		}
 		if t.done != nil {
 			t.done <- err
 		}
 		if t.callback != nil {
-			t.callback(t.destPath, err)
+			t.callback(result, err)
 		}
 	}
 }
@@ -68,19 +90,18 @@ func GenerateUniqueFilename(filePath, extension string) string {
 }
 
 // GetPreview returns the path to the preview, generating it in the background if it doesn't exist.
+// For videos, this returns a static JPG thumbnail (fast). Use GetAnimatedPreview for WebM.
 func GetPreview(srcPath string, mediaType string, thumbDir string) (string, error) {
 	return GetPreviewWithForce(srcPath, mediaType, thumbDir, false)
 }
 
 // GetPreviewWithForce returns the path to the preview, optionally forcing regeneration.
+// For videos, this returns a static JPG thumbnail (fast).
 func GetPreviewWithForce(srcPath string, mediaType string, thumbDir string, forceRegenerate bool) (string, error) {
 	initPool()
 
+	// Always use JPG for static thumbnails (both images and videos)
 	ext := ".jpg"
-	if mediaType == "video" {
-		ext = ".gif"
-	}
-
 	destFilename := GenerateUniqueFilename(srcPath, ext)
 	destPath := filepath.Join(thumbDir, destFilename)
 
@@ -97,8 +118,8 @@ func GetPreviewWithForce(srcPath string, mediaType string, thumbDir string, forc
 
 	// Queue for generation
 	select {
-	case taskChan <- task{srcPath: srcPath, destPath: destPath, mediaType: mediaType}:
-		fmt.Printf("[DEBUG] Queued preview generation for: %s\n", filepath.Base(srcPath))
+	case taskChan <- task{srcPath: srcPath, destPath: destPath, mediaType: mediaType, taskType: "thumbnail"}:
+		fmt.Printf("[DEBUG] Queued thumbnail generation for: %s\n", filepath.Base(srcPath))
 	default:
 		// Queue full, maybe return error or log
 		fmt.Printf("[WARN] Preview task queue full for: %s\n", srcPath)
@@ -108,15 +129,12 @@ func GetPreviewWithForce(srcPath string, mediaType string, thumbDir string, forc
 }
 
 // GetPreviewWithCallback queues preview generation and calls the callback when complete.
-// This is the preferred method as it avoids polling loops.
+// For videos, this generates a static JPG thumbnail (fast).
 func GetPreviewWithCallback(srcPath string, mediaType string, thumbDir string, forceRegenerate bool, callback func(path string, err error)) (string, error) {
 	initPool()
 
+	// Always use JPG for static thumbnails
 	ext := ".jpg"
-	if mediaType == "video" {
-		ext = ".gif"
-	}
-
 	destFilename := GenerateUniqueFilename(srcPath, ext)
 	destPath := filepath.Join(thumbDir, destFilename)
 
@@ -135,15 +153,78 @@ func GetPreviewWithCallback(srcPath string, mediaType string, thumbDir string, f
 		fmt.Printf("[DEBUG] Force regenerating preview: %s\n", srcPath)
 	}
 
+	// Wrap callback to convert interface{} to string
+	wrappedCallback := func(result interface{}, err error) {
+		if callback != nil {
+			if path, ok := result.(string); ok {
+				callback(path, err)
+			} else {
+				callback("", err)
+			}
+		}
+	}
+
 	// Queue for generation with callback
 	select {
-	case taskChan <- task{srcPath: srcPath, destPath: destPath, mediaType: mediaType, callback: callback}:
-		fmt.Printf("[DEBUG] Queued preview generation for: %s\n", filepath.Base(srcPath))
+	case taskChan <- task{srcPath: srcPath, destPath: destPath, mediaType: mediaType, taskType: "thumbnail", callback: wrappedCallback}:
+		fmt.Printf("[DEBUG] Queued thumbnail generation for: %s\n", filepath.Base(srcPath))
 	default:
 		// Queue full
 		fmt.Printf("[WARN] Preview task queue full for: %s\n", srcPath)
 		if callback != nil {
 			go callback("", fmt.Errorf("preview task queue full"))
+		}
+	}
+
+	return destPath, nil
+}
+
+// GetAnimatedPreviewWithCallback queues animation frame extraction
+// This is called on hover to load the animated preview frames
+// The callback receives []string (frame paths) on success
+func GetAnimatedPreviewWithCallback(srcPath string, thumbDir string, forceRegenerate bool, callback func(framePaths []string, err error)) (string, error) {
+	initPool()
+
+	// Use a subdirectory for animation frames
+	framesDir := GenerateUniqueFilename(srcPath, "")
+	destPath := filepath.Join(thumbDir, "frames", framesDir)
+
+	// Check if frames already exist and skip if not forcing regeneration
+	if !forceRegenerate {
+		config := DefaultFrameExtractionConfig()
+		existingFrames := getExistingFrames(destPath, config.NumFrames)
+		if len(existingFrames) == config.NumFrames {
+			// Frames already exist, invoke callback immediately
+			if callback != nil {
+				go callback(existingFrames, nil)
+			}
+			return destPath, nil
+		}
+	} else {
+		// Remove existing frames directory to force regeneration
+		os.RemoveAll(destPath)
+		fmt.Printf("[DEBUG] Force regenerating animation frames: %s\n", srcPath)
+	}
+
+	// Wrap callback to convert interface{} to []string
+	wrappedCallback := func(result interface{}, err error) {
+		if callback != nil {
+			if frames, ok := result.([]string); ok {
+				callback(frames, err)
+			} else {
+				callback(nil, err)
+			}
+		}
+	}
+
+	// Queue for generation with callback
+	select {
+	case taskChan <- task{srcPath: srcPath, destPath: destPath, mediaType: "video", taskType: "animated", callback: wrappedCallback}:
+		fmt.Printf("[DEBUG] Queued animation frame extraction for: %s\n", filepath.Base(srcPath))
+	default:
+		fmt.Printf("[WARN] Preview task queue full for animated: %s\n", srcPath)
+		if callback != nil {
+			go callback(nil, fmt.Errorf("preview task queue full"))
 		}
 	}
 
@@ -556,12 +637,46 @@ func evenlyDistributedTimestamps(duration time.Duration, count int) []float64 {
 }
 
 func GenerateAnimatedPreview(srcPath, gifPath string) error {
-	// Use new smart preview system with default options
+	// Use fast preview generation (skips slow scene detection)
 	opts := DefaultPreviewOptions()
-	return GenerateSmartPreview(srcPath, gifPath, opts)
+	return GenerateFastPreview(srcPath, gifPath, opts)
 }
 
-// GenerateSmartPreview creates an optimized preview using scene detection
+// GenerateFastPreview creates a preview WITHOUT scene detection (much faster)
+// Uses evenly distributed timestamps instead of analyzing the whole video
+func GenerateFastPreview(srcPath, gifPath string, opts PreviewOptions) error {
+	fmt.Printf("[DEBUG] Generating fast preview for: %s\n", srcPath)
+
+	// Check if preview already exists
+	if _, err := os.Stat(gifPath); err == nil {
+		fmt.Printf("[DEBUG] Preview already exists: %s\n", gifPath)
+		return nil
+	}
+
+	// Ensure output directory exists
+	if err := os.MkdirAll(filepath.Dir(gifPath), 0755); err != nil {
+		return fmt.Errorf("failed to create preview directory: %w", err)
+	}
+
+	// Get video duration
+	duration, err := getVideoDuration(srcPath)
+	if err != nil {
+		return fmt.Errorf("failed to get video duration: %w", err)
+	}
+
+	// Use evenly distributed timestamps (FAST - no scene detection)
+	timestamps := evenlyDistributedTimestamps(duration, opts.MaxScenes)
+	fmt.Printf("[DEBUG] Using evenly distributed timestamps: %v\n", timestamps)
+
+	// Generate preview based on type
+	if opts.UseMosaic {
+		return generateSceneMosaic(srcPath, gifPath, timestamps, opts)
+	}
+
+	return generateSceneBasedGIFWithCPU(srcPath, gifPath, timestamps, opts)
+}
+
+// GenerateSmartPreview creates an optimized preview using scene detection (SLOW)
 func GenerateSmartPreview(srcPath, gifPath string, opts PreviewOptions) error {
 	fmt.Printf("[DEBUG] Generating smart preview for: %s\n", srcPath)
 
@@ -623,8 +738,9 @@ func generateSceneBasedGIFWithCPU(srcPath, gifPath string, timestamps []float64,
 	cellSize := opts.Width / 2 // 2x2 grid
 
 	for i, ts := range timestamps {
+		// Use scale with pad to avoid green bars - scale to fit, then pad to exact size
 		sceneFilters = append(sceneFilters, fmt.Sprintf(
-			"[0:v]trim=start=%.2f:duration=0.8,setpts=PTS-STARTPTS,fps=%d,scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d[v%d]",
+			"[0:v]trim=start=%.2f:duration=0.8,setpts=PTS-STARTPTS,fps=%d,scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,format=rgb24[v%d]",
 			ts, opts.FPS, cellSize, cellSize, cellSize, cellSize, i,
 		))
 	}
@@ -720,6 +836,194 @@ func generateSceneMosaic(srcPath, mosaicPath string, timestamps []float64, opts 
 
 	fmt.Printf("[DEBUG] Successfully generated mosaic: %s\n", mosaicPath)
 	return nil
+}
+
+// GenerateSceneBasedPreview creates a single preview image using FFmpeg's scene detection
+// This is "Method 1" - auto-detects interesting scene changes and tiles them into a preview image
+// The output is a static image, not an animated GIF
+func GenerateSceneBasedPreview(srcPath, outputPath string, opts *ScenePreviewOptions) error {
+	if opts == nil {
+		opts = DefaultScenePreviewOptions()
+	}
+
+	fmt.Printf("[DEBUG] Generating scene-based preview (Method 1) for: %s\n", srcPath)
+
+	// Check if preview already exists
+	if _, err := os.Stat(outputPath); err == nil {
+		fmt.Printf("[DEBUG] Scene preview already exists: %s\n", outputPath)
+		return nil
+	}
+
+	// Ensure output directory exists
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return fmt.Errorf("failed to create preview directory: %w", err)
+	}
+
+	// Build the FFmpeg command for scene-based preview
+	// select='gt(scene,threshold)' - Select frames where scene change score > threshold
+	// scale=W:H - Scale to thumbnail size
+	// tile=COLSxROWS - Arrange selected frames in a grid
+	filter := fmt.Sprintf(
+		"select='gt(scene\\,%.2f)',scale=%d:%d,tile=%dx%d",
+		opts.SceneThreshold,
+		opts.TileWidth,
+		opts.TileHeight,
+		opts.Cols,
+		opts.Rows,
+	)
+
+	cmd, err := ffmpeg.NewFFmpegCommand(
+		"-loglevel", "warning",
+		"-i", srcPath,
+		"-vf", filter,
+		"-frames:v", "1",
+		"-y", outputPath,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create scene preview command: %w", err)
+	}
+
+	fmt.Printf("[DEBUG] Running FFmpeg scene detection: %v\n", cmd.Args)
+	output, err := cmd.CombinedOutput()
+
+	// Check if output was created, regardless of FFmpeg exit code
+	if _, statErr := os.Stat(outputPath); statErr == nil {
+		fmt.Printf("[DEBUG] Successfully generated scene-based preview: %s\n", outputPath)
+		return nil
+	}
+
+	// Scene detection failed or didn't find enough scenes - try fallback
+	return generateScenePreviewFallback(srcPath, outputPath, opts, output, err)
+}
+
+// generateScenePreviewFallback tries to generate a preview with a lower threshold
+// or falls back to evenly distributed frames if scene detection fails
+func generateScenePreviewFallback(srcPath, outputPath string, opts *ScenePreviewOptions, prevOutput []byte, prevErr error) error {
+	fmt.Printf("[DEBUG] Scene detection didn't create output, trying fallback. Previous error: %v\nOutput: %s\n", prevErr, string(prevOutput))
+
+	// Try with a much lower threshold to capture any scene changes
+	lowerThreshold := opts.SceneThreshold * 0.5
+	if lowerThreshold < 0.1 {
+		lowerThreshold = 0.1
+	}
+
+	filter := fmt.Sprintf(
+		"select='gt(scene\\,%.2f)',scale=%d:%d,tile=%dx%d",
+		lowerThreshold,
+		opts.TileWidth,
+		opts.TileHeight,
+		opts.Cols,
+		opts.Rows,
+	)
+
+	cmd, err := ffmpeg.NewFFmpegCommand(
+		"-loglevel", "warning",
+		"-i", srcPath,
+		"-vf", filter,
+		"-frames:v", "1",
+		"-y", outputPath,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create fallback command: %w", err)
+	}
+
+	fmt.Printf("[DEBUG] Trying lower threshold (%.2f)\n", lowerThreshold)
+	output, _ := cmd.CombinedOutput()
+
+	// Check if output was created
+	if _, statErr := os.Stat(outputPath); statErr == nil {
+		fmt.Printf("[DEBUG] Fallback scene preview succeeded with lower threshold\n")
+		return nil
+	}
+
+	// Final fallback: use evenly distributed frames
+	fmt.Printf("[DEBUG] Lower threshold also didn't create output: %s\n", string(output))
+	return generateEvenlyDistributedPreview(srcPath, outputPath, opts)
+}
+
+// generateEvenlyDistributedPreview creates a preview with frames from evenly spaced intervals
+// Used as a fallback when scene detection doesn't find enough scene changes
+func generateEvenlyDistributedPreview(srcPath, outputPath string, opts *ScenePreviewOptions) error {
+	fmt.Printf("[DEBUG] Falling back to evenly distributed frame preview\n")
+
+	// Get video duration
+	duration, err := getVideoDuration(srcPath)
+	if err != nil {
+		return fmt.Errorf("failed to get video duration: %w", err)
+	}
+
+	durSec := duration.Seconds()
+	totalFrames := opts.Cols * opts.Rows
+
+	// Build select filter for evenly distributed frames
+	// e.g., select='eq(n,100)+eq(n,200)+eq(n,300)+...'
+	// We use time-based selection instead: between(t,X,X+0.1)
+	var selectParts []string
+	for i := 0; i < totalFrames; i++ {
+		// Distribute frames across the video at even intervals
+		// Skip first 5% and last 5% to avoid intros/outros
+		progress := 0.05 + (0.9 * float64(i) / float64(totalFrames-1))
+		timestamp := durSec * progress
+		selectParts = append(selectParts, fmt.Sprintf("between(t\\,%.2f\\,%.2f)", timestamp, timestamp+0.1))
+	}
+
+	filter := fmt.Sprintf(
+		"select='%s',scale=%d:%d,tile=%dx%d",
+		strings.Join(selectParts, "+"),
+		opts.TileWidth,
+		opts.TileHeight,
+		opts.Cols,
+		opts.Rows,
+	)
+
+	cmd, err := ffmpeg.NewFFmpegCommand(
+		"-loglevel", "warning",
+		"-i", srcPath,
+		"-vf", filter,
+		"-frames:v", "1",
+		"-y", outputPath,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create evenly distributed preview command: %w", err)
+	}
+
+	fmt.Printf("[DEBUG] Running evenly distributed frame extraction\n")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("evenly distributed preview failed: %w\nOutput: %s", err, string(output))
+	}
+
+	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+		return fmt.Errorf("preview not created after fallback: %s", outputPath)
+	}
+
+	fmt.Printf("[DEBUG] Successfully generated evenly distributed preview: %s\n", outputPath)
+	return nil
+}
+
+// ScenePreviewOptions configures scene-based preview generation (Method 1)
+type ScenePreviewOptions struct {
+	SceneThreshold float64 // 0.0-1.0, scene detection sensitivity (higher = fewer scenes detected)
+	TileWidth      int     // Width of each tile in pixels
+	TileHeight     int     // Height of each tile in pixels
+	Cols           int     // Number of columns in the tile grid
+	Rows           int     // Number of rows in the tile grid
+}
+
+// DefaultScenePreviewOptions returns sensible defaults for scene-based preview
+func DefaultScenePreviewOptions() *ScenePreviewOptions {
+	return &ScenePreviewOptions{
+		SceneThreshold: 0.4, // Moderate sensitivity - captures significant scene changes
+		TileWidth:      160, // Width per tile
+		TileHeight:     120, // Height per tile (4:3 aspect)
+		Cols:           4,   // 4 columns
+		Rows:           4,   // 4 rows = 16 scenes total
+	}
+}
+
+// GetOutputSize returns the total output image dimensions
+func (opts *ScenePreviewOptions) GetOutputSize() (width, height int) {
+	return opts.TileWidth * opts.Cols, opts.TileHeight * opts.Rows
 }
 
 // generateSceneBasedGIFWithGPU creates a GIF using GPU acceleration

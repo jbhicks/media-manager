@@ -1,107 +1,228 @@
-# Current Task: TV Show Poster Support
+# Current Task: Video Preview Generation (PornHub-style Animated Previews)
 
-**Status**: ✅ Completed  
-**Last Updated**: 2025-12-25 12:32
+**Status**: 🚧 In Progress  
+**Last Updated**: 2026-01-06
 
-## Problem Solved
+## Goal
 
-The web service only supported movie posters from TMDb. Out of 89 download suggestions, 57 (64%) were TV shows without poster support, showing only placeholder images.
+Implement animated video preview generation that shows a smooth cross-section of various scenes throughout a video - similar to how adult video sites generate hover previews. The output should be an optimized animated GIF or WebM that provides a quick visual summary of the video content.
 
-## Solution Implemented
+## Requirements
 
-Added comprehensive TV show poster support with automatic TV vs Movie detection.
+### Functional Requirements
+1. Generate animated preview from any video file
+2. Extract clips from multiple points throughout the video (8-15 segments)
+3. Scale down to thumbnail size (160x90 to 320x180)
+4. Reduce framerate for bandwidth (8-12 fps)
+5. Generate optimized output (GIF with palette, or WebM)
+6. Support scene-based detection as an option
 
-### Key Features
-1. **Automatic Detection**: Detects TV shows by patterns (S01E01, Season 1 Episode 1, etc.)
-2. **TMDb TV API Integration**: Queries TMDb's TV search endpoint
-3. **Smart Title Cleaning**: Removes episode titles, preserves year in show names
-4. **Retry Logic**: If search fails with year, retries without year
-5. **Database Caching**: Caches all results (movies and TV shows)
+### Quality Requirements
+- **Robust Unit Testing**: ALL functionality must have unit tests
+- **Build Verification**: `go build ./...` must pass before feature is complete
+- **Test Verification**: `go test ./...` must pass before feature is complete
+- **No Regressions**: Existing functionality must continue to work
 
-### Results
-- **Before**: 32/89 with posters (36%) - movies only
-- **After**: 86/89 with posters (96.6%) - movies and TV shows
-- **Improvement**: 160% increase in coverage
+## Algorithm
 
-## Files Modified
+1. **Get video duration** - Use `ffprobe` to determine total length
+2. **Calculate sample points** - Divide video into N equal segments
+3. **Extract short clips** from each segment (0.5-1.5 seconds each)
+4. **Scale down** to thumbnail dimensions
+5. **Reduce framerate** to 8-12 fps
+6. **Concatenate clips** into single output
+7. **Generate optimized palette** (for GIF) or encode as WebM
 
-### Core Implementation
-1. **`internal/service/tmdb_service.go`**
-   - Added `MediaInfo` struct with `IsTV`, `Season`, `Episode` fields
-   - Added `ExtractMediaInfo()` - detects TV vs Movie
-   - Added `SearchTV()` - queries TMDb TV API with retry logic
-   - Updated `FetchPosterForTask()` - routes to TV or Movie API
-   - Added `GetTVPosterURL()` and `GetTVBackdropURL()` helpers
+## FFmpeg Implementation Reference
 
-2. **`internal/service/http_server.go`**
-   - Simplified `handleRefreshSearchPosters()` to use `FetchPosterForTask()`
-   - Reduced code from 50 lines to 35 lines
-
-### Testing
-3. **`test_tv_poster.go`**
-   - Tests TV detection and poster fetching
-   - Run with: `go run test_tv_poster.go`
-
-## Test Results
-
-### Manual Tests (5 samples)
-```
-✅ Shoresy S05E01                               → Found
-✅ Adventure Time Fionna and Cake S02E10       → Found
-✅ The Kardashians S07E10                      → Found
-✅ All Creatures Great and Small 2020 S06E00   → Found (retry)
-✅ Die My Love 2025 (movie)                    → Found
-```
-**Success rate**: 100%
-
-### Database Test (89 suggestions)
-```
-86 posters found (96.6%)
-3 failed (daily game shows)
-```
-
-**Coverage by status**:
-- Approved: 16/16 (100%)
-- Pending: 54/57 (94.7%)
-- Rejected: 16/16 (100%)
-
-## API Usage
-
-### Refresh Posters
+### Method 1: Scene-Based Preview (Auto-detect interesting scenes) ✅ IMPLEMENTED
 ```bash
-curl -X POST http://localhost:8080/api/suggestions/refresh-posters
+# Extract frames at scene changes, tile them into a preview image
+ffmpeg -i video.mp4 -vf "select='gt(scene,0.4)',scale=160:120,tile" -frames:v 1 preview.png
 ```
 
-### View Suggestions with Posters
+**Usage in Go:**
+```go
+opts := &preview.ScenePreviewOptions{
+    SceneThreshold: 0.4,  // 0.0-1.0, higher = fewer scenes
+    TileWidth:      160,  // Width per tile
+    TileHeight:     120,  // Height per tile
+    Cols:           4,    // 4 columns
+    Rows:           4,    // 4 rows = 16 scenes total
+}
+err := preview.GenerateSceneBasedPreview(videoPath, outputPath, opts)
+```
+
+**Features:**
+- Auto-detects scene changes above threshold
+- Falls back to lower threshold if not enough scenes found
+- Falls back to evenly distributed frames if no scene changes detected
+- Outputs a static tiled image (not animated GIF)
+- Configurable tile size and grid dimensions
+
+### Method 2: Animated GIF Preview (Primary Method)
+
+**Step 1: Extract clips at intervals**
 ```bash
-curl "http://localhost:8080/api/suggestions?status=pending&limit=5"
+ffmpeg -i input.mp4 \
+  -vf "select='between(t,duration*0.10,duration*0.10+1)+between(t,duration*0.25,duration*0.25+1)+between(t,duration*0.40,duration*0.40+1)+between(t,duration*0.55,duration*0.55+1)+between(t,duration*0.70,duration*0.70+1)+between(t,duration*0.85,duration*0.85+1)',setpts=N/FRAME_RATE/TB,scale=320:-1,fps=10" \
+  -t 6 preview_temp.mp4
 ```
 
-## Edge Cases Handled
+**Step 2: Generate optimal palette for GIF**
+```bash
+ffmpeg -i preview_temp.mp4 -vf "palettegen=max_colors=256:stats_mode=diff" palette.png
+```
 
-1. **Year in title**: "All Creatures Great and Small 2020" → Retries without year ✅
-2. **Episode titles**: "Shoresy S05E01 Keep It Simple" → Extracts "Shoresy" ✅
-3. **Special episodes**: "S06E00 Christmas Special" → Detected as TV ✅
-4. **Movies**: Backward compatible with existing movie logic ✅
+**Step 3: Create GIF using palette**
+```bash
+ffmpeg -i preview_temp.mp4 -i palette.png -lavfi "paletteuse=dither=bayer:bayer_scale=3" -loop 0 preview.gif
+```
 
-## Known Limitations
+### Method 3: All-in-One Command
+```bash
+DURATION=$(ffprobe -v error -show_entries format=duration -of csv=p=0 input.mp4)
 
-- Daily game shows with date-based episodes (e.g., "The Price Is Right 2025 12 24")
-- Shows with non-standard naming patterns
-- Very new shows not yet in TMDb database
+ffmpeg -i input.mp4 \
+  -vf "select='lt(mod(t,$DURATION/10),0.5)',setpts=N/10/TB,scale=320:-1:flags=lanczos,fps=10,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse" \
+  -loop 0 preview.gif
+```
 
-## Web UI Access
+### Method 4: WebM Preview (Better quality, smaller size)
+```bash
+ffmpeg -i input.mp4 \
+  -vf "select='lt(mod(t,duration/12),0.8)',setpts=N/10/TB,scale=320:-1,fps=12" \
+  -c:v libvpx-vp9 -crf 35 -b:v 0 -an \
+  -t 8 preview.webm
+```
 
-**Service URL**: http://localhost:8080  
-**Suggestions Page**: http://localhost:8080/web/suggestions.html
+### Sprite Sheet (For Scrubbing UI)
+```bash
+ffmpeg -i input.mp4 \
+  -vf "select='not(mod(n,300))',scale=160:90,tile=10x10" \
+  -frames:v 1 sprite.jpg
+```
 
-## Documentation
+## Key FFmpeg Filters
 
-Full details in: `SESSION_4_TV_SHOW_POSTERS.md`
+| Filter | Purpose |
+|--------|---------|
+| `select` | Pick frames at specific times or scene changes |
+| `thumbnail` | Auto-select representative frame from N frames |
+| `scale` | Resize to thumbnail dimensions |
+| `fps` | Reduce framerate for smaller file size |
+| `setpts` | Reset timestamps after frame selection |
+| `palettegen` | Generate optimal 256-color palette for GIF |
+| `paletteuse` | Apply palette with dithering options |
+| `tile` | Arrange frames in grid (for sprite sheets) |
+
+## Configuration Parameters
+
+| Parameter | Recommended | Notes |
+|-----------|-------------|-------|
+| Segment count | 8-15 | More segments = better coverage |
+| Clip duration | 0.5-1.5s | Per segment |
+| Output FPS | 8-12 | Lower = smaller file |
+| Output size | 320x180 | 16:9 aspect ratio |
+| GIF colors | 128-256 | Trade quality vs size |
+| Dither method | `sierra2_4a` or `bayer` | For GIF quality |
+
+## Implementation Plan
+
+### Phase 1: Core Preview Generator
+- [x] Create `internal/preview/video_preview.go` - (Methods in generator.go)
+- [x] Implement `GetVideoDuration()` using ffprobe - (getVideoDuration)
+- [x] Implement `GenerateAnimatedPreview()` - (existing)
+- [x] Implement `GeneratePreviewGIF()` with palette optimization - (generateSceneBasedGIFWithCPU)
+- [ ] Implement `GeneratePreviewWebM()` alternative
+- [x] Implement `GenerateSceneBasedPreview()` - Method 1 ✅
+- [x] **Unit tests for all functions**
+
+### Phase 2: Configuration & Options
+- [ ] Create `PreviewConfig` struct with configurable options
+- [ ] Add segment count, clip duration, output size options
+- [ ] Add scene-detection mode as alternative
+- [ ] **Unit tests for configuration handling**
+
+### Phase 3: Integration
+- [ ] Integrate with existing preview generator
+- [ ] Add CLI flags or config file options
+- [ ] Update web UI to display animated previews on hover
+- [ ] **Integration tests**
+
+### Phase 4: Optimization
+- [ ] Add caching to avoid regenerating existing previews
+- [ ] Add progress callback for long videos
+- [ ] Benchmark and optimize for performance
+- [ ] **Performance tests**
+
+## Testing Requirements
+
+### Unit Tests (REQUIRED)
+```go
+// Example test structure
+func TestGetVideoDuration(t *testing.T) { ... }
+func TestGenerateAnimatedPreview(t *testing.T) { ... }
+func TestGeneratePreviewGIF(t *testing.T) { ... }
+func TestGeneratePreviewWebM(t *testing.T) { ... }
+func TestPreviewConfig_Defaults(t *testing.T) { ... }
+func TestPreviewConfig_Validation(t *testing.T) { ... }
+func TestSceneDetection(t *testing.T) { ... }
+```
+
+### Test Files
+- Use `media/` directory test videos (big_buck_bunny variants)
+- Create `internal/preview/testdata/` for test-specific files
+
+### Validation Before Completion
+```bash
+# MUST pass before marking feature complete
+go vet ./...
+go build ./...
+go test ./... -v
+```
+
+## Files to Create/Modify
+
+### New Files
+- `internal/preview/video_preview.go` - Core implementation
+- `internal/preview/video_preview_test.go` - Unit tests
+- `internal/preview/config.go` - Configuration struct
+- `internal/preview/config_test.go` - Config tests
+
+### Modified Files
+- `internal/preview/generator.go` - Integration point
+- `AGENTS.md` - Document new preview functionality
+
+## Success Criteria
+
+- [ ] All unit tests pass
+- [ ] `go build ./...` succeeds with no errors
+- [ ] `go test ./...` succeeds with no failures
+- [ ] `go vet ./...` reports no issues
+- [ ] Can generate animated GIF preview from test video
+- [ ] Can generate WebM preview from test video
+- [ ] Preview shows clips from multiple points in video
+- [ ] Output file size is reasonable (<2MB for 5-second preview)
+- [ ] Preview generation completes in reasonable time (<30s for 1-hour video)
+
+## Reference Documentation
+
+- FFmpeg Documentation: https://ffmpeg.org/documentation.html
+- FFmpeg Filters: https://ffmpeg.org/ffmpeg-filters.html
+- Context7 library ID: `/websites/ffmpeg_documentation`
 
 ---
 
-**Build Status**: ✅ Clean build  
-**Service Status**: ✅ Running on port 8080  
-**Test Status**: ✅ All tests passing (5/5 manual, 86/89 database)  
-**Ready for Use**: ✅ Yes - posters display in web UI
+## Previous Task (Completed)
+
+<details>
+<summary>TV Show Poster Support - ✅ Completed 2025-12-25</summary>
+
+Added comprehensive TV show poster support with automatic TV vs Movie detection.
+- 96.6% poster coverage (up from 36%)
+- Automatic TV show detection via patterns
+- TMDb TV API integration with retry logic
+- Full details in: `SESSION_4_TV_SHOW_POSTERS.md`
+
+</details>

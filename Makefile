@@ -21,10 +21,18 @@ all: dev
 dev:
 ifeq ($(OS),Windows_NT)
 	if not exist tmp mkdir tmp
-	cmd /c "air -c .air.toml"
+	cmd /c "air -c .air.toml 2>&1 | powershell -Command \"tee tmp/app.log\""
 else
 	mkdir -p tmp
-	air -c .air.toml
+	air -c .air.toml 2>&1 | tee tmp/app.log
+endif
+
+# View logs only (when dev is already running)
+logs:
+ifeq ($(OS),Windows_NT)
+	powershell -Command "Get-Content tmp/app.log -Wait -Tail 50"
+else
+	tail -f tmp/app.log
 endif
 
 build:
