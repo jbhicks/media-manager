@@ -25,7 +25,7 @@ const (
 	BaseCardWidth    = float32(288) // 16:9 aspect ratio width at 1x zoom
 	BaseCardHeight   = float32(162) // 16:9 aspect ratio height at 1x zoom
 	CardCornerRadius = float32(8)   // Rounded corners
-	GradientHeight   = float32(44)  // Bottom gradient for labels
+	GradientHeight   = float32(64)  // Increased height for label to take more space
 	BadgePadding     = float32(6)   // Padding for badges
 )
 
@@ -99,10 +99,16 @@ func NewMediaCard(file models.MediaFile, thumbDir string) *MediaCard {
 func NewMediaCardWithForce(file models.MediaFile, thumbDir string, forceRegenerate bool) *MediaCard {
 	mediaType := GetMediaType(file.Filename)
 
-	// Truncate filename for display - allow more characters for wider card
-	displayName := file.Filename
-	if len(displayName) > 32 {
-		displayName = displayName[:29] + "..."
+	// Use friendly title if available, otherwise use filename
+	displayName := file.FriendlyTitle
+	if displayName == "" {
+		displayName = file.Filename
+	}
+
+	// Allow more characters for display since we want text to take most space
+	// Use a longer limit based on card width - approximately 50-60 characters for readable text
+	if len(displayName) > 60 {
+		displayName = displayName[:57] + "..."
 	}
 
 	card := &MediaCard{
@@ -138,8 +144,9 @@ func NewMediaCardWithForce(file models.MediaFile, thumbDir string, forceRegenera
 	)
 
 	// Setup filename label - white text with shadow effect
+	// Smaller text size to fit more characters
 	card.label = canvas.NewText(displayName, color.White)
-	card.label.TextSize = 12
+	card.label.TextSize = 10
 	card.label.TextStyle = fyne.TextStyle{}
 
 	// Setup extension badge (top-right pill)
@@ -415,8 +422,8 @@ func (r *mediaCardRenderer) Layout(size fyne.Size) {
 	r.labelBackground.Resize(fyne.NewSize(w, GradientHeight))
 	r.labelBackground.Move(fyne.NewPos(0, h-GradientHeight))
 
-	// Filename label - positioned at bottom with padding
-	labelPadding := float32(8)
+	// Filename label - positioned at bottom with padding, allowing more vertical space
+	labelPadding := float32(6)
 	r.label.Move(fyne.NewPos(labelPadding, h-GradientHeight+labelPadding))
 
 	// Extension badge (top-right)
@@ -429,13 +436,13 @@ func (r *mediaCardRenderer) Layout(size fyne.Size) {
 		r.extensionLabel.Move(fyne.NewPos(w-badgeW-BadgePadding+BadgePadding, BadgePadding+BadgePadding/2))
 	}
 
-	// Duration badge (bottom-right, above the filename)
+	// Duration badge (bottom-right, above the filename area)
 	if r.durationLabel != nil && r.durationBadge != nil {
 		textSize := fyne.MeasureText(r.durationLabel.Text, r.durationLabel.TextSize, r.durationLabel.TextStyle)
 		badgeW := textSize.Width + BadgePadding*2
 		badgeH := textSize.Height + BadgePadding
-		// Position above the gradient area
-		badgeY := h - GradientHeight - badgeH - BadgePadding
+		// Position above the gradient area, accounting for increased gradient height
+		badgeY := h - GradientHeight - badgeH - BadgePadding + 10 // Adjust for taller gradient
 		r.durationBadge.Resize(fyne.NewSize(badgeW, badgeH))
 		r.durationBadge.Move(fyne.NewPos(w-badgeW-BadgePadding, badgeY))
 		r.durationLabel.Move(fyne.NewPos(w-badgeW-BadgePadding+BadgePadding, badgeY+BadgePadding/2))

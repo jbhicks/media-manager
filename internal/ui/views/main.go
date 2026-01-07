@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -22,6 +23,13 @@ import (
 	"github.com/user/media-manager/internal/ui/components"
 	"github.com/user/media-manager/pkg/models"
 )
+
+// FolderCache holds cached data for a folder to avoid expensive reloads
+type FolderCache struct {
+	Files         []SortableMediaFile
+	ModTime       time.Time
+	RecursiveMode bool
+}
 
 // SortableMediaFile holds pre-loaded metadata for efficient sorting
 type SortableMediaFile struct {
@@ -52,12 +60,15 @@ type MainView struct {
 	// UI components for state persistence
 	mainSplit    *container.Split // Reference to the main HSplit container
 	sidebarSplit *container.Split // Reference to the sidebar HSplit container
+	treeScroll   *container.Scroll // Reference to the folders tree scroll container
 	// Tags filtering
 	selectedTags map[string]bool
 	tagsTree     *widget.Tree
 	tagsScroll   *container.Scroll // Scroll wrapper for tags tree
 	allTags      []models.Tag
 	tagger       *tagger.FilenameTagger
+	// Folder caching to avoid expensive reloads
+	folderCache map[string]*FolderCache
 }
 
 func (v *MainView) SaveConfig() {
@@ -71,6 +82,14 @@ func (v *MainView) SaveConfig() {
 	v.config.ShowDebugLog = v.showDebugLog
 	v.config.MainContentSplitOffset = v.GetMainContentSplitOffset()
 	v.config.SidebarSplitOffset = v.GetSidebarSplitOffset()
+
+	// Also save current window size (frequent saves ensure size persists during development)
+	if v.window != nil && v.window.Canvas() != nil {
+		size := v.window.Canvas().Size()
+		v.config.WindowWidth = size.Width
+		v.config.WindowHeight = size.Height
+		fmt.Printf("[DEBUG] MainView.SaveConfig: Saved window size: %fx%f\n", size.Width, size.Height)
+	}
 
 	// Save to disk
 	if err := config.SaveConfig(v.config); err != nil {
@@ -149,6 +168,18 @@ func (v *MainView) createFoldersTree() *widget.Tree {
 		fmt.Printf("[DEBUG] Selected folder: %s\n", id)
 		v.setMediaDirectory(id)
 		tree.OpenBranch(id)
+	}
+	tree.OnBranchOpened = func(id string) {
+		v.config.OpenBranches[id] = true
+		v.SaveConfig()
+	}
+	tree.OnBranchClosed = func(id string) {
+		delete(v.config.OpenBranches, id)
+		v.SaveConfig()
+	}
+	// Open branches from saved state
+	for branch := range v.config.OpenBranches {
+		tree.OpenBranch(branch)
 	}
 	return tree
 }
@@ -494,6 +525,7 @@ func (v *MainView) showRecursiveLimitWarning() {
 func (v *MainView) loadMediaMetadataAsync(mediaDir string, callback func([]SortableMediaFile)) {
 	go func() {
 		var sortableFiles []SortableMediaFile
+		var filesNeedingTags []*models.MediaFile
 
 		var files []os.DirEntry
 		var err error
@@ -560,12 +592,8 @@ func (v *MainView) loadMediaMetadataAsync(mediaDir string, callback func([]Sorta
 
 			// Tag the file if it doesn't have tags yet
 			if len(mediaFile.Tags) == 0 {
-				err := v.tagger.TagMediaFile(mediaFile)
-				if err != nil {
-					fmt.Printf("[WARN] Failed to tag media file %s: %v\n", filePath, err)
-				} else {
-					fmt.Printf("[DEBUG] Tagged media file: %s\n", filePath)
-				}
+				// Collect files that need tagging for async processing
+				filesNeedingTags = append(filesNeedingTags, mediaFile)
 			}
 
 			sortableFiles = append(sortableFiles, SortableMediaFile{
@@ -575,8 +603,31 @@ func (v *MainView) loadMediaMetadataAsync(mediaDir string, callback func([]Sorta
 			})
 		}
 
+		// Start async tagging for files that need it
+		if len(filesNeedingTags) > 0 {
+			go v.tagFilesAsync(filesNeedingTags)
+		}
+
 		callback(sortableFiles)
 	}()
+}
+
+// tagFilesAsync tags multiple files asynchronously without blocking UI
+func (v *MainView) tagFilesAsync(files []*models.MediaFile) {
+	for _, mediaFile := range files {
+		err := v.tagger.TagMediaFile(mediaFile)
+		if err != nil {
+			fmt.Printf("[WARN] Failed to tag media file %s: %v\n", mediaFile.Path, err)
+		} else {
+			fmt.Printf("[DEBUG] Tagged media file: %s\n", mediaFile.Path)
+		}
+	}
+
+	// After tagging is complete, refresh the tags list and media grid on UI thread
+	fyne.Do(func() {
+		v.refreshTagsList()
+		v.RefreshMediaGrid() // Refresh to show updated titles
+	})
 }
 
 // computeSortKey calculates the sort value for a file
@@ -673,19 +724,75 @@ func (v *MainView) triggerAsyncSort() {
 	}()
 }
 
+// checkFolderCache checks if cached data for a folder is still valid
+func (v *MainView) checkFolderCache(dir string) (*FolderCache, bool) {
+	cache, exists := v.folderCache[dir]
+	if !exists {
+		return nil, false
+	}
+
+	// Check if recursive mode changed
+	if cache.RecursiveMode != v.recursiveSearch {
+		return nil, false
+	}
+
+	// Check if folder modification time changed
+	info, err := os.Stat(dir)
+	if err != nil {
+		return nil, false
+	}
+
+	if info.ModTime().After(cache.ModTime) {
+		return nil, false
+	}
+
+	return cache, true
+}
+
+// updateFolderCache updates the cache for a folder
+func (v *MainView) updateFolderCache(dir string, files []SortableMediaFile) {
+	info, err := os.Stat(dir)
+	if err != nil {
+		return
+	}
+
+	v.folderCache[dir] = &FolderCache{
+		Files:         files,
+		ModTime:       info.ModTime(),
+		RecursiveMode: v.recursiveSearch,
+	}
+}
+
 // setMediaDirectory changes directory and loads metadata async
 func (v *MainView) setMediaDirectory(dir string) {
 	if v.mediaDir == dir {
 		return
 	}
 
+	fmt.Printf("[DEBUG] Switching to folder: %s\n", dir)
+
+	// Check if we have valid cached data for this folder
+	if cache, valid := v.checkFolderCache(dir); valid {
+		fmt.Printf("[DEBUG] Using cached data for folder: %s (%d files)\n", dir, len(cache.Files))
+		v.mediaDir = dir
+		v.sortedFiles = v.sortLoadedFiles(cache.Files)
+		v.SaveConfig() // Save selected folder
+		v.RefreshMediaGrid()
+		v.refreshTagsList()
+		return
+	}
+
+	// No valid cache, need to load from disk
+	fmt.Printf("[DEBUG] Loading folder from disk: %s\n", dir)
 	v.mediaDir = dir
-	v.sortedFiles = nil // Invalidate cache
+	v.sortedFiles = nil // Clear current data while loading
 	v.SaveConfig()      // Save selected folder
 
 	// Load metadata async
 	v.loadMediaMetadataAsync(dir, func(files []SortableMediaFile) {
 		fyne.Do(func() {
+			// Update cache with loaded data
+			v.updateFolderCache(dir, files)
 			v.sortedFiles = v.sortLoadedFiles(files)
 			v.RefreshMediaGrid()
 			// Refresh tags list in case new tags were created
@@ -701,8 +808,10 @@ func (v *MainView) Build() fyne.CanvasObject {
 		scroll := container.NewScroll(v.foldersTree)
 		scroll.SetMinSize(fyne.NewSize(200, 0))
 		treeScroll = scroll
+		v.treeScroll = scroll // Store reference
 	} else {
 		treeScroll = container.NewVBox(widget.NewLabel("No folders found"))
+		v.treeScroll = nil // No scroll container when no folders
 	}
 
 	mediaGrid := v.createMediaGrid()
@@ -762,14 +871,87 @@ func (v *MainView) Build() fyne.CanvasObject {
 			v.config.MediaDirs = append(v.config.MediaDirs, folderPath)
 			v.setMediaDirectory(folderPath)
 			v.foldersTree = v.createFoldersTree()
-			v.window.SetContent(v.Build())
+			if v.treeScroll != nil {
+				v.treeScroll.Content = v.foldersTree
+				v.treeScroll.Refresh()
+			}
 		}, v.window)
 		dialog.Resize(fyne.NewSize(800, 600))
 		dialog.Show()
 	})
+	deleteFolderBtn := widget.NewButton("Delete Folder", func() {
+		folders, err := v.database.GetFolders()
+		if err != nil || len(folders) == 0 {
+			dialog := dialog.NewInformation("No Folders", "No folders to delete.", v.window)
+			dialog.Show()
+			return
+		}
+		// Create options for select
+		options := make([]string, len(folders))
+		for i, f := range folders {
+			options[i] = f.Name + " (" + f.Path + ")"
+		}
+		var selectedFolder *models.Folder
+		selectWidget := widget.NewSelect(options, func(selected string) {
+			// Find the folder
+			for _, f := range folders {
+				if f.Name+" ("+f.Path+")" == selected {
+					selectedFolder = &f
+					break
+				}
+			}
+		})
+		selectDialog := dialog.NewCustomConfirm("Select Folder to Delete", "Delete", "Cancel", 
+			container.NewVBox(
+				widget.NewLabel("Select a folder to delete:"),
+				selectWidget,
+			), func(confirmed bool) {
+				if !confirmed || selectedFolder == nil {
+					return
+				}
+				// Confirm delete
+				confirmDialog := dialog.NewConfirm("Confirm Delete", 
+					fmt.Sprintf("Delete folder '%s' and all its media files?", selectedFolder.Name), 
+					func(confirmed bool) {
+						if !confirmed {
+							return
+						}
+						// Delete media files
+						err := v.database.DeleteMediaFilesByDirectory(selectedFolder.Path)
+						if err != nil {
+							fmt.Printf("[ERROR] Failed to delete media files: %v\n", err)
+							return
+						}
+						// Delete folder
+						err = v.database.DeleteFolder(selectedFolder.ID)
+						if err != nil {
+							fmt.Printf("[ERROR] Failed to delete folder: %v\n", err)
+							return
+						}
+						// Clear cache
+						delete(v.folderCache, selectedFolder.Path)
+						// If current dir is under this folder, switch to another
+						if strings.HasPrefix(v.mediaDir, selectedFolder.Path) {
+							v.mediaDir = ""
+							v.sortedFiles = nil
+							v.RefreshMediaGrid()
+						}
+						// Refresh tree
+						v.foldersTree = v.createFoldersTree()
+						if v.treeScroll != nil {
+							v.treeScroll.Content = v.foldersTree
+							v.treeScroll.Refresh()
+						}
+					}, v.window)
+				confirmDialog.Show()
+			}, v.window)
+		selectDialog.Show()
+	})
 	recursiveCheck := widget.NewCheck("Recursive Search", func(checked bool) {
 		v.recursiveSearch = checked
 		fmt.Printf("[DEBUG] Recursive Search toggled: %v\n", checked)
+		// Clear folder cache since recursive mode affects what files are loaded
+		v.folderCache = make(map[string]*FolderCache)
 		// Reload metadata when recursive mode changes
 		v.setMediaDirectory(v.mediaDir)
 		v.SaveConfig() // Save recursive search setting
@@ -818,7 +1000,7 @@ func (v *MainView) Build() fyne.CanvasObject {
 		v.SaveConfig() // Save cleared tags
 	})
 
-	buttonBox := container.NewHBox(refreshBtn, forceRegenerateBtn, addFolderBtn, clearTagsBtn, recursiveCheck, debugLogCheck)
+	buttonBox := container.NewHBox(refreshBtn, forceRegenerateBtn, addFolderBtn, deleteFolderBtn, clearTagsBtn, recursiveCheck, debugLogCheck)
 	toolbar := container.NewBorder(nil, nil, sortControls, buttonBox, filterEntry)
 	if v.mediaDir != "" && v.foldersTree != nil {
 		v.foldersTree.Select(v.mediaDir)
@@ -882,6 +1064,7 @@ func NewMainView(cfg *config.Config, db *db.Database, window fyne.Window, mediaD
 		recursiveSearch: cfg.RecursiveSearch, // Load from config
 		showDebugLog:    cfg.ShowDebugLog,    // Load from config
 		tagger:          tagger.NewFilenameTagger(db),
+		folderCache:     make(map[string]*FolderCache), // Initialize folder cache
 	}
 	// Initialize selectedTags map if nil
 	if mv.selectedTags == nil {

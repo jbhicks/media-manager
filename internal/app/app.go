@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -76,27 +75,6 @@ func NewMediaManagerApp(mediaDir string) (*MediaManagerApp, error) {
 	window := fyneApp.NewWindow("Media Manager")
 	if len(assets.LogoSVG) > 0 {
 		window.SetIcon(fyne.NewStaticResource("logo.svg", assets.LogoSVG))
-	}
-
-	// Load window size and position from config, or use defaults
-	if cfg.WindowWidth > 0 && cfg.WindowHeight > 0 {
-		window.Resize(fyne.NewSize(cfg.WindowWidth, cfg.WindowHeight))
-
-		fmt.Printf("[DEBUG] app.go: Loaded window size: %fx%f at %f,%f\n", cfg.WindowWidth, cfg.WindowHeight, cfg.WindowX, cfg.WindowY)
-	} else {
-		window.Resize(fyne.NewSize(1200, 800))
-		window.CenterOnScreen()
-		fmt.Println("[DEBUG] app.go: Using default window size and centering on screen.")
-	}
-
-	// Ensure the passed-in mediaDir is in the DB as a Folder
-	if mediaDir != "" {
-		var count int64
-		database.GetDB().Model(&models.Folder{}).Where("path = ?", mediaDir).Count(&count)
-		if count == 0 {
-			folder := &models.Folder{Path: mediaDir, Name: filepath.Base(mediaDir)}
-			database.GetDB().Create(folder)
-		}
 	}
 
 	// Initialize zoom manager with config values
@@ -194,8 +172,8 @@ func (app *MediaManagerApp) setupUI() {
 		if app.mainView != nil {
 			app.mainView.RefreshMediaGrid()
 		}
-		// Clamp window size to content if content is smaller than window
-		app.clampWindowToContent()
+		// Save config after zoom change to persist the setting
+		app.SaveConfig()
 	})
 
 	// Create menu bar
@@ -203,6 +181,16 @@ func (app *MediaManagerApp) setupUI() {
 
 	// Set window content
 	app.window.SetContent(mainView.Build())
+
+	// Load window size and position from config, or use defaults (do this after content is set)
+	if app.config.WindowWidth > 0 && app.config.WindowHeight > 0 {
+		app.window.Resize(fyne.NewSize(app.config.WindowWidth, app.config.WindowHeight))
+		fmt.Printf("[DEBUG] app.go: Loaded window size: %fx%f\n", app.config.WindowWidth, app.config.WindowHeight)
+	} else {
+		app.window.Resize(fyne.NewSize(1200, 800))
+		app.window.CenterOnScreen()
+		fmt.Println("[DEBUG] app.go: Using default window size and centering on screen.")
+	}
 }
 
 // clampWindowToContent shrinks the window to fit content if content is smaller

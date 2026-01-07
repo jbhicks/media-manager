@@ -28,6 +28,7 @@ type Config struct {
 	FilterText             string          // Current filter text
 	RecursiveSearch        bool            // Whether recursive search is enabled
 	ShowDebugLog           bool            // Whether debug log panel is shown
+	OpenBranches           map[string]bool // Map of branch IDs that are expanded in the folders tree
 }
 
 func (c *Config) GetThumbnailDir() string {
@@ -67,6 +68,7 @@ func NewConfig(mediaDir string) *Config {
 		FilterText:             "",                    // No filter text initially
 		RecursiveSearch:        false,                 // Recursive search disabled by default
 		ShowDebugLog:           false,                 // Debug log hidden by default
+		OpenBranches:           make(map[string]bool), // No open branches initially
 	}
 	fmt.Printf("[DEBUG] config.go: Config.MediaDirs: %v\n", cfg.MediaDirs)
 
@@ -126,6 +128,7 @@ func LoadConfig(mediaDir string) (*Config, error) {
 		FilterText:             "",                    // No filter text initially
 		RecursiveSearch:        false,                 // Recursive search disabled by default
 		ShowDebugLog:           false,                 // Debug log hidden by default
+		OpenBranches:           make(map[string]bool), // No open branches initially
 	}
 
 	data, err := os.ReadFile(configFilePath)
@@ -147,6 +150,14 @@ func LoadConfig(mediaDir string) (*Config, error) {
 	if err != nil {
 		fmt.Printf("[DEBUG] Failed to unmarshal config data: %v\n", err)
 		return nil, fmt.Errorf("failed to unmarshal config data: %w", err)
+	}
+
+	// Ensure maps are initialized
+	if cfg.SelectedTags == nil {
+		cfg.SelectedTags = make(map[string]bool)
+	}
+	if cfg.OpenBranches == nil {
+		cfg.OpenBranches = make(map[string]bool)
 	}
 
 	fmt.Printf("[DEBUG] Config loaded: %+v\n", cfg)

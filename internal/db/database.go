@@ -47,7 +47,7 @@ func (d *Database) GetDB() *gorm.DB {
 
 func (d *Database) GetMediaFileByPath(path string) (*models.MediaFile, error) {
 	var file models.MediaFile
-	err := d.db.Where("path = ?", path).First(&file).Error
+	err := d.db.Preload("Tags").Where("path = ?", path).First(&file).Error
 	if err != nil {
 		return nil, err
 	}
@@ -93,6 +93,10 @@ func (d *Database) GetFolders() ([]models.Folder, error) {
 	var folders []models.Folder
 	err := d.db.Find(&folders).Error
 	return folders, err
+}
+
+func (d *Database) DeleteFolder(id uint) error {
+	return d.db.Delete(&models.Folder{}, id).Error
 }
 
 func (d *Database) CreateTag(tag *models.Tag) error {

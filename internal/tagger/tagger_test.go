@@ -197,3 +197,63 @@ func TestBitrateCategories(t *testing.T) {
 		}
 	}
 }
+
+func TestExtractFriendlyTitle(t *testing.T) {
+	tagger := NewFilenameTagger(nil)
+
+	testCases := []struct {
+		parsed   ParsedFilename
+		expected string
+	}{
+		{
+			parsed: ParsedFilename{
+				Studio: "Rear End Parade",
+				Date:   &[]time.Time{time.Date(2025, 11, 24, 0, 0, 0, 0, time.UTC)}[0],
+				Title:  "",
+			},
+			expected: "Rear End Parade - 2025-11-24",
+		},
+		{
+			parsed: ParsedFilename{
+				Studio:    "Premium Extra",
+				Date:      &[]time.Time{time.Date(2024, 11, 18, 0, 0, 0, 0, time.UTC)}[0],
+				Actresses: []string{"Daphne", "Kelsey Kane"},
+				Title:     "Thick Butt",
+			},
+			expected: "Premium Extra - Thick Butt - 2024-11-18",
+		},
+		{
+			parsed: ParsedFilename{
+				Studio: "Big Chest Cream Pie",
+				Date:   &[]time.Time{time.Date(2025, 12, 13, 0, 0, 0, 0, time.UTC)}[0],
+				Title:  "",
+			},
+			expected: "Big Chest Cream Pie - 2025-12-13",
+		},
+		{
+			parsed: ParsedFilename{
+				Studio: "",
+				Date:   nil,
+				Title:  "Some Random Title",
+			},
+			expected: "Some Random Title",
+		},
+		{
+			parsed: ParsedFilename{
+				Studio: "",
+				Date:   nil,
+				Title:  "",
+			},
+			expected: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.expected, func(t *testing.T) {
+			result := tagger.ExtractFriendlyTitle(&tc.parsed)
+			if result != tc.expected {
+				t.Errorf("Friendly title mismatch: got %q, expected %q", result, tc.expected)
+			}
+		})
+	}
+}

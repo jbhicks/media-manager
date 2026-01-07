@@ -279,6 +279,9 @@ func (t *FilenameTagger) ExtractTagsFromFilename(filename string) (*ParsedFilena
 	// Extract quality info
 	parsed.Quality = t.extractQuality(parts)
 
+	fmt.Printf("[DEBUG] Parsed %s -> Studio: '%s', Actresses: %v, Title: '%s', Date: %v\n",
+		filename, parsed.Studio, parsed.Actresses, parsed.Title, parsed.Date)
+
 	return parsed, nil
 }
 
@@ -564,7 +567,12 @@ func (t *FilenameTagger) isNumeric(s string) bool {
 func (t *FilenameTagger) TagMediaFile(mediaFile *models.MediaFile) error {
 	parsed, err := t.ExtractTagsFromFilename(mediaFile.Filename)
 	if err != nil {
-		return fmt.Errorf("failed to parse filename: %w", err)
+		// Log the error but continue with minimal tagging
+		fmt.Printf("[WARN] Failed to parse filename %s: %v - using fallback\n", mediaFile.Filename, err)
+		// Create a minimal parsed result
+		parsed = &ParsedFilename{
+			Format: filepath.Ext(mediaFile.Filename),
+		}
 	}
 
 	// Extract detailed metadata
@@ -693,6 +701,11 @@ func (t *FilenameTagger) TagMediaFile(mediaFile *models.MediaFile) error {
 
 	// Associate tags with media file
 	mediaFile.Tags = tags
+
+	// Set friendly title for display
+	mediaFile.FriendlyTitle = t.ExtractFriendlyTitle(parsed)
+	fmt.Printf("[DEBUG] Tagged %s -> FriendlyTitle: '%s'\n", mediaFile.Filename, mediaFile.FriendlyTitle)
+
 	return t.database.GetDB().Save(mediaFile).Error
 }
 
@@ -825,6 +838,40 @@ func (t *FilenameTagger) getBitrateCategory(bitrateKbps int) string {
 	default:
 		return "<500Kbps"
 	}
+}
+
+// ExtractFriendlyTitle creates a user-friendly display title from parsed filename
+func (t *FilenameTagger) ExtractFriendlyTitle(parsed *ParsedFilename) string {
+	if parsed == nil {
+		return ""
+	}
+
+	// Build title in format: Studio - Description - Date
+	var parts []string
+
+	// Add studio if available
+	if parsed.Studio != "" {
+		parts = append(parts, parsed.Studio)
+	}
+
+	// Add main title/description
+	if parsed.Title != "" {
+		parts = append(parts, parsed.Title)
+	}
+
+	// Add date if available
+	if parsed.Date != nil {
+		dateStr := parsed.Date.Format("2006-01-02")
+		parts = append(parts, dateStr)
+	}
+
+	// Join with " - " separator
+	if len(parts) > 0 {
+		return strings.Join(parts, " - ")
+	}
+
+	// Fallback: if no structured title, return the original title
+	return parsed.Title
 }
 
 // getChannelCategory categorizes audio channels
