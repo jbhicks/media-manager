@@ -4,6 +4,7 @@ bin/media-manager
 main.exe
 main
 bin/test-service
+media-manager.exe
 
 # Config files with secrets
 .env
@@ -23,6 +24,12 @@ transmission-config/
 
 # Temp
 tmp/
+test_preview.gif
+test_tv_poster.go
+
+# Accidental CLI output files
+--version
+-p/
 
 # IDE
 .idea/

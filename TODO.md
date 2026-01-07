@@ -1,32 +1,71 @@
 # TODO
 
-## Current Task: Fixing NordVPN Connection Issue
+## High Priority
 
-### Problem
-- NordVPN failing to connect, blocking all downloads
-- Download manager has VPN protection that refuses to download without active VPN
-- 42 downloads were stuck at 0% progress (cleared to failed status)
+### UI/UX Improvements
+- [ ] Test new 16:9 card layout with various aspect ratios (4:3, portrait, square)
+- [ ] Implement UI zoom (Ctrl +/-) for accessibility
+- [ ] Add search and filtering for media files
+- [ ] Add tag management interface
+- [ ] Settings dialog for configuration
 
-### Root Cause
-- Missing `wireguard-tools` package required for NordLynx (NordVPN's WireGuard implementation)
+### Video Preview System
+- [ ] Implement WebM preview alternative to GIF
+- [ ] Add progress callback for long video processing
+- [ ] Benchmark and optimize preview generation performance
 
-### Steps Taken
-1. ✅ Identified VPN connection failures with both NordLynx and OpenVPN
-2. ✅ Cleared 42 stuck downloads in "downloading" status (set to "failed")
-3. ✅ Discovered missing wireguard-tools dependency
-4. ✅ Installed wireguard-tools package
-5. 🔄 Currently: Completing NordVPN OAuth login via browser
+### Media Loading
+- [ ] Pass directory argument from main through to app and config layers
+- [ ] Support dynamic media directories
 
-### Next Steps
-1. Complete browser login for NordVPN
-2. Test VPN connection with `nordvpn connect`
-3. Verify download system resumes with VPN active
-4. Monitor download progress
+## Medium Priority
 
-### Database State
-- Location: `/home/josh/.media-manager/media.db`
-- Current status: 42 failed, 3 pending downloads
-- Service running on port 8083 via air auto-reload
+### Performance
+- [ ] Optimize thumbnail generation for large media libraries
+- [ ] Add parallel processing for multiple preview generations
+- [ ] Implement adaptive quality based on video complexity
 
-### Files Modified
-- None yet - only database cleanup performed
+### Features
+- [ ] Advanced tagging (bulk tagging, color-coded tags)
+- [ ] Robust sorting and filtering (by date, size, tags)
+- [ ] Add support for additional media formats
+- [ ] Duplicate detection improvements
+
+### Service Mode
+- [ ] Web UI for managing download rules
+- [ ] RSS feed monitoring
+- [ ] Sonarr/Radarr integration
+- [ ] qBittorrent support
+- [ ] Notification system (webhook, email, Discord)
+
+## Low Priority
+
+### GPU Acceleration
+- [ ] Add user preference config option for GPU acceleration
+- [ ] Test GPU encoding on different hardware configurations
+
+### Documentation
+- [ ] Add inline code documentation for complex functions
+- [ ] Create user guide for service mode setup
+- [ ] Add troubleshooting guide
+
+## Completed
+
+### January 2026
+- [x] Media card redesign (16:9 aspect ratio, full-bleed images, overlay labels)
+- [x] Scene-based video preview generation
+- [x] Two-pass GIF palette optimization
+- [x] GPU acceleration support (CUDA, VAAPI)
+- [x] Static mosaic preview option
+
+### December 2025
+- [x] TV show poster support with automatic detection
+- [x] TMDb TV API integration
+- [x] Increased poster coverage from 36% to 97%
+
+### Earlier
+- [x] Torrent download manager with multi-query search
+- [x] Jackett integration
+- [x] InfoHash-based deduplication
+- [x] Smart filtering (seeders, size, resolution, age)
+- [x] Jellyfin integration

@@ -24,10 +24,15 @@ A native desktop media management application built with Go and Fyne for browsin
 ## Installation
 
 ### Prerequisites
-- Go 1.24+ 
+- Go 1.21+ 
 - C/C++ compiler (for Fyne dependencies)
 
 **Note:** FFmpeg is automatically downloaded on first run for video thumbnail generation. No manual installation required.
+
+### Supported Platforms
+- **Windows** - Full support (tested on Windows 10/11)
+- **macOS** - Full support (Intel and Apple Silicon)
+- **Linux** - Full support
 
 ### Build
 ```bash
@@ -92,16 +97,15 @@ The application automatically downloads ffmpeg binaries on first run:
 - Binaries are cached in `~/.media-manager/bin/`
 - Downloads from GitHub releases (one-time, ~150MB total)
 - Falls back to system PATH if download fails
-- Supports: macOS ARM64 (Apple Silicon)
-- Coming soon: Linux, Windows, macOS Intel
+- Supports: Windows, macOS (Intel & Apple Silicon), Linux
 
 ## Configuration
 
 The application stores data in `~/.media-manager/`:
 - `media.db` - SQLite database
-- `thumbnails/` - Generated thumbnail cache (uniform 200×200 images)
+- `thumbnails/` - Generated thumbnail cache (16:9 aspect ratio thumbnails)
 - `bin/` - Downloaded ffmpeg binaries (cached on first run)
-- `previews/` - Generated video preview GIFs
+- `frames/` - Animated preview frames for video hover effects
 
 Environment variables:
 - `DB_PATH` - Custom database path
@@ -158,7 +162,7 @@ Download rules support the following parameters:
 
 ## Current Status
 
-✅ **Phase 1 Complete**: Core desktop application structure
+✅ **Phase 1 Complete**: Core desktop application
 - [x] Fyne application framework
 - [x] Database models and SQLite integration
 - [x] File scanner with real-time monitoring
@@ -173,11 +177,18 @@ Download rules support the following parameters:
 - [x] Download rules with automatic execution
 - [x] Comprehensive test suite
 
-🚧 **Next Phase**: Enhanced UI and functionality
-- [ ] Actual media file loading and display
-- [ ] Tag management interface
+✅ **Phase 3 Complete**: Media Presentation
+- [x] TV show poster support with automatic detection (97% coverage)
+- [x] Modern 16:9 card design with full-bleed images
+- [x] Animated hover previews for videos
+- [x] Scene-based preview generation with GPU acceleration
+- [x] Jellyfin integration for media streaming
+
+🚧 **Current Phase**: UI Polish and Features
 - [ ] Search and filtering
+- [ ] Tag management interface
 - [ ] Settings dialog
+- [ ] UI zoom (accessibility)
 
 ## Development
 
