@@ -34,19 +34,32 @@ Implemented modern Netflix/YouTube-style media cards:
 - [ ] Verify hover animations work smoothly
 - [ ] Test on Windows, macOS, Linux
 
-### Documentation Cleanup
+### Documentation Cleanup ✅
 - [x] Update AGENTS.md with modern card design patterns
 - [x] Clean up stray files from root directory
 - [x] Update .gitignore
 - [x] Update TODO.md with current priorities
-- [ ] Update README.md with current status
-- [ ] Update CHANGELOG.md
+- [x] Update README.md with current status
+- [x] Update CHANGELOG.md
+- [x] Update DEV_GUIDE.md
+- [x] Rewrite ARCHITECTURE.md
 
 ## Next Up
 
-1. **UI Zoom Feature** - Implement Ctrl +/- for accessibility
+1. **Visual Testing** - Test zoom/theme at various levels on Windows/Linux/Mac
 2. **Search/Filtering** - Add search bar for media files
 3. **Tag Management** - UI for managing file tags
+
+## Recently Added
+
+### UI Zoom & Theme Feature (January 2026) ✅
+- Added fyne-x dependency for Adwaita theme support
+- Created `ZoomableTheme` wrapper (`internal/ui/theme/zoomable_theme.go`)
+- Created `ZoomManager` (`internal/ui/zoom/zoom_manager.go`)
+- Keyboard shortcuts: Ctrl+= (zoom in), Ctrl+- (zoom out), Ctrl+0 (reset)
+- Zoom range: 50% to 200%
+- Theme selector in View menu: Default, Dark, Light, Adwaita
+- Settings persisted to config.json
 
 ## Files Modified Recently
 

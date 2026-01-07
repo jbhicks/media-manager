@@ -4,7 +4,7 @@ go 1.24.4
 
 require (
 	fyne.io/fyne/v2 v2.6.0
-	fyne.io/x/fyne v0.0.0-20250418202416-58a230ad1acb
+	fyne.io/x/fyne v0.0.0-20251214153509-fa68a7d234d5
 	github.com/SkYNewZ/go-jackett v0.0.0-20220630233612-f5bdda83d1ab
 	github.com/anacrolix/torrent v1.60.0
 	github.com/fsnotify/fsnotify v1.9.0

@@ -19,6 +19,8 @@ type Config struct {
 	WindowHeight           float32 // New field for window height
 	WindowX                float32 // New field for window X position
 	WindowY                float32 // New field for window Y position
+	ZoomLevel              float32 // UI zoom level (0.5 to 2.0, default 1.0)
+	ThemeName              string  // Theme name (Default, Dark, Light, Adwaita)
 }
 
 func (c *Config) GetThumbnailDir() string {
@@ -45,10 +47,12 @@ func NewConfig(mediaDir string) *Config {
 		MediaDirs:              []string{mediaDir},
 		MainContentSplitOffset: 0.25,
 		SidebarSplitOffset:     0.95,
-		WindowWidth:            0, // Initialize with 0, meaning no saved size
-		WindowHeight:           0, // Initialize with 0, meaning no saved size
-		WindowX:                0, // Initialize with 0, meaning no saved position
-		WindowY:                0, // Initialize with 0, meaning no saved position
+		WindowWidth:            0,         // Initialize with 0, meaning no saved size
+		WindowHeight:           0,         // Initialize with 0, meaning no saved size
+		WindowX:                0,         // Initialize with 0, meaning no saved position
+		WindowY:                0,         // Initialize with 0, meaning no saved position
+		ZoomLevel:              1.0,       // Default zoom level (100%)
+		ThemeName:              "Default", // Default theme
 	}
 	fmt.Printf("[DEBUG] config.go: Config.MediaDirs: %v\n", cfg.MediaDirs)
 
@@ -95,10 +99,12 @@ func LoadConfig(mediaDir string) (*Config, error) {
 		MediaDirs:              []string{}, // Start with empty, will be set below
 		MainContentSplitOffset: 0.25,
 		SidebarSplitOffset:     0.95,
-		WindowWidth:            0, // Initialize with 0, meaning no saved size
-		WindowHeight:           0, // Initialize with 0, meaning no saved size
-		WindowX:                0, // Initialize with 0, meaning no saved position
-		WindowY:                0, // Initialize with 0, meaning no saved position
+		WindowWidth:            0,         // Initialize with 0, meaning no saved size
+		WindowHeight:           0,         // Initialize with 0, meaning no saved size
+		WindowX:                0,         // Initialize with 0, meaning no saved position
+		WindowY:                0,         // Initialize with 0, meaning no saved position
+		ZoomLevel:              1.0,       // Default zoom level (100%)
+		ThemeName:              "Default", // Default theme
 	}
 
 	data, err := os.ReadFile(configFilePath)

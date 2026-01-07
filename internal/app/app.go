@@ -15,17 +15,19 @@ import (
 	"github.com/user/media-manager/internal/scanner"
 	"github.com/user/media-manager/internal/ui/assets"
 	"github.com/user/media-manager/internal/ui/views"
+	"github.com/user/media-manager/internal/ui/zoom"
 	"github.com/user/media-manager/pkg/models"
 )
 
 type MediaManagerApp struct {
-	fyneApp  fyne.App
-	window   fyne.Window
-	config   *config.Config
-	db       *db.Database
-	mainView *views.MainView
-	mediaDir string
-	scanner  *scanner.MediaScanner
+	fyneApp     fyne.App
+	window      fyne.Window
+	config      *config.Config
+	db          *db.Database
+	mainView    *views.MainView
+	mediaDir    string
+	scanner     *scanner.MediaScanner
+	zoomManager *zoom.Manager
 }
 
 func NewMediaManagerApp(mediaDir string) (*MediaManagerApp, error) {
@@ -97,13 +99,27 @@ func NewMediaManagerApp(mediaDir string) (*MediaManagerApp, error) {
 		}
 	}
 
+	// Initialize zoom manager with config values
+	zoomMgr := zoom.NewManager(fyneApp, cfg.ZoomLevel, cfg.ThemeName)
+	zoomMgr.Apply()
+	zoomMgr.RegisterShortcuts(window)
+
+	// Set callbacks to save config when zoom/theme changes
+	zoomMgr.SetOnZoomChanged(func(level float32) {
+		cfg.ZoomLevel = level
+	})
+	zoomMgr.SetOnThemeChanged(func(name string) {
+		cfg.ThemeName = name
+	})
+
 	return &MediaManagerApp{
-		fyneApp:  fyneApp,
-		window:   window,
-		config:   cfg,
-		db:       database,
-		mediaDir: mediaDir,
-		scanner:  mediaScanner,
+		fyneApp:     fyneApp,
+		window:      window,
+		config:      cfg,
+		db:          database,
+		mediaDir:    mediaDir,
+		scanner:     mediaScanner,
+		zoomManager: zoomMgr,
 	}, nil
 }
 
@@ -195,9 +211,33 @@ func (app *MediaManagerApp) setupMenuBar() {
 		}),
 	)
 
+	// Create theme submenu
+	themeMenu := fyne.NewMenu("Theme")
+	for _, themeName := range app.zoomManager.GetAvailableThemes() {
+		name := themeName // capture for closure
+		label := name
+		// Mark current theme with a check
+		if name == app.zoomManager.GetThemeName() {
+			label = "✓ " + name
+		}
+		themeMenu.Items = append(themeMenu.Items, fyne.NewMenuItem(label, func() {
+			app.zoomManager.SetTheme(name)
+		}))
+	}
+
 	viewMenu := fyne.NewMenu("View",
 		fyne.NewMenuItem("Refresh", func() {
 			app.RescanMediaDirectory()
+		}),
+		fyne.NewMenuItemSeparator(),
+		fyne.NewMenuItem("Zoom In (Ctrl+=)", func() {
+			app.zoomManager.ZoomIn()
+		}),
+		fyne.NewMenuItem("Zoom Out (Ctrl+-)", func() {
+			app.zoomManager.ZoomOut()
+		}),
+		fyne.NewMenuItem("Reset Zoom (Ctrl+0)", func() {
+			app.zoomManager.ResetZoom()
 		}),
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Small Thumbnails", nil),
@@ -211,7 +251,7 @@ func (app *MediaManagerApp) setupMenuBar() {
 		}),
 	)
 
-	mainMenu := fyne.NewMainMenu(fileMenu, viewMenu, helpMenu)
+	mainMenu := fyne.NewMainMenu(fileMenu, viewMenu, themeMenu, helpMenu)
 	app.window.SetMainMenu(mainMenu)
 }
 

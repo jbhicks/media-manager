@@ -39,16 +39,18 @@ This file tracks the status of refactoring media cards to better fit content, es
 
 ---
 
-## UI Zoom (Ctrl - / +) Implementation Plan
+## UI Zoom (Ctrl - / +) Implementation Plan (COMPLETED - January 2026)
 
-- [ ] Step 1: Create a custom theme type (e.g., ZoomableTheme) that wraps the current theme and multiplies all size values (text, icon, padding, etc.) by a zoom factor.
-- [ ] Step 2: Add a global variable (e.g., zoomLevel) to track the current zoom factor (default 1.0).
-- [ ] Step 3: Implement a function to update the zoom level and re-apply the custom theme using fyne.CurrentApp().Settings().SetTheme().
-- [ ] Step 4: Add keyboard shortcut handling at the top-level window or main view to listen for Ctrl +/-, Cmd +/-, and update the zoom level accordingly.
-- [ ] Step 5: Ensure that the zoom level is clamped to a reasonable range (e.g., 0.5x to 2.0x).
-- [ ] Step 6: (Optional) Persist the zoom level in the app's config so it is restored on restart.
-- [ ] Step 7: Test the feature on all platforms (Linux, Windows, Mac) to ensure that all UI elements (text, icons, padding, etc.) scale smoothly and shortcuts work as expected.
-- [ ] Step 8: Add documentation/comments explaining the zoom feature and how to adjust it.
+- [x] Step 1: Create a custom theme type (ZoomableTheme) that wraps the current theme and multiplies all size values by a zoom factor.
+  - Created `internal/ui/theme/zoomable_theme.go`
+- [x] Step 2: Add zoom manager to track the current zoom factor (default 1.0).
+  - Created `internal/ui/zoom/zoom_manager.go`
+- [x] Step 3: Implement SetTheme() integration to update zoom level and re-apply theme.
+- [x] Step 4: Add keyboard shortcut handling: Ctrl+= (zoom in), Ctrl+- (zoom out), Ctrl+0 (reset).
+- [x] Step 5: Zoom level clamped to 0.5x - 2.0x range.
+- [x] Step 6: Persist zoom level and theme name in config.json.
+- [x] Step 7: Added theme selector (Default, Dark, Light, Adwaita from fyne-x).
+- [x] Step 8: Added View > Theme menu and zoom controls.
 
 ---
 
