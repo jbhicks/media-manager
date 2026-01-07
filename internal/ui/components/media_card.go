@@ -98,7 +98,6 @@ func NewMediaCard(file models.MediaFile, thumbDir string) *MediaCard {
 
 func NewMediaCardWithForce(file models.MediaFile, thumbDir string, forceRegenerate bool) *MediaCard {
 	mediaType := GetMediaType(file.Filename)
-	fmt.Printf("[DEBUG] NewMediaCard: Creating card for %s (Type: %v, Force: %v)\n", file.Filename, mediaType, forceRegenerate)
 
 	// Truncate filename for display - allow more characters for wider card
 	displayName := file.Filename
@@ -166,8 +165,6 @@ func NewMediaCardWithForce(file models.MediaFile, thumbDir string, forceRegenera
 }
 
 func (mc *MediaCard) setupContent() {
-	fmt.Printf("[DEBUG] setupContent: Setting up content for %s (Type: %v)\n", mc.fileName, mc.mediaType)
-
 	switch mc.mediaType {
 	case MediaTypeImage:
 		go mc.loadPreview("image")
@@ -232,9 +229,8 @@ func (mc *MediaCard) loadAnimatedPreview() {
 
 // updateAnimatedContent updates the card to show animated preview using frames
 func (mc *MediaCard) updateAnimatedContent(framePaths []string) {
-	fyne.Do(func() {
-		// Create AnimatedFrames widget
-		animFrames := NewAnimatedFrames(framePaths)
+	// Load frames asynchronously to avoid blocking UI thread during disk I/O
+	NewAnimatedFramesAsync(framePaths, func(animFrames *AnimatedFrames) {
 		if animFrames == nil {
 			return
 		}

@@ -177,7 +177,12 @@ func (v *MainView) RefreshMediaGridWithForce(forceRegenerate bool) {
 				}
 			}
 
-			card := components.NewMediaCard(mediaFile, v.config.ThumbnailDir)
+			var card *components.MediaCard
+			if forceRegenerate {
+				card = components.NewMediaCardWithForce(mediaFile, v.config.ThumbnailDir, true)
+			} else {
+				card = components.NewMediaCard(mediaFile, v.config.ThumbnailDir)
+			}
 			card.SetOnDelete(func() {
 				v.RefreshMediaGrid()
 			})
@@ -336,7 +341,12 @@ func (v *MainView) Build() fyne.CanvasObject {
 
 	forceRegenerateBtn := widget.NewButton("Force Regenerate Previews", func() {
 		log.Println("[INFO] Force regenerating all previews...")
-		v.RefreshMediaGridWithForce(true)
+		// Run grid refresh in background to avoid blocking UI during I/O
+		go func() {
+			fyne.Do(func() {
+				v.RefreshMediaGridWithForce(true)
+			})
+		}()
 	})
 	addFolderBtn := widget.NewButton("Add Folder", func() {
 		dialog := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {

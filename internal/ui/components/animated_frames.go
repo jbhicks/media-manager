@@ -1,7 +1,6 @@
 package components
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -27,29 +26,61 @@ type AnimatedFrames struct {
 	displayImage *canvas.Image
 }
 
-// NewAnimatedFrames creates a new animated frames widget from a list of image paths
+// NewAnimatedFrames creates a new animated frames widget from pre-loaded resources
+// IMPORTANT: Use NewAnimatedFramesAsync for loading from file paths to avoid UI blocking
 func NewAnimatedFrames(framePaths []string) *AnimatedFrames {
 	if len(framePaths) == 0 {
 		return nil
 	}
 
-	// Pre-load all frame resources to avoid disk I/O during animation
-	// This is the key fix - loading from disk on every frame causes mouse stuttering
+	// Load resources - this blocks, so caller should use NewAnimatedFramesAsync instead
+	frameResources := loadFrameResources(framePaths)
+	if len(frameResources) == 0 {
+		return nil
+	}
+
+	return newAnimatedFramesFromResources(framePaths, frameResources)
+}
+
+// NewAnimatedFramesAsync loads frame resources in background and calls callback with result
+// This avoids blocking the UI thread during disk I/O
+func NewAnimatedFramesAsync(framePaths []string, callback func(*AnimatedFrames)) {
+	if len(framePaths) == 0 {
+		callback(nil)
+		return
+	}
+
+	go func() {
+		// Load resources in background goroutine (NOT on UI thread)
+		frameResources := loadFrameResources(framePaths)
+		if len(frameResources) == 0 {
+			fyne.Do(func() { callback(nil) })
+			return
+		}
+
+		// Create widget on UI thread
+		fyne.Do(func() {
+			af := newAnimatedFramesFromResources(framePaths, frameResources)
+			callback(af)
+		})
+	}()
+}
+
+// loadFrameResources loads all frame images from disk (blocking operation)
+func loadFrameResources(framePaths []string) []fyne.Resource {
 	frameResources := make([]fyne.Resource, 0, len(framePaths))
 	for _, path := range framePaths {
 		res, err := fyne.LoadResourceFromPath(path)
 		if err != nil {
-			fmt.Printf("[WARN] Failed to pre-load frame %s: %v\n", path, err)
 			continue
 		}
 		frameResources = append(frameResources, res)
 	}
+	return frameResources
+}
 
-	if len(frameResources) == 0 {
-		fmt.Printf("[ERROR] No frames could be loaded\n")
-		return nil
-	}
-
+// newAnimatedFramesFromResources creates AnimatedFrames from pre-loaded resources
+func newAnimatedFramesFromResources(framePaths []string, frameResources []fyne.Resource) *AnimatedFrames {
 	// Create single display image starting with first frame resource
 	img := &canvas.Image{Resource: frameResources[0]}
 	img.FillMode = canvas.ImageFillContain
@@ -82,8 +113,6 @@ func (af *AnimatedFrames) Start() {
 	af.running = true
 	af.stopChan = make(chan struct{})
 	af.mu.Unlock()
-
-	fmt.Printf("[DEBUG] AnimatedFrames: Starting animation with %d frames at %d FPS\n", len(af.frameResources), af.fps)
 
 	go func() {
 		ticker := time.NewTicker(time.Second / time.Duration(af.fps))

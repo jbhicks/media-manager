@@ -216,6 +216,92 @@ Correct:
 	`// UI update code here`
 `})`
 
+### Avoiding UI Thread Blocking
+
+**CRITICAL**: The UI thread must never perform blocking operations. Any disk I/O, network requests, or heavy computation inside `fyne.Do()` will cause mouse stuttering, UI freezes, and poor user experience.
+
+**Common mistakes that block the UI thread:**
+
+1. **Loading resources inside `fyne.Do()`**:
+```go
+// BAD: Disk I/O on UI thread causes mouse stuttering
+fyne.CurrentApp().Driver().Do(func() {
+    resource, _ := fyne.LoadResourceFromPath(imagePath)  // BLOCKS!
+    img.Resource = resource
+    img.Refresh()
+})
+
+// GOOD: Load in background, update UI in callback
+go func() {
+    resource, err := fyne.LoadResourceFromPath(imagePath)  // Background goroutine
+    if err == nil {
+        fyne.CurrentApp().Driver().Do(func() {
+            img.Resource = resource  // Only UI update on main thread
+            img.Refresh()
+        })
+    }
+}()
+```
+
+2. **Repeated resource loading in animation loops**:
+```go
+// BAD: Loading from disk on every frame tick (8+ times per second!)
+func (a *AnimatedFrames) tick() {
+    a.currentFrame = (a.currentFrame + 1) % len(a.framePaths)
+    resource, _ := fyne.LoadResourceFromPath(a.framePaths[a.currentFrame])  // BLOCKS every tick!
+    a.image.Resource = resource
+}
+
+// GOOD: Pre-load all frame resources once at construction
+func NewAnimatedFrames(framePaths []string) *AnimatedFrames {
+    resources := make([]fyne.Resource, len(framePaths))
+    for i, path := range framePaths {
+        resources[i], _ = fyne.LoadResourceFromPath(path)  // Load once
+    }
+    return &AnimatedFrames{frameResources: resources}
+}
+
+func (a *AnimatedFrames) tick() {
+    a.currentFrame = (a.currentFrame + 1) % len(a.frameResources)
+    a.image.Resource = a.frameResources[a.currentFrame]  // Just pointer swap, no I/O
+}
+```
+
+3. **Synchronous button handlers**:
+```go
+// BAD: Button click blocks UI during operation
+button.OnTapped = func() {
+    regenerateAllPreviews()  // Long operation freezes UI
+}
+
+// GOOD: Run heavy work in background
+button.OnTapped = func() {
+    go func() {
+        regenerateAllPreviews()  // Background
+        fyne.CurrentApp().Driver().Do(func() {
+            showCompletionMessage()  // UI update when done
+        })
+    }()
+}
+```
+
+**Pattern for async widget initialization:**
+```go
+// Use a callback-based async constructor for widgets that need I/O
+func NewMyWidgetAsync(paths []string, callback func(*MyWidget)) {
+    go func() {
+        // Do all I/O in background goroutine
+        resources := loadResources(paths)
+        
+        // Create and return widget on UI thread
+        fyne.CurrentApp().Driver().Do(func() {
+            widget := newMyWidgetFromResources(resources)
+            callback(widget)
+        })
+    }()
+}
+```
+
 ### Custom Widget Best Practices
 
 When implementing custom widgets with `fyne.WidgetRenderer`:
