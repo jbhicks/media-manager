@@ -23,6 +23,7 @@ type MainView struct {
 	config             *config.Config
 	database           *db.Database
 	mediaGridContainer *fyne.Container
+	mediaGridWrapper   *fyne.Container // Wrapper to allow replacing the grid
 	window             fyne.Window
 	mediaDir           string
 	foldersTree        *widget.Tree
@@ -124,70 +125,83 @@ func (v *MainView) RefreshMediaGridWithForce(forceRegenerate bool) {
 	} else {
 		log.Println("[DEBUG] RefreshMediaGrid called")
 	}
-	if v.mediaGridContainer != nil {
-		v.mediaGridContainer.Objects = []fyne.CanvasObject{}
-		if v.mediaDir != "" {
-			mediaDir := v.mediaDir
-			var files []os.DirEntry
-			var err error
-			var limitReached bool
-			if v.recursiveSearch {
-				files, limitReached = getAllMediaFilesRecursive(mediaDir)
-				if limitReached {
-					v.showRecursiveLimitWarning()
-				}
-			} else {
-				files, err = os.ReadDir(mediaDir)
-				if err != nil {
-					files = nil
-				}
+
+	// Get current card dimensions (these scale with zoom level)
+	cardWidth := components.CardWidth()
+	cardHeight := components.CardHeight()
+
+	// Collect all cards
+	var cards []fyne.CanvasObject
+	if v.mediaDir != "" {
+		mediaDir := v.mediaDir
+		var files []os.DirEntry
+		var err error
+		var limitReached bool
+		if v.recursiveSearch {
+			files, limitReached = getAllMediaFilesRecursive(mediaDir)
+			if limitReached {
+				v.showRecursiveLimitWarning()
 			}
-			for _, file := range files {
-				var fileName string
-				var filePath string
-				if v.recursiveSearch {
-					filePath = file.Name() // full path
-					fileName = filepath.Base(filePath)
-				} else {
-					if file.IsDir() {
-						continue
-					}
-					fileName = file.Name()
-					filePath = filepath.Join(mediaDir, file.Name())
-				}
-				if v.filter != "" && !strings.Contains(strings.ToLower(fileName), strings.ToLower(v.filter)) {
-					continue
-				}
-
-				// Look up in database to get existing media file or create a new one
-				var mediaFile models.MediaFile
-				if dbFile, err := v.database.GetMediaFileByPath(filePath); err == nil {
-					mediaFile = *dbFile
-				} else {
-					// Create a minimal MediaFile struct for files not in DB yet
-					mediaFile = models.MediaFile{
-						Path:     filePath,
-						Filename: fileName,
-					}
-				}
-
-				card := components.NewMediaCard(mediaFile, v.config.ThumbnailDir)
-				card.SetOnDelete(func() {
-					v.mediaGridContainer.Remove(card)
-					v.mediaGridContainer.Refresh()
-				})
-				v.mediaGridContainer.Add(card)
+		} else {
+			files, err = os.ReadDir(mediaDir)
+			if err != nil {
+				files = nil
 			}
 		}
-		v.mediaGridContainer.Refresh()
+		for _, file := range files {
+			var fileName string
+			var filePath string
+			if v.recursiveSearch {
+				filePath = file.Name() // full path
+				fileName = filepath.Base(filePath)
+			} else {
+				if file.IsDir() {
+					continue
+				}
+				fileName = file.Name()
+				filePath = filepath.Join(mediaDir, file.Name())
+			}
+			if v.filter != "" && !strings.Contains(strings.ToLower(fileName), strings.ToLower(v.filter)) {
+				continue
+			}
+
+			// Look up in database to get existing media file or create a new one
+			var mediaFile models.MediaFile
+			if dbFile, err := v.database.GetMediaFileByPath(filePath); err == nil {
+				mediaFile = *dbFile
+			} else {
+				// Create a minimal MediaFile struct for files not in DB yet
+				mediaFile = models.MediaFile{
+					Path:     filePath,
+					Filename: fileName,
+				}
+			}
+
+			card := components.NewMediaCard(mediaFile, v.config.ThumbnailDir)
+			card.SetOnDelete(func() {
+				v.RefreshMediaGrid()
+			})
+			cards = append(cards, card)
+		}
 	}
-	fmt.Println("Media grid refreshed")
+
+	// Recreate the GridWrap container with new dimensions (for zoom support)
+	v.mediaGridContainer = container.NewGridWrap(fyne.NewSize(cardWidth, cardHeight), cards...)
+
+	// Update the wrapper container if it exists
+	if v.mediaGridWrapper != nil {
+		v.mediaGridWrapper.Objects = []fyne.CanvasObject{v.mediaGridContainer}
+		v.mediaGridWrapper.Refresh()
+	}
+
+	fmt.Printf("Media grid refreshed with card size: %.0fx%.0f\n", cardWidth, cardHeight)
 }
 
 func (v *MainView) createMediaGrid() *fyne.Container {
 	// Use the card dimensions from the components package for consistency
-	cardWidth := components.CardWidth
-	cardHeight := components.CardHeight
+	// These are now functions that return scaled values based on zoom level
+	cardWidth := components.CardWidth()
+	cardHeight := components.CardHeight()
 	var cards []fyne.CanvasObject
 	if v.mediaDir != "" {
 		mediaDir := v.mediaDir
@@ -242,7 +256,10 @@ func (v *MainView) createMediaGrid() *fyne.Container {
 		}
 	}
 	v.mediaGridContainer = container.NewGridWrap(fyne.NewSize(cardWidth, cardHeight), cards...)
-	return v.mediaGridContainer
+
+	// Create a wrapper container so we can replace the grid when zoom changes
+	v.mediaGridWrapper = container.NewMax(v.mediaGridContainer)
+	return v.mediaGridWrapper
 }
 
 const maxRecursiveFiles = 2000

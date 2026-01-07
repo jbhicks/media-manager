@@ -104,13 +104,12 @@ func NewMediaManagerApp(mediaDir string) (*MediaManagerApp, error) {
 	zoomMgr.Apply()
 	zoomMgr.RegisterShortcuts(window)
 
-	// Set callbacks to save config when zoom/theme changes
-	zoomMgr.SetOnZoomChanged(func(level float32) {
-		cfg.ZoomLevel = level
-	})
+	// Set theme change callback to save config
 	zoomMgr.SetOnThemeChanged(func(name string) {
 		cfg.ThemeName = name
 	})
+	// Note: SetOnZoomChanged is set in setupUI() after mainView is created,
+	// so the grid can be refreshed when zoom changes
 
 	return &MediaManagerApp{
 		fyneApp:     fyneApp,
@@ -189,11 +188,52 @@ func (app *MediaManagerApp) setupUI() {
 	mainView := views.NewMainView(app.config, app.db, app.window, app.mediaDir)
 	app.mainView = mainView
 
+	// Now that mainView is set, add zoom callback to refresh the grid
+	app.zoomManager.SetOnZoomChanged(func(level float32) {
+		app.config.ZoomLevel = level
+		if app.mainView != nil {
+			app.mainView.RefreshMediaGrid()
+		}
+		// Clamp window size to content if content is smaller than window
+		app.clampWindowToContent()
+	})
+
 	// Create menu bar
 	app.setupMenuBar()
 
 	// Set window content
 	app.window.SetContent(mainView.Build())
+}
+
+// clampWindowToContent shrinks the window to fit content if content is smaller
+func (app *MediaManagerApp) clampWindowToContent() {
+	content := app.window.Content()
+	if content == nil {
+		return
+	}
+
+	minSize := content.MinSize()
+	currentSize := app.window.Canvas().Size()
+
+	// Only shrink if window is larger than content needs
+	newWidth := currentSize.Width
+	newHeight := currentSize.Height
+	changed := false
+
+	if currentSize.Width > minSize.Width && minSize.Width > 0 {
+		newWidth = minSize.Width
+		changed = true
+	}
+	if currentSize.Height > minSize.Height && minSize.Height > 0 {
+		newHeight = minSize.Height
+		changed = true
+	}
+
+	if changed {
+		fmt.Printf("[DEBUG] Clamping window from %.0fx%.0f to %.0fx%.0f\n",
+			currentSize.Width, currentSize.Height, newWidth, newHeight)
+		app.window.Resize(fyne.NewSize(newWidth, newHeight))
+	}
 }
 
 func (app *MediaManagerApp) setupMenuBar() {

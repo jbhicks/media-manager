@@ -20,13 +20,28 @@ import (
 )
 
 // Card dimension constants - 16:9 aspect ratio for widescreen media
+// Base dimensions at 1.0x zoom level
 const (
-	CardWidth        = float32(288) // 16:9 aspect ratio width
-	CardHeight       = float32(162) // 16:9 aspect ratio height
+	BaseCardWidth    = float32(288) // 16:9 aspect ratio width at 1x zoom
+	BaseCardHeight   = float32(162) // 16:9 aspect ratio height at 1x zoom
 	CardCornerRadius = float32(8)   // Rounded corners
 	GradientHeight   = float32(44)  // Bottom gradient for labels
 	BadgePadding     = float32(6)   // Padding for badges
 )
+
+// CardWidth returns the current card width scaled by theme
+func CardWidth() float32 {
+	// Use theme padding as a proxy for zoom level
+	// Default padding is 4, so scale = currentPadding / 4
+	scale := theme.Padding() / 4
+	return BaseCardWidth * scale
+}
+
+// CardHeight returns the current card height scaled by theme
+func CardHeight() float32 {
+	scale := theme.Padding() / 4
+	return BaseCardHeight * scale
+}
 
 // logToDebugFile appends a message to app_debug.log for error tracking
 func logToDebugFile(msg string) {
@@ -198,21 +213,17 @@ func (mc *MediaCard) updateStaticThumbnail(path string) {
 // loadAnimatedPreview loads animation frames on hover (for videos)
 func (mc *MediaCard) loadAnimatedPreview() {
 	if mc.animatedRequested {
-		fmt.Printf("[DEBUG] loadAnimatedPreview: Already requested for %s\n", mc.fileName)
 		return // Already requested
 	}
 	mc.animatedRequested = true
-	fmt.Printf("[DEBUG] loadAnimatedPreview: Requesting frames for %s\n", mc.fileName)
 
 	// Request frame extraction for animated preview
 	preview.GetAnimatedPreviewWithCallback(mc.filePath, mc.thumbDir, mc.forceRegenerate, func(framePaths []string, err error) {
-		fmt.Printf("[DEBUG] loadAnimatedPreview callback: got %d frames, err=%v\n", len(framePaths), err)
 		if err != nil {
 			fmt.Printf("[ERROR] Failed to generate animation frames for %s: %v\n", mc.filePath, err)
 			return
 		}
 		if len(framePaths) == 0 {
-			fmt.Printf("[WARN] No animation frames generated for %s\n", mc.filePath)
 			return
 		}
 		mc.updateAnimatedContent(framePaths)
@@ -221,12 +232,10 @@ func (mc *MediaCard) loadAnimatedPreview() {
 
 // updateAnimatedContent updates the card to show animated preview using frames
 func (mc *MediaCard) updateAnimatedContent(framePaths []string) {
-	fmt.Printf("[DEBUG] updateAnimatedContent: Creating AnimatedFrames with %d frames, isHovered=%v\n", len(framePaths), mc.isHovered)
 	fyne.Do(func() {
 		// Create AnimatedFrames widget
 		animFrames := NewAnimatedFrames(framePaths)
 		if animFrames == nil {
-			fmt.Printf("[ERROR] NewAnimatedFrames returned nil\n")
 			return
 		}
 		mc.animatedFrames = animFrames
@@ -234,12 +243,9 @@ func (mc *MediaCard) updateAnimatedContent(framePaths []string) {
 
 		// If still hovering, start animation - use the display image directly
 		if mc.isHovered {
-			fmt.Printf("[DEBUG] updateAnimatedContent: Starting animation\n")
 			mc.content = animFrames.CurrentImage()
 			animFrames.Start()
 			mc.Refresh()
-		} else {
-			fmt.Printf("[DEBUG] updateAnimatedContent: Not hovering, animation ready but not started\n")
 		}
 	})
 }
@@ -247,20 +253,16 @@ func (mc *MediaCard) updateAnimatedContent(framePaths []string) {
 var _ desktop.Hoverable = (*MediaCard)(nil)
 
 func (mc *MediaCard) MouseIn(*desktop.MouseEvent) {
-	fmt.Println("[DEBUG] MediaCard MouseIn - hover started")
 	mc.isHovered = true
 
 	// Show hover overlay effect
 	mc.hoverOverlay.FillColor = color.NRGBA{255, 255, 255, 30} // Slight white overlay
 	mc.hoverOverlay.Refresh()
 
-	fmt.Printf("[DEBUG] MouseIn: mediaType=%v, hasAnimation=%v, mc.content=%v\n", mc.mediaType, mc.hasAnimation, mc.content)
-
 	// For videos, start loading animated preview on hover (if not already loaded)
 	if mc.mediaType == MediaTypeVideo {
 		if mc.hasAnimation && mc.animatedFrames != nil {
 			// Animation frames ready - use the animated frames' display image directly
-			fmt.Printf("[DEBUG] MouseIn: Switching content to animatedFrames.displayImage and starting animation\n")
 			mc.content = mc.animatedFrames.CurrentImage()
 			mc.animatedFrames.Start()
 			// Force full widget refresh to update renderer's content reference
@@ -273,7 +275,6 @@ func (mc *MediaCard) MouseIn(*desktop.MouseEvent) {
 }
 
 func (mc *MediaCard) MouseOut() {
-	fmt.Println("[DEBUG] MediaCard MouseOut - hover ended")
 	mc.isHovered = false
 
 	// Hide hover overlay
@@ -290,8 +291,6 @@ func (mc *MediaCard) MouseOut() {
 		mc.content = mc.staticImage
 		mc.Refresh()
 	}
-
-	fmt.Printf("[DEBUG] MouseOut: mediaType=%v, hasAnimation=%v, animatedFrames=%v\n", mc.mediaType, mc.hasAnimation, mc.animatedFrames != nil)
 }
 
 func (mc *MediaCard) MouseMoved(*desktop.MouseEvent) {
@@ -353,7 +352,7 @@ func (mc *MediaCard) openFile() error {
 }
 
 func (mc *MediaCard) MinSize() fyne.Size {
-	return fyne.NewSize(CardWidth, CardHeight)
+	return fyne.NewSize(CardWidth(), CardHeight())
 }
 
 func (mc *MediaCard) CreateRenderer() fyne.WidgetRenderer {
@@ -436,7 +435,7 @@ func (r *mediaCardRenderer) Layout(size fyne.Size) {
 }
 
 func (r *mediaCardRenderer) MinSize() fyne.Size {
-	return fyne.NewSize(CardWidth, CardHeight)
+	return fyne.NewSize(CardWidth(), CardHeight())
 }
 
 func (r *mediaCardRenderer) Refresh() {
@@ -446,7 +445,6 @@ func (r *mediaCardRenderer) Refresh() {
 
 	// Rebuild objects cache if content changed
 	if oldContent != r.content {
-		fmt.Printf("[DEBUG] mediaCardRenderer.Refresh: Content changed from %T to %T\n", oldContent, r.content)
 		r.updateObjectsCache()
 		// Force layout update when content changes
 		if r.content != nil {

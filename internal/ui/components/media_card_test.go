@@ -41,8 +41,8 @@ func TestMediaCard_MinSize_WidgetAndRendererConsistent(t *testing.T) {
 	renderer := test.TempWidgetRenderer(t, card)
 	rendererMinSize := renderer.MinSize()
 
-	// Both should return the new 16:9 card size (288, 162)
-	expectedSize := fyne.NewSize(CardWidth, CardHeight)
+	// Both should return the new 16:9 card size (scaled by zoom level)
+	expectedSize := fyne.NewSize(CardWidth(), CardHeight())
 	if widgetMinSize != expectedSize {
 		t.Errorf("widget.MinSize()=%v, expected %v", widgetMinSize, expectedSize)
 	}
@@ -359,7 +359,7 @@ func BenchmarkMediaCard_Renderer_Layout(b *testing.B) {
 	file := testMediaFile("/fake/path/test.jpg", "test.jpg")
 	card := NewMediaCard(file, "/tmp/thumbs")
 	renderer := card.CreateRenderer()
-	size := fyne.NewSize(CardWidth, CardHeight)
+	size := fyne.NewSize(CardWidth(), CardHeight())
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

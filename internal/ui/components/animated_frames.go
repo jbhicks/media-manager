@@ -2,7 +2,6 @@ package components
 
 import (
 	"fmt"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -16,14 +15,15 @@ import (
 type AnimatedFrames struct {
 	widget.BaseWidget
 
-	framePaths   []string        // Paths to frame files
-	currentFrame int             // Current frame index
-	fps          int             // Frames per second for animation
-	running      bool            // Whether animation is running
-	stopChan     chan struct{}   // Channel to signal stop
-	mu           sync.Mutex      // Protects running state
-	
-	// Single image that we update the file path on
+	framePaths     []string        // Paths to frame files
+	frameResources []fyne.Resource // Pre-loaded frame resources
+	currentFrame   int             // Current frame index
+	fps            int             // Frames per second for animation
+	running        bool            // Whether animation is running
+	stopChan       chan struct{}   // Channel to signal stop
+	mu             sync.Mutex      // Protects running state
+
+	// Single image that we update the resource on
 	displayImage *canvas.Image
 }
 
@@ -33,16 +33,34 @@ func NewAnimatedFrames(framePaths []string) *AnimatedFrames {
 		return nil
 	}
 
-	// Create single display image starting with first frame
-	img := canvas.NewImageFromFile(framePaths[0])
+	// Pre-load all frame resources to avoid disk I/O during animation
+	// This is the key fix - loading from disk on every frame causes mouse stuttering
+	frameResources := make([]fyne.Resource, 0, len(framePaths))
+	for _, path := range framePaths {
+		res, err := fyne.LoadResourceFromPath(path)
+		if err != nil {
+			fmt.Printf("[WARN] Failed to pre-load frame %s: %v\n", path, err)
+			continue
+		}
+		frameResources = append(frameResources, res)
+	}
+
+	if len(frameResources) == 0 {
+		fmt.Printf("[ERROR] No frames could be loaded\n")
+		return nil
+	}
+
+	// Create single display image starting with first frame resource
+	img := &canvas.Image{Resource: frameResources[0]}
 	img.FillMode = canvas.ImageFillContain
-	
+
 	af := &AnimatedFrames{
-		framePaths:   framePaths,
-		currentFrame: 0,
-		fps:          8, // 8 FPS for smooth but efficient animation
-		running:      false,
-		displayImage: img,
+		framePaths:     framePaths,
+		frameResources: frameResources,
+		currentFrame:   0,
+		fps:            8, // 8 FPS for smooth but efficient animation
+		running:        false,
+		displayImage:   img,
 	}
 
 	af.ExtendBaseWidget(af)
@@ -57,7 +75,7 @@ func (af *AnimatedFrames) SetFPS(fps int) {
 // Start begins the animation loop
 func (af *AnimatedFrames) Start() {
 	af.mu.Lock()
-	if af.running || len(af.framePaths) <= 1 {
+	if af.running || len(af.frameResources) <= 1 {
 		af.mu.Unlock()
 		return
 	}
@@ -65,17 +83,15 @@ func (af *AnimatedFrames) Start() {
 	af.stopChan = make(chan struct{})
 	af.mu.Unlock()
 
-	fmt.Printf("[DEBUG] AnimatedFrames: Starting animation with %d frames at %d FPS\n", len(af.framePaths), af.fps)
+	fmt.Printf("[DEBUG] AnimatedFrames: Starting animation with %d frames at %d FPS\n", len(af.frameResources), af.fps)
 
 	go func() {
 		ticker := time.NewTicker(time.Second / time.Duration(af.fps))
 		defer ticker.Stop()
 
-		frameCount := 0
 		for {
 			select {
 			case <-af.stopChan:
-				fmt.Println("[DEBUG] AnimatedFrames: Animation stopped")
 				return
 			case <-ticker.C:
 				af.mu.Lock()
@@ -83,24 +99,14 @@ func (af *AnimatedFrames) Start() {
 					af.mu.Unlock()
 					return
 				}
-				af.currentFrame = (af.currentFrame + 1) % len(af.framePaths)
-				newPath := af.framePaths[af.currentFrame]
+				af.currentFrame = (af.currentFrame + 1) % len(af.frameResources)
+				res := af.frameResources[af.currentFrame]
 				af.mu.Unlock()
 
-				frameCount++
-				if frameCount <= 3 || frameCount%10 == 0 {
-					fmt.Printf("[DEBUG] AnimatedFrames: Frame %d -> %s\n", af.currentFrame, filepath.Base(newPath))
-				}
-
-				// Update image by loading new resource - File property change doesn't trigger reload
+				// Update image using pre-loaded resource - no disk I/O!
 				fyne.Do(func() {
-					// Load image from file as resource to force refresh
-					res, err := fyne.LoadResourceFromPath(newPath)
-					if err == nil {
-						af.displayImage.Resource = res
-						af.displayImage.File = "" // Clear file to use resource
-						af.displayImage.Refresh()
-					}
+					af.displayImage.Resource = res
+					af.displayImage.Refresh()
 				})
 			}
 		}
@@ -118,11 +124,11 @@ func (af *AnimatedFrames) Stop() {
 
 	af.running = false
 	close(af.stopChan)
-	
+
 	// Reset to first frame
 	af.currentFrame = 0
-	if len(af.framePaths) > 0 {
-		af.displayImage.File = af.framePaths[0]
+	if len(af.frameResources) > 0 {
+		af.displayImage.Resource = af.frameResources[0]
 	}
 }
 
@@ -148,7 +154,7 @@ func (af *AnimatedFrames) FirstFramePath() string {
 
 // FrameCount returns the number of frames
 func (af *AnimatedFrames) FrameCount() int {
-	return len(af.framePaths)
+	return len(af.frameResources)
 }
 
 // MinSize returns the minimum size of the widget
