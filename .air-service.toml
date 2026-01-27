@@ -1,0 +1,33 @@
+# Config file for Air (https://github.com/cosmtrek/air) - Service Mode
+
+# The root directory to watch for changes.
+root = "."
+# The directory where the binary will be built.
+tmp_dir = "tmp"
+
+[build]
+  # Build the service binary
+  cmd = "mkdir -p tmp && go build -o ./tmp/media-manager-service ./cmd/media-manager-service/main.go 2>&1 | tee tmp/build.log"
+  # The path to the binary to run.
+  bin = "tmp/media-manager-service"
+  # Environment variables to set when running the binary
+  args_bin = []
+  # Log output to service.log
+  full_bin = "TMDB_API_KEY='6d4a63549daad44f3abcb460750bb7d1' TMDB_READ_ACCESS_TOKEN='eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiI2ZDRhNjM1NDlkYWFkNDRmM2FiY2I0NjA3NTBiYjdkMSIsIm5iZiI6MTczNDgzOTc0Ny41NjksInN1YiI6IjY3NjhiMDYzMTU2Y2U1ZTRjMjJlYzNiZSIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.5K8gOOPCU8IMp_QOVnS3Jw5nF8EKP_wqr6xY6pYR1Ww' NORDVPN_TOKEN='e9f2ab6fa17c42dab0bd37549c1cb2f9' ./tmp/media-manager-service 2>&1 | tee -a tmp/service.log"
+
+  # File extensions to watch.
+  include_ext = ["go", "tpl", "tmpl", "html"]
+  # Directories to exclude from watching.
+  exclude_dir = ["vendor", "media", "bin", "thumbnails", "tmp"]
+  # Delay in milliseconds before rebuilding.
+  delay = 1000
+  # Stop the application on a build error.
+  stop_on_error = true
+
+[log]
+  # Show log time
+  time = true
+
+[misc]
+  # Delete tmp directory on exit
+  clean_on_exit = true

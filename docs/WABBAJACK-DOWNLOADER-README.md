@@ -6,7 +6,7 @@ These scripts help you download all mods from a Wabbajack modlist without dealin
 
 ### Step 1: Extract Mod List
 ```powershell
-.\extract-wabbajack-mods.ps1 -ExtractOnly
+.\scripts\extract-wabbajack-mods.ps1 -ExtractOnly
 ```
 
 This creates:
@@ -20,7 +20,7 @@ This creates:
 Opens each mod page in your browser automatically. You click "Download" manually but don't have to search for each mod.
 
 ```powershell
-.\download-wabbajack-mods.ps1 -OpenInBrowser
+.\scripts\download-wabbajack-mods.ps1 -OpenInBrowser
 ```
 
 **Tips:**
@@ -33,17 +33,17 @@ Uses browser automation to click download buttons for you. Requires Selenium.
 
 ```powershell
 # First-time setup
-.\auto-download-wabbajack-mods.ps1 -SetupOnly
+.\scripts\auto-download-wabbajack-mods.ps1 -SetupOnly
 
 # Then download (without login - you'll need to log in manually when browser opens)
-.\auto-download-wabbajack-mods.ps1
+.\scripts\auto-download-wabbajack-mods.ps1
 
 # Or with auto-login
-.\auto-download-wabbajack-mods.ps1 -NexusUsername "youruser" -NexusPassword "yourpass"
+.\scripts\auto-download-wabbajack-mods.ps1 -NexusUsername "youruser" -NexusPassword "yourpass"
 
 # Download in batches (resume-friendly)
-.\auto-download-wabbajack-mods.ps1 -BatchSize 50  # Download 50 at a time
-.\auto-download-wabbajack-mods.ps1 -StartFrom 51 -BatchSize 50  # Next batch
+.\scripts\auto-download-wabbajack-mods.ps1 -BatchSize 50  # Download 50 at a time
+.\scripts\auto-download-wabbajack-mods.ps1 -StartFrom 51 -BatchSize 50  # Next batch
 ```
 
 #### Method C: Nexus API (Premium Only)
@@ -51,7 +51,7 @@ If you have Nexus Premium, you can use the API for direct downloads.
 
 ```powershell
 # Get your API key from https://www.nexusmods.com/users/myaccount?tab=api
-.\download-wabbajack-mods.ps1 -NexusAPIKey "YOUR_API_KEY_HERE"
+.\scripts\download-wabbajack-mods.ps1 -NexusAPIKey "YOUR_API_KEY_HERE"
 ```
 
 ## Resuming Downloads
@@ -75,7 +75,7 @@ Check your browser's download settings and set it to: `C:\wabbajack\downloads`
 ### Selenium not working
 Make sure Chrome is installed. If issues persist:
 ```powershell
-.\auto-download-wabbajack-mods.ps1 -SetupOnly
+.\scripts\auto-download-wabbajack-mods.ps1 -SetupOnly
 ```
 
 ### Some mods fail

@@ -1,0 +1,40 @@
+name: Build Installer
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+
+    - name: Install NSIS
+      run: |
+        choco install nsis -y
+
+    - name: Install GoReleaser
+      run: go install github.com/goreleaser/goreleaser@latest
+
+    - name: Build installer
+      run: make installer
+
+    - name: Upload installer artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: media-manager-installer
+        path: dist/*
