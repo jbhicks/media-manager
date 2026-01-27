@@ -9,17 +9,26 @@ builds:
       - amd64
     ldflags:
       - -s -w  # Strip debug info for smaller binaries
+  - id: media-manager-service
+    main: ./cmd/media-manager-service
+    binary: media-manager-service
+    goos:
+      - windows
+    goarch:
+      - amd64
+    ldflags:
+      - -s -w  # Strip debug info for smaller binaries
 archives:
-  - id: media-manager-archive
-    builds:
+  - builds:
       - media-manager
+      - media-manager-service
     format: zip
 nfpms: []  # Skip Linux packages for now
-nsis:
-  - id: media-manager-installer
-    builds:
-      - media-manager
+# nsis:
+#   - id: media-manager-installer
+#     builds:
+#       - media-manager
 release:
   github:
-    owner: user  # Replace with your GitHub username/org
+    owner: jbhicks  # Updated with your GitHub username
     name: media-manager

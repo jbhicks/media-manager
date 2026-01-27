@@ -1,7 +1,7 @@
 project_name: media-manager
 release:
   github:
-    owner: user
+    owner: jbhicks
     name: media-manager
   name_template: '{{.Tag}}'
 builds:
@@ -26,10 +26,32 @@ builds:
     command: build
     ldflags:
       - -s -w
+  - id: media-manager-service
+    goos:
+      - windows
+    goarch:
+      - amd64
+    goarm:
+      - "6"
+    gomips:
+      - hardfloat
+    goamd64:
+      - v1
+    targets:
+      - windows_amd64_v1
+    dir: .
+    main: ./cmd/media-manager-service
+    binary: media-manager-service
+    builder: go
+    gobinary: go
+    command: build
+    ldflags:
+      - -s -w
 archives:
-  - id: media-manager-archive
+  - id: default
     builds:
       - media-manager
+      - media-manager-service
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
     format: zip
     files:
