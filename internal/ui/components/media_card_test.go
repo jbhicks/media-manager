@@ -34,7 +34,7 @@ func TestMediaCard_MinSize_WidgetAndRendererConsistent(t *testing.T) {
 	defer testApp.Quit()
 
 	file := testMediaFile("/fake/path/test.jpg", "test.jpg")
-	card := NewMediaCard(file, "/tmp/thumbs")
+	card := NewMediaCard(file, "/tmp/thumbs", nil)
 
 	// Get both sizes
 	widgetMinSize := card.MinSize()
@@ -71,7 +71,7 @@ func TestMediaCard_MinSize_AllMediaTypesConsistent(t *testing.T) {
 	var firstSize fyne.Size
 	for i, tc := range testCases {
 		file := testMediaFile("/fake/path/"+tc.filename, tc.filename)
-		card := NewMediaCard(file, "/tmp/thumbs")
+		card := NewMediaCard(file, "/tmp/thumbs", nil)
 
 		size := card.MinSize()
 		if i == 0 {
@@ -91,7 +91,7 @@ func TestMediaCard_Renderer_ObjectsNotNil(t *testing.T) {
 	defer testApp.Quit()
 
 	file := testMediaFile("/fake/path/test.jpg", "test.jpg")
-	card := NewMediaCard(file, "/tmp/thumbs")
+	card := NewMediaCard(file, "/tmp/thumbs", nil)
 
 	renderer := test.TempWidgetRenderer(t, card)
 	objects := renderer.Objects()
@@ -109,7 +109,7 @@ func TestMediaCard_Renderer_BaseObjectCount(t *testing.T) {
 
 	// Card without duration (no durationLabel/Badge)
 	file := testMediaFile("/fake/path/test.jpg", "test.jpg")
-	card := NewMediaCard(file, "/tmp/thumbs")
+	card := NewMediaCard(file, "/tmp/thumbs", nil)
 
 	renderer := test.TempWidgetRenderer(t, card)
 	objects := renderer.Objects()
@@ -128,7 +128,7 @@ func TestMediaCard_Renderer_WithDurationHasExtraLabel(t *testing.T) {
 
 	// Card with duration should have durationLabel and durationBadge
 	file := testMediaFileWithDuration("/fake/path/test.mp4", "test.mp4", 120)
-	card := NewMediaCard(file, "/tmp/thumbs")
+	card := NewMediaCard(file, "/tmp/thumbs", nil)
 
 	renderer := test.TempWidgetRenderer(t, card)
 	objects := renderer.Objects()
@@ -157,7 +157,7 @@ func TestMediaCard_Renderer_RefreshDoesNotPanic(t *testing.T) {
 	defer testApp.Quit()
 
 	file := testMediaFile("/fake/path/test.jpg", "test.jpg")
-	card := NewMediaCard(file, "/tmp/thumbs")
+	card := NewMediaCard(file, "/tmp/thumbs", nil)
 
 	renderer := test.TempWidgetRenderer(t, card)
 
@@ -187,7 +187,7 @@ func TestMediaCard_MouseIn_SetsHovered(t *testing.T) {
 	defer testApp.Quit()
 
 	file := testMediaFile("/fake/path/test.jpg", "test.jpg")
-	card := NewMediaCard(file, "/tmp/thumbs")
+	card := NewMediaCard(file, "/tmp/thumbs", nil)
 
 	if card.isHovered {
 		t.Error("Card should not be hovered initially")
@@ -206,7 +206,7 @@ func TestMediaCard_MouseOut_ClearsHovered(t *testing.T) {
 	defer testApp.Quit()
 
 	file := testMediaFile("/fake/path/test.jpg", "test.jpg")
-	card := NewMediaCard(file, "/tmp/thumbs")
+	card := NewMediaCard(file, "/tmp/thumbs", nil)
 
 	card.MouseIn(nil)
 	card.MouseOut()
@@ -225,7 +225,7 @@ func TestMediaCard_TappedSecondary_ShowsMenu(t *testing.T) {
 	defer testApp.Quit()
 
 	file := testMediaFile("/fake/path/test.jpg", "test.jpg")
-	card := NewMediaCard(file, "/tmp/thumbs")
+	card := NewMediaCard(file, "/tmp/thumbs", nil)
 
 	window := test.NewWindow(card)
 	defer window.Close()
@@ -300,7 +300,7 @@ func TestMediaCard_FullLifecycle(t *testing.T) {
 	defer testApp.Quit()
 
 	file := testMediaFileWithDuration("/fake/path/test.mp4", "test.mp4", 90)
-	card := NewMediaCard(file, "/tmp/thumbs")
+	card := NewMediaCard(file, "/tmp/thumbs", nil)
 
 	// Create window and add card
 	window := test.NewWindow(card)
@@ -348,7 +348,7 @@ func BenchmarkMediaCard_Creation(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = NewMediaCard(file, "/tmp/thumbs")
+		_ = NewMediaCard(file, "/tmp/thumbs", nil)
 	}
 }
 
@@ -357,7 +357,7 @@ func BenchmarkMediaCard_Renderer_Layout(b *testing.B) {
 	defer testApp.Quit()
 
 	file := testMediaFile("/fake/path/test.jpg", "test.jpg")
-	card := NewMediaCard(file, "/tmp/thumbs")
+	card := NewMediaCard(file, "/tmp/thumbs", nil)
 	renderer := card.CreateRenderer()
 	size := fyne.NewSize(CardWidth(), CardHeight())
 
@@ -372,7 +372,7 @@ func BenchmarkMediaCard_Renderer_Refresh(b *testing.B) {
 	defer testApp.Quit()
 
 	file := testMediaFile("/fake/path/test.jpg", "test.jpg")
-	card := NewMediaCard(file, "/tmp/thumbs")
+	card := NewMediaCard(file, "/tmp/thumbs", nil)
 	renderer := card.CreateRenderer()
 
 	b.ResetTimer()

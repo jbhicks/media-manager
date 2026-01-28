@@ -384,9 +384,13 @@ func (v *MainView) RefreshMediaGridWithForce(forceRegenerate bool) {
 
 			var card *components.MediaCard
 			if forceRegenerate {
-				card = components.NewMediaCardWithForce(mediaFile, v.config.ThumbnailDir, true)
+				card = components.NewMediaCardWithForce(mediaFile, v.config.ThumbnailDir, true, func(path, previewPath string) {
+					v.database.UpdateMediaFilePreviewPath(path, previewPath)
+				})
 			} else {
-				card = components.NewMediaCard(mediaFile, v.config.ThumbnailDir)
+				card = components.NewMediaCard(mediaFile, v.config.ThumbnailDir, func(path, previewPath string) {
+					v.database.UpdateMediaFilePreviewPath(path, previewPath)
+				})
 			}
 			card.SetOnDelete(func() {
 				v.RefreshMediaGrid()
@@ -456,7 +460,9 @@ func (v *MainView) createMediaGrid() fyne.CanvasObject {
 				}
 			}
 
-			card := components.NewMediaCard(mediaFile, v.config.ThumbnailDir)
+			card := components.NewMediaCard(mediaFile, v.config.ThumbnailDir, func(path, previewPath string) {
+				v.database.UpdateMediaFilePreviewPath(path, previewPath)
+			})
 			card.SetOnDelete(func() {
 				v.RefreshMediaGrid()
 			})
