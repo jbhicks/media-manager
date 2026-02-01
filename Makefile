@@ -65,6 +65,9 @@ endif
 
 build-all: build build-service
 
+installer:
+	goreleaser build --single-target --snapshot --clean
+
 clean:
 	$(GOCLEAN)
 ifeq ($(DETECTED_OS),Windows)

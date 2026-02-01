@@ -107,6 +107,10 @@ func (d *Database) DeleteMediaFilesByDirectory(dirPath string) error {
 	return d.db.Where("path LIKE ?", dirPath+"%").Delete(&models.MediaFile{}).Error
 }
 
+func (d *Database) UpdateMediaFilePreviewPath(path, previewPath string) error {
+	return d.db.Model(&models.MediaFile{}).Where("path = ?", path).Update("preview_path", previewPath).Error
+}
+
 func (d *Database) Close() error {
 	db, err := d.db.DB()
 	if err != nil {

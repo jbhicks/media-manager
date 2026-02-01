@@ -83,6 +83,7 @@ type MediaCard struct {
 	hasAnimation      bool
 	animatedRequested bool // Whether animated preview has been requested
 	onDelete          func()
+	onPreviewGenerated func(filePath, previewPath string) // Callback to update database
 	thumbDir          string
 	duration          int
 	extension         string
@@ -92,11 +93,11 @@ type MediaCard struct {
 	extensionLabel    *canvas.Text      // Extension text
 }
 
-func NewMediaCard(file models.MediaFile, thumbDir string) *MediaCard {
-	return NewMediaCardWithForce(file, thumbDir, false)
+func NewMediaCard(file models.MediaFile, thumbDir string, onPreviewGenerated func(filePath, previewPath string)) *MediaCard {
+	return NewMediaCardWithForce(file, thumbDir, false, onPreviewGenerated)
 }
 
-func NewMediaCardWithForce(file models.MediaFile, thumbDir string, forceRegenerate bool) *MediaCard {
+func NewMediaCardWithForce(file models.MediaFile, thumbDir string, forceRegenerate bool, onPreviewGenerated func(filePath, previewPath string)) *MediaCard {
 	mediaType := GetMediaType(file.Filename)
 
 	// Use friendly title if available, otherwise use filename
@@ -112,16 +113,17 @@ func NewMediaCardWithForce(file models.MediaFile, thumbDir string, forceRegenera
 	}
 
 	card := &MediaCard{
-		mediaType:       mediaType,
-		filePath:        file.Path,
-		fileName:        file.Filename,
-		thumbnailPath:   file.PreviewPath,
-		thumbDir:        thumbDir,
-		duration:        file.Duration,
-		extension:       strings.ToUpper(strings.TrimPrefix(filepath.Ext(file.Filename), ".")),
-		isHovered:       false,
-		hasAnimation:    false,
-		forceRegenerate: forceRegenerate,
+		mediaType:         mediaType,
+		filePath:          file.Path,
+		fileName:          file.Filename,
+		thumbnailPath:     file.PreviewPath,
+		thumbDir:          thumbDir,
+		duration:          file.Duration,
+		extension:         strings.ToUpper(strings.TrimPrefix(filepath.Ext(file.Filename), ".")),
+		isHovered:         false,
+		hasAnimation:      false,
+		forceRegenerate:   forceRegenerate,
+		onPreviewGenerated: onPreviewGenerated,
 	}
 
 	card.setupContent()
@@ -199,6 +201,10 @@ func (mc *MediaCard) loadPreview(mediaTypeStr string) {
 		}
 		mc.thumbnailPath = path
 		mc.updateStaticThumbnail(path)
+		// Update database with the preview path
+		if mc.onPreviewGenerated != nil {
+			mc.onPreviewGenerated(mc.filePath, path)
+		}
 	})
 }
 

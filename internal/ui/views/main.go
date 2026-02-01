@@ -58,8 +58,8 @@ type MainView struct {
 	sortedFiles   []SortableMediaFile
 	isSorting     bool
 	// UI components for state persistence
-	mainSplit    *container.Split // Reference to the main HSplit container
-	sidebarSplit *container.Split // Reference to the sidebar HSplit container
+	mainSplit    *container.Split  // Reference to the main HSplit container
+	sidebarSplit *container.Split  // Reference to the sidebar HSplit container
 	treeScroll   *container.Scroll // Reference to the folders tree scroll container
 	// Tags filtering
 	selectedTags map[string]bool
@@ -384,9 +384,13 @@ func (v *MainView) RefreshMediaGridWithForce(forceRegenerate bool) {
 
 			var card *components.MediaCard
 			if forceRegenerate {
-				card = components.NewMediaCardWithForce(mediaFile, v.config.ThumbnailDir, true)
+				card = components.NewMediaCardWithForce(mediaFile, v.config.ThumbnailDir, true, func(path, previewPath string) {
+					v.database.UpdateMediaFilePreviewPath(path, previewPath)
+				})
 			} else {
-				card = components.NewMediaCard(mediaFile, v.config.ThumbnailDir)
+				card = components.NewMediaCard(mediaFile, v.config.ThumbnailDir, func(path, previewPath string) {
+					v.database.UpdateMediaFilePreviewPath(path, previewPath)
+				})
 			}
 			card.SetOnDelete(func() {
 				v.RefreshMediaGrid()
@@ -456,7 +460,9 @@ func (v *MainView) createMediaGrid() fyne.CanvasObject {
 				}
 			}
 
-			card := components.NewMediaCard(mediaFile, v.config.ThumbnailDir)
+			card := components.NewMediaCard(mediaFile, v.config.ThumbnailDir, func(path, previewPath string) {
+				v.database.UpdateMediaFilePreviewPath(path, previewPath)
+			})
 			card.SetOnDelete(func() {
 				v.RefreshMediaGrid()
 			})
@@ -901,7 +907,7 @@ func (v *MainView) Build() fyne.CanvasObject {
 				}
 			}
 		})
-		selectDialog := dialog.NewCustomConfirm("Select Folder to Delete", "Delete", "Cancel", 
+		selectDialog := dialog.NewCustomConfirm("Select Folder to Delete", "Delete", "Cancel",
 			container.NewVBox(
 				widget.NewLabel("Select a folder to delete:"),
 				selectWidget,
@@ -910,8 +916,8 @@ func (v *MainView) Build() fyne.CanvasObject {
 					return
 				}
 				// Confirm delete
-				confirmDialog := dialog.NewConfirm("Confirm Delete", 
-					fmt.Sprintf("Delete folder '%s' and all its media files?", selectedFolder.Name), 
+				confirmDialog := dialog.NewConfirm("Confirm Delete",
+					fmt.Sprintf("Delete folder '%s' and all its media files?", selectedFolder.Name),
 					func(confirmed bool) {
 						if !confirmed {
 							return

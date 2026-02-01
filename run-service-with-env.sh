@@ -1,9 +1,0 @@
-#!/bin/bash
-
-# Load environment variables for the service
-export TMDB_API_KEY='6d4a63549daad44f3abcb460750bb7d1'
-export TMDB_READ_ACCESS_TOKEN='eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiI2ZDRhNjM1NDlkYWFkNDRmM2FiY2I0NjA3NTBiYjdkMSIsIm5iZiI6MTczNDgzOTc0Ny41NjksInN1YiI6IjY3NjhiMDYzMTU2Y2U1ZTRjMjJlYzNiZSIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.5K8gOOPCU8IMp_QOVnS3Jw5nF8EKP_wqr6xY6pYR1Ww'
-export NORDVPN_TOKEN='e9f2ab6fa17c42dab0bd37549c1cb2f9'
-
-# Run the service binary
-exec ./tmp/media-manager-service
