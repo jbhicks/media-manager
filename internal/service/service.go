@@ -60,7 +60,7 @@ func (s *MediaService) Start() error {
 	}
 	s.downloadManager = downloadManager
 
-	startPort := 8080
+	startPort := 8081
 	if envPort := os.Getenv("PORT"); envPort != "" {
 		if p, err := strconv.Atoi(envPort); err == nil {
 			startPort = p

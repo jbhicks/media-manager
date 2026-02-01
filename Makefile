@@ -1,5 +1,12 @@
 # Makefile
 
+# Platform detection - more robust for Windows, MSYS2, Cygwin, WSL, Linux, macOS
+ifeq '$(findstring ;,$(PATH))' ';'
+    DETECTED_OS := Windows
+else
+    DETECTED_OS := $(shell uname -s 2>/dev/null || echo "Unknown")
+endif
+
 # Go parameters
 GOCMD=go
 GOBUILD=$(GOCMD) build
@@ -14,12 +21,19 @@ SERVICE_BINARY=media-manager-service
 CMD_PATH=./cmd/media-manager
 SERVICE_PATH=./cmd/media-manager-service
 
+# Binary extension based on platform
+ifeq ($(DETECTED_OS),Windows)
+    BINARY_EXT := .exe
+else
+    BINARY_EXT :=
+endif
+
 .PHONY: all dev build build-service clean clear-cache test install install-service
 
 all: dev
 
 dev:
-ifeq ($(OS),Windows_NT)
+ifeq ($(DETECTED_OS),Windows)
 	if not exist tmp mkdir tmp
 	powershell -Command "air -c .air.toml *>&1 | Tee-Object tmp/app.log"
 else
@@ -29,26 +43,36 @@ endif
 
 # View logs only (when dev is already running)
 logs:
-ifeq ($(OS),Windows_NT)
+ifeq ($(DETECTED_OS),Windows)
 	powershell -Command "Get-Content tmp/app.log -Wait -Tail 50"
 else
 	tail -f tmp/app.log
 endif
 
 build:
+ifeq ($(DETECTED_OS),Windows)
 	$(GOBUILD) -o tmp/$(BINARY_NAME).exe $(CMD_PATH)/main.go
+else
+	$(GOBUILD) -o tmp/$(BINARY_NAME) $(CMD_PATH)/main.go
+endif
 
 build-service:
+ifeq ($(DETECTED_OS),Windows)
+	$(GOBUILD) -o $(CURDIR)/bin/$(SERVICE_BINARY).exe $(SERVICE_PATH)/main.go
+else
 	$(GOBUILD) -o $(CURDIR)/bin/$(SERVICE_BINARY) $(SERVICE_PATH)/main.go
+endif
 
 build-all: build build-service
 
 clean:
 	$(GOCLEAN)
-ifeq ($(OS),Windows_NT)
+ifeq ($(DETECTED_OS),Windows)
 	del tmp\$(BINARY_NAME).exe
+	del bin\$(SERVICE_BINARY).exe
 else
-	rm -f bin/$(BINARY_NAME)
+	rm -f tmp/$(BINARY_NAME)
+	rm -f bin/$(SERVICE_BINARY)
 endif
 
 clear-cache:
