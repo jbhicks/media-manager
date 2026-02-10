@@ -125,9 +125,8 @@ func runApp(dir string) {
 	if err != nil {
 		log.Fatalf("Failed to create application!: %v", err)
 	}
-	application.Run()
 
-	// Setup file watcher
+	// Setup file watcher BEFORE showing window to avoid threading issues on Windows
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		log.Fatal(err)
@@ -161,6 +160,7 @@ func runApp(dir string) {
 		log.Fatal(err)
 	}
 
-	// Keep main goroutine alive
-	<-make(chan struct{})
+	// Run the application on the main thread
+	// This is a blocking call that returns when the window is closed
+	application.Run()
 }

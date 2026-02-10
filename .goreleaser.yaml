@@ -8,7 +8,7 @@ builds:
     goarch:
       - amd64
     ldflags:
-      - -s -w  # Strip debug info for smaller binaries
+      - -s -w -H=windowsgui  # Strip debug info and hide console window
   - id: media-manager-service
     main: ./cmd/media-manager-service
     binary: media-manager-service
@@ -23,12 +23,9 @@ archives:
       - media-manager
       - media-manager-service
     format: zip
-nfpms: []  # Skip Linux packages for now
-# nsis:
-#   - id: media-manager-installer
-#     builds:
-#       - media-manager
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+nfpms: []  # Skip Linux packages for now - focus on Windows installer
 release:
   github:
-    owner: jbhicks  # Updated with your GitHub username
+    owner: jbhicks
     name: media-manager

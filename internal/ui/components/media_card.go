@@ -66,31 +66,31 @@ const (
 // Uses a modern full-bleed design with image filling the card and overlay labels
 type MediaCard struct {
 	widget.BaseWidget
-	mediaType         MediaType
-	filePath          string
-	fileName          string
-	thumbnailPath     string          // Static JPG thumbnail path
-	animatedFrames    *AnimatedFrames // Frame-based animation widget
-	staticImage       *canvas.Image   // Static thumbnail image
-	forceRegenerate   bool
-	icon              *widget.Icon
-	label             *canvas.Text           // Filename label (canvas.Text for styling)
-	labelBackground   *canvas.LinearGradient // Bottom gradient overlay
-	background        *canvas.Rectangle      // Card background with rounded corners
-	hoverOverlay      *canvas.Rectangle      // Semi-transparent hover effect
-	content           fyne.CanvasObject
-	isHovered         bool
-	hasAnimation      bool
-	animatedRequested bool // Whether animated preview has been requested
-	onDelete          func()
+	mediaType          MediaType
+	filePath           string
+	fileName           string
+	thumbnailPath      string          // Static JPG thumbnail path
+	animatedFrames     *AnimatedFrames // Frame-based animation widget
+	staticImage        *canvas.Image   // Static thumbnail image
+	forceRegenerate    bool
+	icon               *widget.Icon
+	label              *canvas.Text           // Filename label (canvas.Text for styling)
+	labelBackground    *canvas.LinearGradient // Bottom gradient overlay
+	background         *canvas.Rectangle      // Card background with rounded corners
+	hoverOverlay       *canvas.Rectangle      // Semi-transparent hover effect
+	content            fyne.CanvasObject
+	isHovered          bool
+	hasAnimation       bool
+	animatedRequested  bool // Whether animated preview has been requested
+	onDelete           func()
 	onPreviewGenerated func(filePath, previewPath string) // Callback to update database
-	thumbDir          string
-	duration          int
-	extension         string
-	durationBadge     *canvas.Rectangle // Background for duration badge
-	durationLabel     *canvas.Text      // Duration text
-	extensionBadge    *canvas.Rectangle // Background for extension badge
-	extensionLabel    *canvas.Text      // Extension text
+	thumbDir           string
+	duration           int
+	extension          string
+	durationBadge      *canvas.Rectangle // Background for duration badge
+	durationLabel      *canvas.Text      // Duration text
+	extensionBadge     *canvas.Rectangle // Background for extension badge
+	extensionLabel     *canvas.Text      // Extension text
 }
 
 func NewMediaCard(file models.MediaFile, thumbDir string, onPreviewGenerated func(filePath, previewPath string)) *MediaCard {
@@ -113,16 +113,16 @@ func NewMediaCardWithForce(file models.MediaFile, thumbDir string, forceRegenera
 	}
 
 	card := &MediaCard{
-		mediaType:         mediaType,
-		filePath:          file.Path,
-		fileName:          file.Filename,
-		thumbnailPath:     file.PreviewPath,
-		thumbDir:          thumbDir,
-		duration:          file.Duration,
-		extension:         strings.ToUpper(strings.TrimPrefix(filepath.Ext(file.Filename), ".")),
-		isHovered:         false,
-		hasAnimation:      false,
-		forceRegenerate:   forceRegenerate,
+		mediaType:          mediaType,
+		filePath:           file.Path,
+		fileName:           file.Filename,
+		thumbnailPath:      file.PreviewPath,
+		thumbDir:           thumbDir,
+		duration:           file.Duration,
+		extension:          strings.ToUpper(strings.TrimPrefix(filepath.Ext(file.Filename), ".")),
+		isHovered:          false,
+		hasAnimation:       false,
+		forceRegenerate:    forceRegenerate,
 		onPreviewGenerated: onPreviewGenerated,
 	}
 

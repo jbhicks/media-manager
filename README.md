@@ -14,38 +14,53 @@ A native desktop media management application built with Go and Fyne for browsin
 - **Thumbnail Generation**: Automatic thumbnail creation for fast browsing
 - **Tagging System**: Organize files with custom tags and colors
 - **SQLite Database**: Local storage with no external dependencies
+- **Background Service**: Automated torrent downloading and media management
 - **Torrent Download Manager**: Automated torrent searching and downloading with multi-query aggregation
-  - Jackett integration for multi-indexer searching
-  - Multi-query genre search for movies (21 queries including action, comedy, drama, etc.)
-  - Smart filtering by seeders, size, resolution, and upload age
-  - InfoHash-based deduplication across search results
-  - Configurable download rules with automatic execution
+
+## Components
+
+### Desktop Application
+The main GUI application for browsing and managing media files.
+
+### Background Service  
+Automated service for torrent downloads and media processing. See [SERVICE.md](docs/SERVICE.md) for details.
 
 ## Installation
 
 ### Prerequisites
-- Go 1.21+ 
+- Go 1.21+
 - C/C++ compiler (for Fyne dependencies)
-
-**Note:** FFmpeg is automatically downloaded on first run for video thumbnail generation. No manual installation required.
-
-### Supported Platforms
-- **Windows** - Full support (tested on Windows 10/11)
-- **macOS** - Full support (Intel and Apple Silicon)
-- **Linux** - Full support
 
 ### Build
 ```bash
 git clone <repository>
 cd media-manager
 go mod tidy
+
+# Build GUI application
 go build -o bin/media-manager cmd/media-manager/main.go
+
+# Build background service
+go build -o bin/media-manager-service cmd/media-manager-service/main.go
+
+# Create Windows installer (includes both applications)
+make installer
 ```
 
-### Run
+### Installers
+- **Windows**: `make installer` creates `dist/media-manager_installer.exe` - a complete Windows installer with shortcuts and uninstaller
+- **Binaries**: Individual executables for Windows, macOS, and Linux available in `dist/` directory
 ```bash
+# GUI application (runs without console window)
 ./bin/media-manager
+
+# Background service (console application for logging)
+./bin/media-manager-service
 ```
+
+### Application Types
+- **GUI Application**: Built with `-H=windowsgui` flag - runs as a pure Windows GUI application with no console window
+- **Background Service**: Built as console application - shows terminal for logging and debugging
 
 ### Development Flags
 
@@ -73,22 +88,38 @@ go build -o bin/media-manager cmd/media-manager/main.go
 ## Project Structure
 
 ```
-├── cmd/media-manager/     # Application entry point
-├── internal/
-│   ├── app/              # Application setup and main window
-│   ├── ui/               # Fyne UI components and views
-│   ├── db/               # Database layer and models
-│   ├── scanner/          # File system scanning
-│   ├── preview/          # Thumbnail generation
-│   ├── ffmpeg/           # FFmpeg binary management (auto-download)
-│   ├── service/          # Download manager and business logic
-│   ├── torrent/          # Torrent search providers (Jackett, RARBG, etc.)
-│   └── config/           # Configuration management
-├── pkg/
-│   ├── models/           # Shared data structures
-│   └── utils/            # Utility functions
-├── examples/             # Demo scripts and examples
-└── bin/                  # Built executables
+cmd/
+├── media-manager/          # GUI application entry point
+│   ├── main.go            # Fyne desktop app
+│   └── main_test.go       # GUI tests
+├── media-manager-service/  # Background service entry point
+│   └── main.go            # HTTP API service
+└── clear-previews/        # Utility for clearing previews
+    └── main.go
+
+internal/
+├── app/                   # Main application logic
+├── config/                # Configuration management
+├── db/                    # Database layer (SQLite + GORM)
+├── ffmpeg/                # Video processing utilities
+├── jellyfin/              # Jellyfin integration
+├── preview/               # Thumbnail and preview generation
+├── scanner/               # File system scanning
+├── service/               # Background service logic
+│   ├── download_manager.go # Torrent download management
+│   ├── http_server.go     # REST API endpoints
+│   ├── service.go          # Main service orchestration
+│   ├── suggestion_service.go # Media suggestions
+│   └── tmdb_service.go     # TMDB API integration
+├── tagger/                # File tagging system
+├── torrent/               # Torrent search providers
+└── ui/                    # GUI components and views
+
+pkg/models/                # Shared data models
+web/                       # Web UI assets (HTML, CSS, JS)
+docs/                      # Documentation
+reference/                 # Reference materials (Primer CSS)
+scripts/                   # Build and utility scripts
 ```
 
 ## FFmpeg Handling
@@ -193,14 +224,22 @@ Download rules support the following parameters:
 ## Development
 
 ```bash
-# Run application
+# Run GUI application (shows console during development)
 go run cmd/media-manager/main.go
+
+# Run background service (always shows console for logging)
+go run cmd/media-manager-service/main.go
 
 # Run tests
 go test ./...
 
 # Build for different platforms
-GOOS=windows go build -o bin/media-manager.exe cmd/media-manager/main.go
+GOOS=windows go build -ldflags="-H=windowsgui" -o bin/media-manager.exe cmd/media-manager/main.go
+GOOS=windows go build -o bin/media-manager-service.exe cmd/media-manager-service/main.go
 GOOS=darwin go build -o bin/media-manager-mac cmd/media-manager/main.go
+GOOS=darwin go build -o bin/media-manager-service-mac cmd/media-manager-service/main.go
 GOOS=linux go build -o bin/media-manager-linux cmd/media-manager/main.go
+GOOS=linux go build -o bin/media-manager-service-linux cmd/media-manager-service/main.go
 ```
+
+**Note**: The GUI application is built with `-H=windowsgui` to hide the console window in production. During development with `go run`, the console remains visible for debugging.

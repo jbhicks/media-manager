@@ -342,21 +342,43 @@ func generateImageThumbnail(srcPath, thumbPath string) error {
 	return nil
 }
 
+func getBestHWAccel() string {
+	accels, err := GetFFmpegHardwareAccelerations()
+	if err != nil {
+		return ""
+	}
+	preferred := []string{"cuda", "dxva2", "qsv", "d3d11va", "vaapi", "videotoolbox"}
+	for _, p := range preferred {
+		for _, a := range accels {
+			if a == p {
+				return p
+			}
+		}
+	}
+	return ""
+}
+
 func generateVideoThumbnail(srcPath, thumbPath string) error {
-	// Use FFmpeg to extract a frame from the video with uniform dimensions
-	fmt.Printf("[DEBUG] Running ffmpeg command: ffmpeg -i %s -ss 00:00:01 -vframes 1 -vf scale=180:180:force_original_aspect_ratio=increase,crop=180:180 -y %s\n", srcPath, thumbPath)
+	fmt.Printf("[DEBUG] Running ffmpeg command for video thumbnail: %s -> %s\n", srcPath, thumbPath)
 	fmt.Printf("[DEBUG] Source file exists: %v\n", fileExists(srcPath))
 	fmt.Printf("[DEBUG] Thumbnail path writable: %v\n", pathWritable(thumbPath))
-	cmd, err := ffmpeg.NewFFmpegCommand(
-		"-loglevel", "warning",
+
+	// Detect best hardware acceleration
+	hwaccel := getBestHWAccel()
+	args := []string{"-loglevel", "warning"}
+	if hwaccel != "" {
+		args = append(args, "-hwaccel", hwaccel)
+		fmt.Printf("[INFO] Using GPU acceleration: %s\n", hwaccel)
+	}
+	args = append(args,
 		"-i", srcPath,
-		"-ss", "00:00:01", // Extract frame at 1 second
-		"-vframes", "1", // Extract only 1 frame
-		"-vf", "scale=180:101:force_original_aspect_ratio=increase,crop=180:101", // Scale and crop to 180x101
-		"-f", "image2", // Explicitly set output format to image2 to avoid sequence pattern errors
-		"-y", // Overwrite output file
-		thumbPath,
+		"-ss", "00:00:01",
+		"-vframes", "1",
+		"-vf", "scale=180:101:force_original_aspect_ratio=increase,crop=180:101",
+		"-f", "image2",
+		"-y", thumbPath,
 	)
+	cmd, err := ffmpeg.NewFFmpegCommand(args...)
 	if err != nil {
 		return fmt.Errorf("failed to get ffmpeg: %w", err)
 	}

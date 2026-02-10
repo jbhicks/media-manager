@@ -514,3 +514,35 @@ func TestGenerateSceneBasedPreview_Fallback(t *testing.T) {
 		t.Errorf("Scene preview not created even with fallback: %s", outputPath)
 	}
 }
+
+func BenchmarkGenerateSceneBasedPreview(b *testing.B) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		b.Skip("ffmpeg not found, skipping benchmark")
+	}
+
+	tempDir := os.TempDir()
+	videoPath := filepath.Join(tempDir, "benchmark_test.mp4")
+	outputPath := filepath.Join(tempDir, "scene_preview_bench.png")
+
+	// Create a synthetic test video if it doesn't exist
+	if _, err := os.Stat(videoPath); os.IsNotExist(err) {
+		cmd := exec.Command("ffmpeg",
+			"-f", "lavfi", "-i", "color=c=blue:s=640x360:d=10",
+			"-c:v", "libx264", videoPath,
+		)
+		_ = cmd.Run() // Ignore error for repeated runs
+	}
+
+	opts := &ScenePreviewOptions{
+		SceneThreshold: 0.3,
+		TileWidth:      160,
+		TileHeight:     120,
+		Cols:           4,
+		Rows:           3,
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = GenerateSceneBasedPreview(videoPath, outputPath, opts)
+	}
+}

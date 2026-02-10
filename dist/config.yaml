@@ -25,7 +25,7 @@ builds:
     gobinary: go
     command: build
     ldflags:
-      - -s -w
+      - -s -w -H=windowsgui
   - id: media-manager-service
     goos:
       - windows
@@ -52,7 +52,7 @@ archives:
     builds:
       - media-manager
       - media-manager-service
-    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
     format: zip
     files:
       - src: license*
