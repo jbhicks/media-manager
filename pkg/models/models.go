@@ -5,21 +5,22 @@ import (
 )
 
 type MediaFile struct {
-	ID            uint      `json:"id" gorm:"primaryKey"`
-	Path          string    `json:"path" gorm:"uniqueIndex"`
-	Filename      string    `json:"filename"`
-	Size          int64     `json:"size"`
-	ModTime       time.Time `json:"mod_time"`
-	FileType      string    `json:"file_type"` // image, video
-	MimeType      string    `json:"mime_type"`
-	PreviewPath   string    `json:"preview_path"`
-	Width         int       `json:"width"`
-	Height        int       `json:"height"`
-	Duration      int       `json:"duration"`       // for videos, in seconds
-	FriendlyTitle string    `json:"friendly_title"` // Extracted friendly title for display
-	Tags          []Tag     `json:"tags" gorm:"many2many:file_tags;"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID             uint      `json:"id" gorm:"primaryKey"`
+	Path           string    `json:"path" gorm:"uniqueIndex"`
+	Filename       string    `json:"filename"`
+	Size           int64     `json:"size"`
+	ModTime        time.Time `json:"mod_time"`
+	FileType       string    `json:"file_type"` // image, video
+	MimeType       string    `json:"mime_type"`
+	PreviewPath    string    `json:"preview_path"`
+	PreviewModTime time.Time `json:"preview_mod_time"`
+	Width          int       `json:"width"`
+	Height         int       `json:"height"`
+	Duration       int       `json:"duration"`       // for videos, in seconds
+	FriendlyTitle  string    `json:"friendly_title"` // Extracted friendly title for display
+	Tags           []Tag     `json:"tags" gorm:"many2many:file_tags;"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type Tag struct {

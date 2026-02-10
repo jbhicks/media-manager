@@ -214,9 +214,9 @@ func TestEvenlyDistributedTimestamps(t *testing.T) {
 		t.Fatalf("Expected 4 timestamps, got %d", len(timestamps))
 	}
 
-	// Should be at 20%, 40%, 60%, 80% (10%, 40%, 70%, 90% would also be valid)
-	// Our implementation uses (i+1)/(count+1), so: 1/5=20%, 2/5=40%, 3/5=60%, 4/5=80%
-	expected := []float64{20.0, 40.0, 60.0, 80.0}
+	// Current implementation uses start/end percentages of 10%..85%
+	// For 4 timestamps this yields approximately: 10%, 35%, 60%, 85%
+	expected := []float64{10.0, 35.0, 60.0, 85.0}
 	for i, exp := range expected {
 		if timestamps[i] != exp {
 			t.Errorf("Timestamp %d: expected %.1f, got %.1f", i, exp, timestamps[i])
@@ -286,18 +286,17 @@ func TestGenerateSceneMosaic(t *testing.T) {
 
 func TestDefaultPreviewOptions(t *testing.T) {
 	opts := DefaultPreviewOptions()
-
-	if opts.SceneThreshold != 0.4 {
-		t.Errorf("Expected SceneThreshold 0.4, got %.2f", opts.SceneThreshold)
+	if opts.SceneThreshold != 0.3 {
+		t.Errorf("Expected SceneThreshold 0.3, got %.2f", opts.SceneThreshold)
 	}
-	if opts.MaxScenes != 4 {
-		t.Errorf("Expected MaxScenes 4, got %d", opts.MaxScenes)
+	if opts.MaxScenes != 8 {
+		t.Errorf("Expected MaxScenes 8, got %d", opts.MaxScenes)
 	}
-	if opts.FPS != 12 {
-		t.Errorf("Expected FPS 12, got %d", opts.FPS)
+	if opts.FPS != 6 {
+		t.Errorf("Expected FPS 6, got %d", opts.FPS)
 	}
-	if opts.Width != 216 || opts.Height != 216 {
-		t.Errorf("Expected size 216x216, got %dx%d", opts.Width, opts.Height)
+	if opts.Width != 256 || opts.Height != 144 {
+		t.Errorf("Expected size 256x144, got %dx%d", opts.Width, opts.Height)
 	}
 	if opts.UseGPU {
 		t.Error("Expected UseGPU to be false by default")

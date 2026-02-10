@@ -85,6 +85,14 @@ func worker() {
 
 // GenerateUniqueFilename creates a unique hex filename based on the source path
 func GenerateUniqueFilename(filePath, extension string) string {
+	// Include file modtime and size when available so previews change when file content changes
+	if info, err := os.Stat(filePath); err == nil {
+		key := fmt.Sprintf("%s:%d:%d", filePath, info.ModTime().UnixNano(), info.Size())
+		hash := sha256.Sum256([]byte(key))
+		return hex.EncodeToString(hash[:]) + extension
+	}
+
+	// Fallback to path-only hash if stat fails
 	hash := sha256.Sum256([]byte(filePath))
 	return hex.EncodeToString(hash[:]) + extension
 }
