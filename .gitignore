@@ -65,3 +65,6 @@ start-service.sh
 *.msi
 *.zip
 media-manager_installer.exe
+
+# Local sample media (large)
+/media/
