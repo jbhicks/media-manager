@@ -3,6 +3,7 @@ package db
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -107,8 +108,13 @@ func (d *Database) DeleteMediaFilesByDirectory(dirPath string) error {
 	return d.db.Where("path LIKE ?", dirPath+"%").Delete(&models.MediaFile{}).Error
 }
 
-func (d *Database) UpdateMediaFilePreviewPath(path, previewPath string) error {
-	return d.db.Model(&models.MediaFile{}).Where("path = ?", path).Update("preview_path", previewPath).Error
+func (d *Database) UpdateMediaFilePreviewPath(path, previewPath string, previewModTime time.Time) error {
+	// Update both preview path and the modtime used to generate it
+	updates := map[string]interface{}{
+		"preview_path":     previewPath,
+		"preview_mod_time": previewModTime,
+	}
+	return d.db.Model(&models.MediaFile{}).Where("path = ?", path).Updates(updates).Error
 }
 
 func (d *Database) Close() error {

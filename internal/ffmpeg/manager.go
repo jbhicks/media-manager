@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"syscall"
 )
 
 //go:embed bin/*
@@ -244,7 +245,14 @@ func NewFFmpegCommand(args ...string) (*exec.Cmd, error) {
 	if path == "" {
 		return nil, fmt.Errorf("ffmpeg path is empty")
 	}
-	return exec.Command(path, args...), nil
+	cmd := exec.Command(path, args...)
+	// Hide console window on Windows
+	if runtime.GOOS == "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			CreationFlags: 0x08000000, // CREATE_NO_WINDOW
+		}
+	}
+	return cmd, nil
 }
 
 func NewFFprobeCommand(args ...string) (*exec.Cmd, error) {
@@ -252,7 +260,17 @@ func NewFFprobeCommand(args ...string) (*exec.Cmd, error) {
 	if err != nil {
 		return nil, err
 	}
-	return exec.Command(path, args...), nil
+	if path == "" {
+		return nil, fmt.Errorf("ffprobe path is empty")
+	}
+	cmd := exec.Command(path, args...)
+	// Hide console window on Windows
+	if runtime.GOOS == "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			CreationFlags: 0x08000000, // CREATE_NO_WINDOW
+		}
+	}
+	return cmd, nil
 }
 
 func CalculateSHA256(filePath string) (string, error) {

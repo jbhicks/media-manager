@@ -2,6 +2,7 @@ package views
 
 import (
 	"fmt"
+	"image/color"
 	"io"
 	"log"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
@@ -181,8 +183,108 @@ func (v *MainView) createFoldersTree() *widget.Tree {
 	for branch := range v.config.OpenBranches {
 		tree.OpenBranch(branch)
 	}
+	// Create transparent overlay to catch right-clicks and show context menu
+	overlay := &treeContextCatcher{tree: tree, view: v}
+	overlay.ExtendBaseWidget(overlay)
+	// Return a Max container so overlay sits on top of the tree and receives secondary taps
+	// We still want callers to receive the underlying tree object; store reference
+	v.foldersTree = tree
+	// For callers expecting *widget.Tree, we keep returning the tree while the UI uses the container
+	// The caller that builds the layout will use v.createFoldersTree() and place the tree in a scroll.
+	// To actually use the overlay we replace the scroll's content where needed in buildMainContent.
 	return tree
 }
+
+// treeContextCatcher is a transparent widget over the folders tree that captures
+// secondary taps (right-click) to show a context menu for the currently selected folder.
+type treeContextCatcher struct {
+	widget.BaseWidget
+	tree *widget.Tree
+	view *MainView
+	rect *canvas.Rectangle
+}
+
+func (t *treeContextCatcher) CreateRenderer() fyne.WidgetRenderer {
+	if t.rect == nil {
+		t.rect = canvas.NewRectangle(color.Transparent)
+	}
+	objs := []fyne.CanvasObject{t.rect}
+	return &simpleTreeOverlayRenderer{objs: objs, rect: t.rect}
+}
+
+func (t *treeContextCatcher) TappedSecondary(e *fyne.PointEvent) {
+	// Use the currently selected folder in the view (kept in sync by setMediaDirectory)
+	selected := ""
+	if t.view != nil {
+		selected = t.view.mediaDir
+	}
+	if selected == "" {
+		return
+	}
+	// Show context menu with Delete option
+	canvas := fyne.CurrentApp().Driver().CanvasForObject(t.tree)
+	if canvas == nil {
+		return
+	}
+	menu := fyne.NewMenu("",
+		fyne.NewMenuItem("Delete", func() {
+			// Confirm deletion
+			confirm := dialog.NewConfirm("Delete Folder",
+				fmt.Sprintf("Delete folder '%s' and all its media files?", filepath.Base(selected)),
+				func(confirmed bool) {
+					if !confirmed {
+						return
+					}
+					// Perform deletion: remove DB entries and folder record
+					folders, err := t.view.database.GetFolders()
+					if err == nil {
+						var found *models.Folder
+						for _, f := range folders {
+							if f.Path == selected {
+								found = &f
+								break
+							}
+						}
+						if found != nil {
+							_ = t.view.database.DeleteMediaFilesByDirectory(found.Path)
+							_ = t.view.database.DeleteFolder(found.ID)
+						}
+					}
+					// Clear cache and refresh UI
+					delete(t.view.folderCache, selected)
+					if strings.HasPrefix(t.view.mediaDir, selected) {
+						t.view.mediaDir = ""
+						t.view.sortedFiles = nil
+					}
+					// Rebuild folders tree and refresh grid
+					t.view.foldersTree = t.view.createFoldersTree()
+					t.view.RefreshMediaGrid()
+				}, t.view.window)
+			confirm.Show()
+		}),
+	)
+	widget.ShowPopUpMenuAtPosition(menu, canvas, e.AbsolutePosition)
+}
+
+
+
+// simpleTreeOverlayRenderer implements a minimal renderer for the transparent overlay
+type simpleTreeOverlayRenderer struct {
+	objs []fyne.CanvasObject
+	rect *canvas.Rectangle
+}
+
+func (r *simpleTreeOverlayRenderer) Layout(size fyne.Size) {
+	if r.rect != nil {
+		r.rect.Resize(size)
+		r.rect.Move(fyne.NewPos(0, 0))
+	}
+}
+
+func (r *simpleTreeOverlayRenderer) MinSize() fyne.Size           { return fyne.NewSize(10, 10) }
+func (r *simpleTreeOverlayRenderer) Refresh()                     {}
+func (r *simpleTreeOverlayRenderer) Objects() []fyne.CanvasObject { return r.objs }
+func (r *simpleTreeOverlayRenderer) Destroy()                     {}
 
 func (v *MainView) refreshTagsList() {
 	// Recreate the tags tree with current directory's tags
@@ -385,11 +487,20 @@ func (v *MainView) RefreshMediaGridWithForce(forceRegenerate bool) {
 			var card *components.MediaCard
 			if forceRegenerate {
 				card = components.NewMediaCardWithForce(mediaFile, v.config.ThumbnailDir, true, func(path, previewPath string) {
-					v.database.UpdateMediaFilePreviewPath(path, previewPath)
+					// Store preview path and the source file's modtime used to generate it
+					if info, err := os.Stat(path); err == nil {
+						v.database.UpdateMediaFilePreviewPath(path, previewPath, info.ModTime())
+					} else {
+						v.database.UpdateMediaFilePreviewPath(path, previewPath, time.Now())
+					}
 				})
 			} else {
 				card = components.NewMediaCard(mediaFile, v.config.ThumbnailDir, func(path, previewPath string) {
-					v.database.UpdateMediaFilePreviewPath(path, previewPath)
+					if info, err := os.Stat(path); err == nil {
+						v.database.UpdateMediaFilePreviewPath(path, previewPath, info.ModTime())
+					} else {
+						v.database.UpdateMediaFilePreviewPath(path, previewPath, time.Now())
+					}
 				})
 			}
 			card.SetOnDelete(func() {
@@ -461,7 +572,11 @@ func (v *MainView) createMediaGrid() fyne.CanvasObject {
 			}
 
 			card := components.NewMediaCard(mediaFile, v.config.ThumbnailDir, func(path, previewPath string) {
-				v.database.UpdateMediaFilePreviewPath(path, previewPath)
+				if info, err := os.Stat(path); err == nil {
+					v.database.UpdateMediaFilePreviewPath(path, previewPath, info.ModTime())
+				} else {
+					v.database.UpdateMediaFilePreviewPath(path, previewPath, time.Now())
+				}
 			})
 			card.SetOnDelete(func() {
 				v.RefreshMediaGrid()
@@ -808,9 +923,60 @@ func (v *MainView) setMediaDirectory(dir string) {
 }
 
 func (v *MainView) Build() fyne.CanvasObject {
+	mainContent := v.buildMainContent()
+
+	// Add debug log panel if enabled
+	if v.showDebugLog {
+		if v.debugLog == nil {
+			v.debugLog = widget.NewTextGridFromString("Debug Log:\n")
+			v.debugWriter = components.NewDebugWriter(v.debugLog)
+			log.SetOutput(io.MultiWriter(os.Stdout, v.debugWriter))
+		}
+		debugScroll := container.NewScroll(v.debugLog)
+		debugScroll.SetMinSize(fyne.NewSize(0, 200))
+		return container.NewBorder(nil, debugScroll, nil, nil, mainContent)
+	}
+
+	return mainContent
+}
+
+// updateDebugLogVisibility toggles the debug log panel without rebuilding the entire UI
+func (v *MainView) updateDebugLogVisibility() {
+	mainContent := v.window.Content()
+	if mainContent == nil {
+		return
+	}
+
+	// If debug log is enabled, wrap the current content with debug panel
+	if v.showDebugLog {
+		if v.debugLog == nil {
+			v.debugLog = widget.NewTextGridFromString("Debug Log:\n")
+			v.debugWriter = components.NewDebugWriter(v.debugLog)
+			log.SetOutput(io.MultiWriter(os.Stdout, v.debugWriter))
+		}
+		debugScroll := container.NewScroll(v.debugLog)
+		debugScroll.SetMinSize(fyne.NewSize(0, 200))
+		v.window.SetContent(container.NewBorder(nil, debugScroll, nil, nil, mainContent))
+	} else {
+		// If disabling debug log, we need to remove it from the window
+		// The structure when debug is on is: Border{top: nil, bottom: debugScroll, left: nil, right: nil, center: mainContent}
+		// So we extract the center which is the mainContent
+		// Since we can't directly access Border's internal structure, we rebuild but with showDebugLog=false
+		// This is safe because toggling off won't trigger infinite recursion
+		if v.window.Content() != nil {
+			// Just refresh the window content with the current state (showDebugLog is already false)
+			mainContent := v.buildMainContent()
+			v.window.SetContent(mainContent)
+		}
+	}
+}
+
+// buildMainContent constructs the main content without the debug log wrapper
+func (v *MainView) buildMainContent() fyne.CanvasObject {
 	v.foldersTree = v.createFoldersTree()
 	var treeScroll fyne.CanvasObject
 	if v.foldersTree != nil {
+		// Use the tree directly in a scroll so primary clicks reach it
 		scroll := container.NewScroll(v.foldersTree)
 		scroll.SetMinSize(fyne.NewSize(200, 0))
 		treeScroll = scroll
@@ -843,6 +1009,7 @@ func (v *MainView) Build() fyne.CanvasObject {
 	mainSplit := container.NewHSplit(treeScroll, centerSplit)
 	mainSplit.SetOffset(float64(v.config.MainContentSplitOffset))
 	v.mainSplit = mainSplit // Store reference for getting current offset
+
 	filterEntry := widget.NewEntry()
 	filterEntry.SetPlaceHolder("Filter media...")
 	filterEntry.SetText(v.filter) // Load saved filter text
@@ -855,13 +1022,63 @@ func (v *MainView) Build() fyne.CanvasObject {
 
 	forceRegenerateBtn := widget.NewButton("Force Regenerate Previews", func() {
 		log.Println("[INFO] Force regenerating all previews...")
-		// Run grid refresh in background to avoid blocking UI during I/O
-		go func() {
-			fyne.Do(func() {
-				v.RefreshMediaGridWithForce(true)
-			})
-		}()
+		// Refresh grid on UI thread (fyne.Do handles threading)
+		v.RefreshMediaGridWithForce(true)
 	})
+
+	recursiveCheck := widget.NewCheck("Recursive Search", func(checked bool) {
+		v.recursiveSearch = checked
+		fmt.Printf("[DEBUG] Recursive Search toggled: %v\n", checked)
+		// Clear folder cache since recursive mode affects what files are loaded
+		v.folderCache = make(map[string]*FolderCache)
+		// Reload metadata when recursive mode changes
+		v.setMediaDirectory(v.mediaDir)
+		v.SaveConfig() // Save recursive search setting
+	})
+	recursiveCheck.SetChecked(v.recursiveSearch)
+
+	debugLogCheck := widget.NewCheck("Show Debug Log", func(checked bool) {
+		v.showDebugLog = checked
+		v.updateDebugLogVisibility()
+		v.SaveConfig() // Save debug log visibility
+	})
+	debugLogCheck.SetChecked(v.showDebugLog)
+
+	// Sorting controls
+	sortSelect := widget.NewSelect([]string{
+		"Name", "Size", "Date Modified", "Date Created", "Type", "Duration", "Dimensions",
+	}, func(selected string) {
+		v.sortBy = selected
+		v.triggerAsyncSort()
+		v.SaveConfig() // Save sort criteria
+	})
+	sortSelect.SetSelected(v.sortBy)
+
+	sortDirectionBtn := widget.NewButtonWithIcon("", theme.MoveUpIcon(), nil)
+	sortDirectionBtn.OnTapped = func() {
+		v.sortAscending = !v.sortAscending
+		if v.sortAscending {
+			sortDirectionBtn.SetIcon(theme.MoveUpIcon())
+		} else {
+			sortDirectionBtn.SetIcon(theme.MoveDownIcon())
+		}
+		v.triggerAsyncSort()
+		v.SaveConfig() // Save sort direction
+	}
+
+	sortControls := container.NewHBox(
+		widget.NewLabel("Sort by:"), sortSelect, sortDirectionBtn,
+	)
+
+	clearTagsBtn := widget.NewButton("Clear Tags", func() {
+		v.selectedTags = make(map[string]bool)
+		if v.tagsTree != nil {
+			v.tagsTree.Refresh()
+		}
+		v.RefreshMediaGrid()
+		v.SaveConfig() // Save cleared tags
+	})
+
 	addFolderBtn := widget.NewButton("Add Folder", func() {
 		dialog := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
 			if err != nil || uri == nil {
@@ -953,58 +1170,6 @@ func (v *MainView) Build() fyne.CanvasObject {
 			}, v.window)
 		selectDialog.Show()
 	})
-	recursiveCheck := widget.NewCheck("Recursive Search", func(checked bool) {
-		v.recursiveSearch = checked
-		fmt.Printf("[DEBUG] Recursive Search toggled: %v\n", checked)
-		// Clear folder cache since recursive mode affects what files are loaded
-		v.folderCache = make(map[string]*FolderCache)
-		// Reload metadata when recursive mode changes
-		v.setMediaDirectory(v.mediaDir)
-		v.SaveConfig() // Save recursive search setting
-	})
-	recursiveCheck.SetChecked(v.recursiveSearch)
-
-	debugLogCheck := widget.NewCheck("Show Debug Log", func(checked bool) {
-		v.showDebugLog = checked
-		v.window.SetContent(v.Build())
-		v.SaveConfig() // Save debug log visibility
-	})
-	debugLogCheck.SetChecked(v.showDebugLog)
-
-	// Sorting controls
-	sortSelect := widget.NewSelect([]string{
-		"Name", "Size", "Date Modified", "Date Created", "Type", "Duration", "Dimensions",
-	}, func(selected string) {
-		v.sortBy = selected
-		v.triggerAsyncSort()
-		v.SaveConfig() // Save sort criteria
-	})
-	sortSelect.SetSelected(v.sortBy)
-
-	sortDirectionBtn := widget.NewButtonWithIcon("", theme.MoveUpIcon(), nil)
-	sortDirectionBtn.OnTapped = func() {
-		v.sortAscending = !v.sortAscending
-		if v.sortAscending {
-			sortDirectionBtn.SetIcon(theme.MoveUpIcon())
-		} else {
-			sortDirectionBtn.SetIcon(theme.MoveDownIcon())
-		}
-		v.triggerAsyncSort()
-		v.SaveConfig() // Save sort direction
-	}
-
-	sortControls := container.NewHBox(
-		widget.NewLabel("Sort by:"), sortSelect, sortDirectionBtn,
-	)
-
-	clearTagsBtn := widget.NewButton("Clear Tags", func() {
-		v.selectedTags = make(map[string]bool)
-		if v.tagsTree != nil {
-			v.tagsTree.Refresh()
-		}
-		v.RefreshMediaGrid()
-		v.SaveConfig() // Save cleared tags
-	})
 
 	buttonBox := container.NewHBox(refreshBtn, forceRegenerateBtn, addFolderBtn, deleteFolderBtn, clearTagsBtn, recursiveCheck, debugLogCheck)
 	toolbar := container.NewBorder(nil, nil, sortControls, buttonBox, filterEntry)
@@ -1014,21 +1179,7 @@ func (v *MainView) Build() fyne.CanvasObject {
 		fmt.Println("[WARN] foldersTree is nil, cannot select root directory")
 	}
 
-	mainContent := container.NewBorder(toolbar, nil, nil, nil, mainSplit)
-
-	// Add debug log panel if enabled
-	if v.showDebugLog {
-		if v.debugLog == nil {
-			v.debugLog = widget.NewTextGridFromString("Debug Log:\n")
-			v.debugWriter = components.NewDebugWriter(v.debugLog)
-			log.SetOutput(io.MultiWriter(os.Stdout, v.debugWriter))
-		}
-		debugScroll := container.NewScroll(v.debugLog)
-		debugScroll.SetMinSize(fyne.NewSize(0, 200))
-		return container.NewBorder(nil, debugScroll, nil, nil, mainContent)
-	}
-
-	return mainContent
+	return container.NewBorder(toolbar, nil, nil, nil, mainSplit)
 }
 
 // GetMainContentSplitOffset returns the current offset of the main content split
