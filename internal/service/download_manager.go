@@ -2,9 +2,7 @@ package service
 
 import (
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -31,6 +29,7 @@ type DownloadManager struct {
 	updateCallback  func()
 	serviceConfig   *models.ServiceConfig
 	jellyfinClient  *jellyfin.Client
+	vpnDetector     *VPNDetector
 }
 
 func NewDownloadManager(database *db.Database, cfg *models.ServiceConfig) (*DownloadManager, error) {
@@ -100,6 +99,7 @@ func NewDownloadManager(database *db.Database, cfg *models.ServiceConfig) (*Down
 		torrentSearcher: torrentSearcher,
 		serviceConfig:   cfg,
 		jellyfinClient:  jellyfinClient,
+		vpnDetector:     NewVPNDetector(),
 	}
 
 	// Recover orphaned downloads on startup
@@ -438,6 +438,11 @@ func (dm *DownloadManager) calculateBalancedScore(result *models.SearchResult) f
 }
 
 func (dm *DownloadManager) startDownload(rule *models.DownloadRule, result *models.SearchResult) error {
+	// SECURITY: Defense in depth - always check VPN before starting download
+	if !dm.isVPNActive() {
+		return fmt.Errorf("VPN is not active, refusing to start download for security")
+	}
+
 	if dm.torrentClient == nil {
 		return fmt.Errorf("no torrent client configured")
 	}
@@ -511,34 +516,12 @@ func (dm *DownloadManager) expandQueryTemplates(query string) string {
 }
 
 func (dm *DownloadManager) isVPNActive() bool {
-	client := &http.Client{
-		Timeout: 5 * time.Second,
+	if dm.vpnDetector == nil {
+		dm.vpnDetector = NewVPNDetector()
 	}
-
-	resp, err := client.Get("https://api.ipify.org?format=text")
-	if err != nil {
-		log.Printf("[VPN] Failed to check IP: %v", err)
-		return false
-	}
-	defer resp.Body.Close()
-
-	var ip strings.Builder
-	_, err = io.Copy(&ip, resp.Body)
-	if err != nil {
-		log.Printf("[VPN] Failed to read IP response: %v", err)
-		return false
-	}
-
-	publicIP := strings.TrimSpace(ip.String())
-	log.Printf("[VPN] Current public IP: %s", publicIP)
-
-	if strings.HasPrefix(publicIP, "192.168.") || strings.HasPrefix(publicIP, "10.") || strings.HasPrefix(publicIP, "172.") {
-		log.Printf("[VPN] WARNING: Using local IP address, VPN is NOT active!")
-		return false
-	}
-
-	log.Printf("[VPN] VPN appears to be active")
-	return true
+	
+	active, _ := dm.vpnDetector.IsVPNActive()
+	return active
 }
 
 func (dm *DownloadManager) UpdateTaskProgress() error {
@@ -860,6 +843,12 @@ func (dm *DownloadManager) UpdateAllProgress() {
 
 // ProcessPendingDownloads checks for pending download tasks and starts them
 func (dm *DownloadManager) ProcessPendingDownloads() {
+	// SECURITY: Check VPN before processing any downloads
+	if !dm.isVPNActive() {
+		log.Printf("[DOWNLOAD] VPN is not active, cannot process pending downloads for security")
+		return
+	}
+
 	var tasks []models.DownloadTask
 	if err := dm.db.GetDB().Where("status = ?", "pending").Order("created_at ASC").Find(&tasks).Error; err != nil {
 		log.Printf("[DOWNLOAD] Failed to query pending tasks: %v", err)
@@ -1459,4 +1448,41 @@ func (dm *DownloadManager) ReprocessLibraryFiles() (int, error) {
 // GetJellyfinClient returns the Jellyfin client (may be nil if not configured)
 func (dm *DownloadManager) GetJellyfinClient() *jellyfin.Client {
 	return dm.jellyfinClient
+}
+
+// GetVPNStatus returns the current VPN status
+func (dm *DownloadManager) GetVPNStatus() map[string]interface{} {
+	if dm.vpnDetector == nil {
+		dm.vpnDetector = NewVPNDetector()
+	}
+	
+	active, provider := dm.vpnDetector.IsVPNActive()
+	
+	status := "disconnected"
+	message := "VPN is not active"
+	
+	if active {
+		status = "connected"
+		if provider.Location != "" {
+			message = fmt.Sprintf("VPN active - %s (%s)", provider.Location, provider.Name)
+		} else if provider.Server != "" {
+			message = fmt.Sprintf("VPN active - %s (%s)", provider.Server, provider.Name)
+		} else if provider.Name != "" && provider.Name != "Unknown" {
+			message = fmt.Sprintf("VPN active (%s)", provider.Name)
+		} else {
+			message = "VPN is active"
+		}
+	}
+	
+	return map[string]interface{}{
+		"active":    active,
+		"status":    status,
+		"message":   message,
+		"ip":        "",
+		"location":  provider.Location,
+		"country":   "",
+		"provider":  provider.Name,
+		"server":    provider.Server,
+		"type":      provider.Type,
+	}
 }

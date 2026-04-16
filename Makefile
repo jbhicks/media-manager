@@ -1,97 +1,80 @@
-# Makefile
+# Makefile - Media Manager (VPN Required)
+# This application ONLY functions with VPN active for security
 
-# Go parameters
-GOCMD=go
-GOBUILD=$(GOCMD) build
-GOCLEAN=$(GOCMD) clean
-GOTEST=$(GOCMD) test
-GOGET=$(GOCMD) get
-GORUN=$(GOCMD) run
+.PHONY: all help up down status logs restart build dev test clean
 
-# Project variables
-BINARY_NAME=media-manager
-SERVICE_BINARY=media-manager-service
-CMD_PATH=./cmd/media-manager
-SERVICE_PATH=./cmd/media-manager-service
+# Default: start with VPN
+all: up
 
-.PHONY: all dev build build-service clean clear-cache test install install-service
+help:
+	@echo "Media Manager - VPN Required for Security"
+	@echo "=========================================="
+	@echo ""
+	@echo "Usage:"
+	@echo "  make up       - Start Media Manager with VPN (default)"
+	@echo "  make down     - Stop Media Manager"
+	@echo "  make status   - Check VPN and app status"
+	@echo "  make logs     - View logs"
+	@echo "  make restart  - Restart Media Manager"
+	@echo "  make dev      - Development mode with auto-reload"
+	@echo ""
+	@echo "Other:"
+	@echo "  make build    - Build Docker image"
+	@echo "  make test     - Run tests"
+	@echo "  make clean    - Clean up containers and images"
+	@echo ""
+	@echo "Your NordVPN token is already in .env"
+	@echo "PiHole continues working normally."
 
-all: dev
+# Start with VPN
+up: build
+	@docker-compose up -d
+	@echo ""
+	@echo "✓ Media Manager started with VPN"
+	@echo "Web UI: http://localhost:8080"
+	@echo ""
+	@docker-compose ps
 
-dev:
-ifeq ($(OS),Windows_NT)
-	if not exist tmp mkdir tmp
-	powershell -Command "air -c .air.toml *>&1 | Tee-Object tmp/app.log"
-else
-	mkdir -p tmp
-	air -c .air.toml 2>&1 | tee tmp/app.log
-endif
+# Stop
+down:
+	@docker-compose down
+	@echo "✓ Stopped"
 
-# View logs only (when dev is already running)
+# Status
+status:
+	@echo "Status:"
+	@echo "======="
+	@docker-compose ps
+	@echo ""
+	@echo "VPN:"
+	@docker exec media-manager nordvpn status 2>/dev/null || echo "  Disconnected"
+	@echo ""
+	@echo "IP:"
+	@docker exec media-manager curl -s https://api.ipify.org 2>/dev/null || echo "  N/A"
+
+# Logs
 logs:
-ifeq ($(OS),Windows_NT)
-	powershell -Command "Get-Content tmp/app.log -Wait -Tail 50"
-else
-	tail -f tmp/app.log
-endif
+	@docker-compose logs -f
 
+# Restart
+restart: down
+	@sleep 1
+	@$(MAKE) up
+
+# Build
 build:
-	$(GOBUILD) -ldflags="-H=windowsgui" -o tmp/$(BINARY_NAME).exe $(CMD_PATH)/main.go
+	@docker-compose build
 
-build-service:
-	$(GOBUILD) -o $(CURDIR)/bin/$(SERVICE_BINARY) $(SERVICE_PATH)/main.go
+# Dev mode with auto-reload
+dev:
+	@echo "Development mode with VPN..."
+	@docker-compose -f docker-compose.dev.yml up --build
 
-build-all: build build-service
-
-installer:
-	goreleaser build --snapshot --clean
-	@echo "Creating Windows installer..."
-	@if exist "dist\media-manager_windows_amd64_v1\media-manager.exe" ( \
-		copy "dist\media-manager_windows_amd64_v1\media-manager.exe" "." && \
-		copy "dist\media-manager-service_windows_amd64_v1\media-manager-service.exe" "." && \
-		"C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi && \
-		move "media-manager_installer.exe" "dist\" && \
-		del "media-manager.exe" && \
-		del "media-manager-service.exe" \
-	) else ( \
-		echo "Build failed - binaries not found" \
-	)
-
-clean:
-	$(GOCLEAN)
-ifeq ($(OS),Windows_NT)
-	del tmp\$(BINARY_NAME).exe
-else
-	rm -f bin/$(BINARY_NAME)
-endif
-
-clear-cache:
-	@echo "Clearing all media-manager cache..."
-	@rm -rf ~/.media-manager/thumbnails/* ~/.media-manager/previews/* ~/.media-manager/video_previews/* ./thumbnails/* 2>/dev/null || true
-	@echo "All media-manager cache cleared!"
-
+# Tests
 test:
-	$(GOTEST) ./...
+	@go test ./...
 
-install:
-	$(MAKE) build
-	@if [ -n "$$GOBIN" ]; then \
-		install_dir="$$GOBIN"; \
-	elif [ -n "$$GOPATH" ]; then \
-		install_dir="$$GOPATH/bin"; \
-	else \
-		install_dir="$$HOME/go/bin"; \
-	fi; \
-	mkdir -p "$$install_dir"; \
-	cp bin/$(BINARY_NAME) "$$install_dir/$(BINARY_NAME)"; \
-	echo "Installed $(BINARY_NAME) to $$install_dir"
-
-install-service:
-	$(MAKE) build-service
-	@echo "Installing service binary to /usr/local/bin (requires sudo)..."
-	@echo "sudo cp bin/$(SERVICE_BINARY) /usr/local/bin/$(SERVICE_BINARY)" > sudo_install_service.sh
-	@echo "sudo chmod +x /usr/local/bin/$(SERVICE_BINARY)" >> sudo_install_service.sh
-	@echo "sudo cp media-manager-service@.service /etc/systemd/system/" >> sudo_install_service.sh
-	@echo "sudo systemctl daemon-reload" >> sudo_install_service.sh
-	@echo "Please run: ./sudo_install_service.sh"
-	@chmod +x sudo_install_service.sh
+# Clean
+clean:
+	@docker-compose down -v --rmi local
+	@docker system prune -f

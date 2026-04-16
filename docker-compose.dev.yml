@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  media-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: media-manager:dev
+    container_name: media-manager-dev
+    
+    env_file:
+      - .env
+    
+    environment:
+      - NORDVPN_TOKEN=${NORDVPN_TOKEN}
+      - NORDVPN_SERVER=${NORDVPN_SERVER:-}
+      - VPN_PROTOCOL=${VPN_PROTOCOL:-nordlynx}
+      - PIHOLE_IP=${PIHOLE_IP:-}
+      - DEV_MODE=true
+    
+    volumes:
+      - ./:/build:cached
+      - ./data:/data
+      - /mnt/media:/mnt/media
+      - go-mod-cache:/go/pkg/mod
+      - npm-cache:/root/.npm
+    
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+      - "5173:5173"
+    
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv6.conf.all.disable_ipv6=1
+    
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    
+    stdin_open: true
+    tty: true
+
+volumes:
+  go-mod-cache:
+  npm-cache:

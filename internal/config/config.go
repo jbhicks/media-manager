@@ -108,8 +108,13 @@ func LoadConfig(mediaDir string) (*Config, error) {
 	}
 	fmt.Printf("[DEBUG] Config file path: %s\n", configFilePath)
 
+	dbPath := filepath.Join(filepath.Dir(configFilePath), "media.db")
+	if envDbPath := os.Getenv("DB_PATH"); envDbPath != "" {
+		dbPath = envDbPath
+	}
+
 	cfg := &Config{
-		DatabasePath:           filepath.Join(filepath.Dir(configFilePath), "media.db"),
+		DatabasePath:           dbPath,
 		ThumbnailDir:           filepath.Join(filepath.Dir(configFilePath), "thumbnails"),
 		ThumbnailSize:          300,
 		MediaDirs:              []string{}, // Start with empty, will be set below

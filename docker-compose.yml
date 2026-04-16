@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  media-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: media-manager:latest
+    container_name: media-manager
+    restart: unless-stopped
+    
+    env_file:
+      - .env
+    
+    environment:
+      - NORDVPN_TOKEN=${NORDVPN_TOKEN}
+      - NORDVPN_SERVER=${NORDVPN_SERVER:-}
+      - VPN_PROTOCOL=${VPN_PROTOCOL:-nordlynx}
+      - PIHOLE_IP=${PIHOLE_IP:-}
+      - DB_PATH=/data/media.db
+      - DOWNLOAD_PATH=/mnt/media/Downloads
+      - LIBRARY_PATH=/mnt/media/Movies
+      - TORRENT_CLIENT_TYPE=${TORRENT_CLIENT_TYPE:-native}
+      - MAX_CONCURRENT_DOWNLOADS=${MAX_CONCURRENT_DOWNLOADS:-5}
+    
+    volumes:
+      - ./data:/data
+      - /mnt/media:/mnt/media
+      - ./config:/config:ro
+    
+    ports:
+      - "8080:8080"
+    
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv6.conf.all.disable_ipv6=1
+    
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

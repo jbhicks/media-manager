@@ -1,0 +1,58 @@
+# Development Dockerfile with VPN + auto-reload
+FROM golang:1.24-bookworm AS builder
+
+WORKDIR /build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl bash wget iptables wireguard-tools \
+    ca-certificates gnupg lsb-release \
+    nodejs npm \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Air for hot reload
+RUN go install github.com/air-verse/air@v1.61.7
+
+# Install NordVPN
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    apt-transport-https \
+    && rm -rf /var/lib/apt/lists/* \
+    && wget -qO /etc/apt/trusted.gpg.d/nordvpn.asc https://repo.nordvpn.com/gpg/nordvpn_public.asc \
+    && echo "deb https://repo.nordvpn.com/deb/nordvpn/debian stable main" > /etc/apt/sources.list.d/nordvpn.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends nordvpn \
+    || echo "NordVPN install failed, will try alternative method..." 
+
+# Alternative: Download and install NordVPN directly if repo fails
+RUN if ! command -v nordvpn &> /dev/null; then \
+    wget -q https://github.com/NordSecurity/nordvpn-linux/releases/download/3.19.2/nordvpn_3.19.2_amd64.deb -O /tmp/nordvpn.deb 2>/dev/null \
+    && apt-get update && apt-get install -y --no-install-recommends /tmp/nordvpn.deb 2>/dev/null \
+    || echo "NordVPN direct download also failed - VPN will not be available"; \
+    fi
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+ENV NORDVPN_TOKEN=""
+ENV DB_PATH="/data/media.db"
+
+# Create data directory
+RUN mkdir -p /data
+ENV DOWNLOAD_PATH="/mnt/media/Downloads"
+ENV LIBRARY_PATH="/mnt/media/Movies"
+ENV DEV_MODE="true"
+
+EXPOSE 8080
+
+COPY scripts/docker-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Create startup script for both services
+RUN echo '#!/bin/bash\n\
+cd /build && air -c .air-service.toml &\n\
+cd /build/web && npm run dev -- --host 0.0.0.0 &\n\
+wait' > /start-dev.sh && chmod +x /start-dev.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/start-dev.sh"]

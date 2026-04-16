@@ -75,6 +75,81 @@ tail -20 tmp/service.log  # Should show recent startup messages
 ```
 
 Note: The GUI application (`cmd/media-manager`) is separate and does NOT use auto-reload.
+
+### Development Workflow (Preventing Multiple Instances)
+
+**CRITICAL**: Running multiple instances of the dev server causes port conflicts and confusing behavior. Always use the provided wrapper script or make commands.
+
+#### Recommended: Use the Wrapper Script
+
+We provide a wrapper script that manages instances properly:
+
+```bash
+# Start development server
+./scripts/dev-server.sh start
+
+# Check status
+./scripts/dev-server.sh status
+
+# Stop all services
+./scripts/dev-server.sh stop
+
+# Restart cleanly
+./scripts/dev-server.sh restart
+```
+
+**Benefits of the wrapper script:**
+- Creates a lock file to prevent multiple instances
+- Automatically kills existing processes before starting
+- Shows clear status output
+- Provides helpful URLs and commands
+
+#### Alternative: Use Make Commands
+
+If you prefer using make:
+
+```bash
+# Check if services are already running
+make dev-status
+
+# Stop any existing services first
+make stop-dev
+
+# Start services
+make start-dev
+
+# Restart cleanly
+make restart-dev
+
+# View logs
+make logs-service  # Backend logs
+make logs-web      # Frontend logs
+```
+
+#### What Happens If Multiple Instances Run?
+
+- Port conflicts (Vite tries 5173, 5174, 5175, etc.)
+- API calls fail with 500 errors
+- Browser console shows connection errors
+- Memory usage increases
+- Confusing behavior when making changes
+
+#### Emergency Cleanup
+
+**If you suspect multiple instances are running:**
+
+```bash
+# Nuclear option - kill everything
+pkill -9 -f "air"
+pkill -9 -f "media-manager-service"
+pkill -9 -f "media-manager.*vite"
+
+# Then clean up
+rm -rf tmp/pids tmp/*.log tmp/dev.lock
+
+# Start fresh
+./scripts/dev-server.sh start
+```
 - Follow standard Go conventions (gofmt, go vet)
 - Use Go modules for dependency management
 - Package names should be lowercase, single words
@@ -602,6 +677,64 @@ use chrome-devtools to analyze network requests for https://example.com
 ```
 
 **Note**: The Chrome DevTools MCP server will automatically start a Chrome instance when needed. Always reference it explicitly in prompts when browser automation or performance analysis is required.
+
+---
+
+## Web UI Verification Requirements
+
+**CRITICAL**: When working on the Web UI (React/Vite frontend in `web/`), you **MUST** verify the site is fully functional and error-free before considering the work complete.
+
+### Pre-Completion Checklist
+
+Before marking any Web UI work as done, verify ALL of the following:
+
+1. **Build Success**
+   ```bash
+   cd web && npm run build
+   ```
+   - Must complete with zero TypeScript errors
+   - No unused variable warnings
+   - No missing import errors
+
+2. **API Connectivity**
+   ```bash
+   # After starting services with make start-dev
+   curl -s http://localhost:5173/api/stats
+   # Should return JSON stats, not 500 error
+   ```
+
+3. **Browser Console Verification**
+   - Open the browser DevTools (F12)
+   - Check the **Console** tab for:
+     - ❌ No red JavaScript errors
+     - ❌ No 500 Internal Server Errors from API calls
+     - ⚠️ No React Router warnings (unless already present)
+     - ⚠️ No missing export/import errors
+   - Common errors to fix:
+     - `does not provide an export named 'X'` - Check component exports
+     - `Request failed with status code 500` - Backend error, check service logs
+     - `Cannot find module` - Missing import or file
+
+4. **Page Loads Correctly**
+   - Main page loads without white screen
+   - Navigation between routes works
+   - Data appears (not infinite loading spinners)
+
+### When Errors Are Found
+
+If you discover console errors or build failures:
+- **STOP** - Do not consider the work complete
+- **INVESTIGATE** - Check service logs, verify imports, check type definitions
+- **FIX** - Address the root cause, not just the symptoms
+- **RE-VERIFY** - Run through the checklist again after fixes
+
+### Service Startup Timing
+
+**Note**: The backend service takes 3-5 seconds to fully initialize. If you see 500 errors immediately after `make start-dev`, wait a few seconds and refresh. The service needs time to:
+- Load configuration
+- Connect to database
+- Initialize Jellyfin connection
+- Start HTTP server
 
 ---
 

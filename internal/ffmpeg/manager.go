@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
-	"syscall"
 )
 
 //go:embed bin/*
@@ -246,12 +245,7 @@ func NewFFmpegCommand(args ...string) (*exec.Cmd, error) {
 		return nil, fmt.Errorf("ffmpeg path is empty")
 	}
 	cmd := exec.Command(path, args...)
-	// Hide console window on Windows
-	if runtime.GOOS == "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			CreationFlags: 0x08000000, // CREATE_NO_WINDOW
-		}
-	}
+	setSysProcAttr(cmd)
 	return cmd, nil
 }
 
@@ -264,12 +258,7 @@ func NewFFprobeCommand(args ...string) (*exec.Cmd, error) {
 		return nil, fmt.Errorf("ffprobe path is empty")
 	}
 	cmd := exec.Command(path, args...)
-	// Hide console window on Windows
-	if runtime.GOOS == "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			CreationFlags: 0x08000000, // CREATE_NO_WINDOW
-		}
-	}
+	setSysProcAttr(cmd)
 	return cmd, nil
 }
 
