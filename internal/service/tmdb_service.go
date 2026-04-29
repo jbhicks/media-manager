@@ -299,9 +299,12 @@ func (t *TMDbService) ExtractMediaInfo(title string) MediaInfo {
 		}
 	}
 
-	// Remove everything in brackets and parentheses
+	// Remove everything in brackets and parentheses (including unclosed ones)
 	cleanTitle = regexp.MustCompile(`\[.*?\]`).ReplaceAllString(cleanTitle, " ")
 	cleanTitle = regexp.MustCompile(`\(.*?\)`).ReplaceAllString(cleanTitle, " ")
+	// Clean up any remaining unclosed brackets/parentheses and their contents
+	cleanTitle = regexp.MustCompile(`\[.*`).ReplaceAllString(cleanTitle, " ")
+	cleanTitle = regexp.MustCompile(`\(.*`).ReplaceAllString(cleanTitle, " ")
 
 	// Remove common words that appear after brackets (genres, categories, etc.)
 	cleanTitle = regexp.MustCompile(`(?i)\b(action|thriller|drama|comedy|horror|fantasy|sci-fi|romance|documentary|adventure|crime|mystery|animation|biography|western|musical|sport|war|family)\b$`).ReplaceAllString(cleanTitle, "")
@@ -312,7 +315,7 @@ func (t *TMDbService) ExtractMediaInfo(title string) MediaInfo {
 	}
 
 	// Remove quality markers and codecs
-	cleanTitle = regexp.MustCompile(`(?i)\b(1080p|720p|2160p|4K|UHD|BluRay|Blu-Ray|BRRip|WEBRip|WEB-DL|WEB|HDRip|HDTV|DVDRip|BDRip|REMUX|TS|TELES|CAM|SCREENER|HC|HDR|SDR|DV|DOV|3D|HSBS|SBS|TAB|mkv|mp4|avi)\b`).ReplaceAllString(cleanTitle, "")
+	cleanTitle = regexp.MustCompile(`(?i)\b(1080p|720p|2160p|4K|UHD|BluRay|Blu-Ray|BRRip|WEBRip|WEB-DL|WEB|HDRip|HDTV|DVDRip|BDRip|REMUX|TS|TELESYNC|TELECiNE|CAM|SCREENER|HC|HDR|SDR|DV|DOV|3D|HSBS|SBS|TAB|mkv|mp4|avi|HD)\b`).ReplaceAllString(cleanTitle, "")
 	cleanTitle = regexp.MustCompile(`(?i)\bWEB\s+DL\b`).ReplaceAllString(cleanTitle, "")
 
 	// Remove codec and everything after it (catches release groups like "x264-SPARKS", "H264-GROUP", etc.)
@@ -341,7 +344,9 @@ func (t *TMDbService) ExtractMediaInfo(title string) MediaInfo {
 
 	// Remove release groups and source tags (including common suffixes like GalaxyRG265)
 	// Note: Using (?:^|[\s._-]) to match word boundaries including hyphens
-	cleanTitle = regexp.MustCompile(`(?i)(^|[\s._-])(YIFY|YTS|RARBG|RARBM|ETRG|BONE|FGT|CMRG|EVO|ION10|SPARKS|AMZN|NF|IMAX|RGB|EniaHD|Gal(axy)?(RG|UHD)?\d*|Ga|RMTeam|KyoGo|Asiimov|BYNDR|MA|FLUX|NeoNoir|NTb|DOLORES|GRACE|ETHEL|MeGusta|DARKFLiX|HiDt|CtrlHD|hallowed|PiRaTeS|MAX|YAWNTiC|PSA|PCOK|PTV|WhiskeyJack|nickarad|onlyfaffs|Lullozzo|DiRT|GPRS|TURG|DaddyCooL|Classics|NAHOM|SMU|FL|BEN)(\s|[\s._-]|$)`).ReplaceAllString(cleanTitle, " ")
+	cleanTitle = regexp.MustCompile(`(?i)(^|[\s._-])(YIFY|YTS|RARBG|RARBM|ETRG|BONE|FGT|CMRG|EVO|ION10|SPARKS|AMZN|NF|IMAX|RGB|EniaHD|Gal(axy)?(RG|UHD)?\d*|Ga|RMTeam|KyoGo|Asiimov|BYNDR|MA|FLUX|NeoNoir|NTb|DOLORES|GRACE|ETHEL|MeGusta|DARKFLiX|HiDt|CtrlHD|hallowed|PiRaTeS|MAX|YAWNTiC|PSA|PCOK|PTV|WhiskeyJack|nickarad|onlyfaffs|Lullozzo|DiRT|GPRS|TURG|DaddyCooL|Classics|NAHOM|SMU|FL|BEN|LOL|TEAM|YG|MiNX|FuN|PHOENiX|CM8|Hive|CM|RG|HDTS|HDTC|Lkrg|MY|CN|TM|SU)(\s|[\s._-]|$)`).ReplaceAllString(cleanTitle, " ")
+	// Remove single-letter release groups (e.g., -Y, -C, -T, -G) when preceded by hyphen/dot
+	cleanTitle = regexp.MustCompile(`(?i)[\._-][a-z](?:[\._-]|$)`).ReplaceAllString(cleanTitle, " ")
 
 	// Remove common source/platform tags
 	cleanTitle = regexp.MustCompile(`(?i)\b(Netflix|AMZN|Amazon|DSNP|Disney|HBO|Hulu|Apple|Paramount)\b`).ReplaceAllString(cleanTitle, "")
@@ -351,6 +356,10 @@ func (t *TMDbService) ExtractMediaInfo(title string) MediaInfo {
 
 	// Remove language names and codes
 	cleanTitle = regexp.MustCompile(`(?i)\b(EN|ENG|ENGLISH|MULTI|DUAL|SUB(BED)?|DUBBED?|ITA|ITALIAN|CHINESE|KOREAN|JAPANESE|SPANISH|FRENCH|GERMAN|RUSSIAN)\b`).ReplaceAllString(cleanTitle, "")
+	
+	// Remove French-specific audio/video tags
+	cleanTitle = regexp.MustCompile(`(?i)\b(TRUEFRENCH|FRENCH|VOSTFR|SUBFRENCH|FASTSUB|HDLight|LIGHT|MULTI|VF|VO|VFI)\b`).ReplaceAllString(cleanTitle, "")
+	cleanTitle = regexp.MustCompile(`(?i)\b(WEBRIP|WEB-RIP|HDRip|BDRip|BRRip|DVDRip|HDTV|TVRip)\b`).ReplaceAllString(cleanTitle, "")
 
 	// Remove version tags
 	cleanTitle = regexp.MustCompile(`(?i)\bV\d+\b`).ReplaceAllString(cleanTitle, "")
@@ -373,12 +382,14 @@ func (t *TMDbService) ExtractMediaInfo(title string) MediaInfo {
 	cleanTitle = regexp.MustCompile(`\s+`).ReplaceAllString(cleanTitle, " ")
 
 	// Remove standalone single letters (except 'A' and 'I')
-	cleanTitle = regexp.MustCompile(`\b[b-hj-z]\b`).ReplaceAllString(cleanTitle, " ")
+	// Use lookarounds to avoid breaking apostrophes: don't remove letters preceded by apostrophe
+	cleanTitle = regexp.MustCompile(`(?i)(^|\s)[b-hj-z](\s|$)`).ReplaceAllString(cleanTitle, " ")
 
 	// For TV shows, don't remove all numbers (years might be part of the name)
 	if !info.IsTV {
-		// Remove remaining standalone numbers
-		cleanTitle = regexp.MustCompile(`\b\d+\b`).ReplaceAllString(cleanTitle, " ")
+		// Remove remaining standalone numbers, but only when surrounded by whitespace on BOTH sides
+		// to avoid stripping numbers from titles like "28 Years Later" or "21 Jump Street"
+		cleanTitle = regexp.MustCompile(`\s\d+\s`).ReplaceAllString(cleanTitle, " ")
 	}
 
 	// Remove "DL" standalone
@@ -435,6 +446,11 @@ func (t *TMDbService) SearchMovie(title string, year int) (*TMDbMovie, error) {
 	}
 
 	if len(searchResult.Results) == 0 {
+		// If no results and we have a year, try searching without it
+		if year > 0 {
+			log.Printf("[TMDB] No results for '%s' (%d), retrying without year filter", title, year)
+			return t.SearchMovie(title, 0)
+		}
 		return nil, fmt.Errorf("no results found for '%s'", title)
 	}
 

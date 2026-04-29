@@ -6,12 +6,17 @@ services:
       context: .
       dockerfile: Dockerfile.dev
     image: media-manager:dev
-    container_name: media-manager-dev
     
     env_file:
       - .env
     
+    # WARNING: Container runs as root for VPN support.
+    # This may create root-owned files in ./tmp and ./web/node_modules
+    # Use 'make dev' (native) instead to avoid permission issues.
     environment:
+      - PORT=8080
+      - WEB_ROOT=/build/web/dist
+      - IMAGES_ROOT=/build/web/images
       - NORDVPN_TOKEN=${NORDVPN_TOKEN}
       - NORDVPN_SERVER=${NORDVPN_SERVER:-}
       - VPN_PROTOCOL=${VPN_PROTOCOL:-nordlynx}
@@ -30,9 +35,15 @@ services:
       - "8081:8081"
       - "5173:5173"
     
+    privileged: true
+    
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
+      - SYS_ADMIN
+    
+    security_opt:
+      - seccomp:unconfined
     
     sysctls:
       - net.ipv4.conf.all.src_valid_mark=1
@@ -40,6 +51,10 @@ services:
     
     devices:
       - /dev/net/tun:/dev/net/tun
+    
+    dns:
+      - 9.9.9.9
+      - 149.112.112.112
     
     stdin_open: true
     tty: true

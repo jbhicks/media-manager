@@ -92,7 +92,7 @@ func main() {
 		}
 		fmt.Printf("[%2d/%2d] Searching: %-15s ... ", i+1, len(queries), displayQuery)
 
-		results, err := searcher.Search(query, rule.MediaType, 100)
+		results, _, err := searcher.Search(query, rule.MediaType, 100, nil)
 		if err != nil {
 			fmt.Printf("❌ FAILED: %v\n", err)
 			continue

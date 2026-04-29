@@ -16,12 +16,16 @@ export function Downloads() {
   const clearCompleted = useClearCompletedTasks()
   const clearFailed = useClearFailedTasks()
 
+  const getErrorMessage = (error: any): string => {
+    return error?.userMessage || error?.message || 'Unknown error'
+  }
+
   const handleCancel = async (id: number) => {
     try {
       await cancelTask.mutateAsync(id)
       addToast('Task cancelled', 'success')
-    } catch {
-      addToast('Failed to cancel task', 'error')
+    } catch (error: any) {
+      addToast(`Failed to cancel: ${getErrorMessage(error)}`, 'error')
     }
   }
 
@@ -29,8 +33,8 @@ export function Downloads() {
     try {
       await restartTask.mutateAsync(id)
       addToast('Task restarted', 'success')
-    } catch {
-      addToast('Failed to restart task', 'error')
+    } catch (error: any) {
+      addToast(`Failed to restart: ${getErrorMessage(error)}`, 'error')
     }
   }
 
@@ -38,8 +42,8 @@ export function Downloads() {
     try {
       await deleteTask.mutateAsync(id)
       addToast('Task deleted', 'success')
-    } catch {
-      addToast('Failed to delete task', 'error')
+    } catch (error: any) {
+      addToast(`Failed to delete: ${getErrorMessage(error)}`, 'error')
     }
   }
 
@@ -47,8 +51,8 @@ export function Downloads() {
     try {
       await clearCompleted.mutateAsync()
       addToast('Completed tasks cleared', 'success')
-    } catch {
-      addToast('Failed to clear completed tasks', 'error')
+    } catch (error: any) {
+      addToast(`Failed to clear: ${getErrorMessage(error)}`, 'error')
     }
   }
 
@@ -56,8 +60,8 @@ export function Downloads() {
     try {
       await clearFailed.mutateAsync()
       addToast('Failed tasks cleared', 'success')
-    } catch {
-      addToast('Failed to clear failed tasks', 'error')
+    } catch (error: any) {
+      addToast(`Failed to clear: ${getErrorMessage(error)}`, 'error')
     }
   }
 

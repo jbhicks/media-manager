@@ -34,6 +34,7 @@ func NewDatabase(dbPath string) (*Database, error) {
 		&models.DownloadSuggestion{},
 		&models.DownloadHistory{},
 		&models.MovieMetadata{},
+		&models.RSSFeed{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
@@ -102,6 +103,47 @@ func (d *Database) DeleteFolder(id uint) error {
 
 func (d *Database) CreateTag(tag *models.Tag) error {
 	return d.db.Create(tag).Error
+}
+
+func (d *Database) GetTagByID(id uint) (*models.Tag, error) {
+	var tag models.Tag
+	err := d.db.First(&tag, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &tag, nil
+}
+
+func (d *Database) DeleteTag(id uint) error {
+	return d.db.Delete(&models.Tag{}, id).Error
+}
+
+func (d *Database) AssignTagToMediaFile(filePath string, tagID uint) error {
+	var file models.MediaFile
+	if err := d.db.Where("path = ?", filePath).First(&file).Error; err != nil {
+		return err
+	}
+
+	var tag models.Tag
+	if err := d.db.First(&tag, tagID).Error; err != nil {
+		return err
+	}
+
+	return d.db.Model(&file).Association("Tags").Append(&tag)
+}
+
+func (d *Database) RemoveTagFromMediaFile(filePath string, tagID uint) error {
+	var file models.MediaFile
+	if err := d.db.Where("path = ?", filePath).First(&file).Error; err != nil {
+		return err
+	}
+
+	var tag models.Tag
+	if err := d.db.First(&tag, tagID).Error; err != nil {
+		return err
+	}
+
+	return d.db.Model(&file).Association("Tags").Delete(&tag)
 }
 
 func (d *Database) DeleteMediaFilesByDirectory(dirPath string) error {

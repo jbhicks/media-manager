@@ -38,7 +38,7 @@ func (r *RARBGProvider) IsEnabled() bool {
 	return r.enabled
 }
 
-func (r *RARBGProvider) Search(query string, category string) ([]models.SearchResult, error) {
+func (r *RARBGProvider) Search(query string, category string, indexers []string) ([]models.SearchResult, error) {
 	r.api.SearchString(query)
 
 	if category == "movies" {

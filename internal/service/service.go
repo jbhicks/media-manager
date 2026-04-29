@@ -54,11 +54,20 @@ func (s *MediaService) Start() error {
 		log.Println("[SERVICE] Download functionality is disabled in configuration")
 	}
 
+	// Initialize default download sources if none exist
+	if err := s.initializeDefaultSources(); err != nil {
+		log.Printf("[SERVICE] Warning: failed to initialize default sources: %v", err)
+	}
+
 	downloadManager, err := NewDownloadManager(s.db, serviceConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create download manager: %w", err)
 	}
 	s.downloadManager = downloadManager
+
+	// Start RSS monitor
+	rssMonitor := NewRSSMonitor(s.db, downloadManager)
+	rssMonitor.Start()
 
 	startPort := 8081
 	if envPort := os.Getenv("PORT"); envPort != "" {
@@ -178,6 +187,14 @@ func (s *MediaService) getOrCreateServiceConfig() (*models.ServiceConfig, error)
 		log.Println("[SERVICE] Created default service configuration")
 	}
 
+	// Override with environment variables if set
+	if envURL := os.Getenv("JELLYFIN_URL"); envURL != "" {
+		cfg.JellyfinURL = envURL
+	}
+	if envKey := os.Getenv("JELLYFIN_API_KEY"); envKey != "" {
+		cfg.JellyfinAPIKey = envKey
+	}
+
 	return &cfg, nil
 }
 
@@ -215,4 +232,42 @@ func (s *MediaService) monitorDownloads() {
 			}
 		}
 	}
+}
+
+func (s *MediaService) initializeDefaultSources() error {
+	// Check if Jackett environment variables are configured
+	jackettURL := os.Getenv("JACKETT_URL")
+	jackettAPIKey := os.Getenv("JACKETT_API_KEY")
+
+	if jackettURL == "" || jackettAPIKey == "" {
+		log.Println("[SERVICE] Jackett not configured via environment variables")
+		return nil
+	}
+
+	// Check if any download sources already exist
+	var count int64
+	if err := s.db.GetDB().Model(&models.DownloadSource{}).Count(&count).Error; err != nil {
+		return fmt.Errorf("failed to count download sources: %w", err)
+	}
+
+	if count > 0 {
+		log.Printf("[SERVICE] %d download sources already configured, skipping defaults", count)
+		return nil
+	}
+
+	// Add Jackett as default source
+	source := &models.DownloadSource{
+		Name:    "Jackett (All Indexers)",
+		Type:    "jackett",
+		URL:     jackettURL,
+		APIKey:  jackettAPIKey,
+		Enabled: true,
+	}
+
+	if err := s.db.GetDB().Create(source).Error; err != nil {
+		return fmt.Errorf("failed to create Jackett source: %w", err)
+	}
+
+	log.Printf("[SERVICE] Added default Jackett source: %s", jackettURL)
+	return nil
 }

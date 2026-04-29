@@ -1,12 +1,16 @@
 package service
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime/debug"
 	"strconv"
@@ -15,18 +19,44 @@ import (
 	"time"
 
 	"github.com/user/media-manager/internal/db"
+	"github.com/user/media-manager/internal/torrent"
 	"github.com/user/media-manager/pkg/models"
+	"gorm.io/gorm/clause"
 )
 
+// jsonError sends a JSON error response with proper Content-Type
+func jsonError(w http.ResponseWriter, message string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"error":   true,
+		"message": message,
+		"code":    code,
+	})
+}
+
+type SearchActivity struct {
+	Query           string                   `json:"query"`
+	Timestamp       time.Time                `json:"timestamp"`
+	Duration        float64                  `json:"duration_seconds"`
+	ResultCount     int                      `json:"result_count"`
+	SavedCount      int                      `json:"saved_count"`
+	Providers       []string                 `json:"providers"`
+	ProviderTimings []torrent.ProviderTiming `json:"provider_timings"`
+	Error           string                   `json:"error,omitempty"`
+}
+
 type HTTPServer struct {
-	addr              string
-	suggestionService *SuggestionService
-	downloadManager   *DownloadManager
-	tmdbService       *TMDbService
-	db                *db.Database
-	server            *http.Server
-	sseClients        map[chan string]bool
-	sseClientsMutex   sync.RWMutex
+	addr                string
+	suggestionService   *SuggestionService
+	downloadManager     *DownloadManager
+	tmdbService         *TMDbService
+	db                  *db.Database
+	server              *http.Server
+	sseClients          map[chan string]bool
+	sseClientsMutex     sync.RWMutex
+	searchActivities    []SearchActivity
+	searchActivityMutex sync.RWMutex
 }
 
 func NewHTTPServer(addr string, db *db.Database, dm *DownloadManager) *HTTPServer {
@@ -47,19 +77,52 @@ func NewHTTPServer(addr string, db *db.Database, dm *DownloadManager) *HTTPServe
 	return server
 }
 
+func (s *HTTPServer) logSearchActivity(activity SearchActivity) {
+	s.searchActivityMutex.Lock()
+	defer s.searchActivityMutex.Unlock()
+
+	// Keep only last 50 activities
+	s.searchActivities = append(s.searchActivities, activity)
+	if len(s.searchActivities) > 50 {
+		s.searchActivities = s.searchActivities[len(s.searchActivities)-50:]
+	}
+}
+
+func (s *HTTPServer) getSearchActivities() []SearchActivity {
+	s.searchActivityMutex.RLock()
+	defer s.searchActivityMutex.RUnlock()
+
+	// Return a copy in reverse order (newest first)
+	result := make([]SearchActivity, len(s.searchActivities))
+	for i := range s.searchActivities {
+		result[i] = s.searchActivities[len(s.searchActivities)-1-i]
+	}
+	return result
+}
+
 func (s *HTTPServer) Start() error {
 	mux := http.NewServeMux()
 
-	// Force IPv4 binding
-	if s.addr == ":" {
-		s.addr = "0.0.0.0:"
+	// Force IPv4 binding - always bind to all interfaces explicitly
+	if strings.HasPrefix(s.addr, ":") {
+		s.addr = "0.0.0.0" + s.addr
+	}
+
+	// Get web root from environment or use default
+	webRoot := os.Getenv("WEB_ROOT")
+	if webRoot == "" {
+		webRoot = "/home/josh/media-manager/web/dist"
 	}
 
 	// Serve static files from React build
-	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("/home/josh/media-manager/web/dist/assets"))))
+	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir(filepath.Join(webRoot, "assets")))))
 
 	// Serve images from web/images/
-	mux.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir("/home/josh/media-manager/web/images"))))
+	imagesRoot := os.Getenv("IMAGES_ROOT")
+	if imagesRoot == "" {
+		imagesRoot = "/home/josh/media-manager/web/images"
+	}
+	mux.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir(imagesRoot))))
 
 	// API endpoints
 	// Search/torrent API endpoints
@@ -71,11 +134,16 @@ func (s *HTTPServer) Start() error {
 	mux.HandleFunc("/api/search/bulk-reject", s.handleBulkReject)
 	mux.HandleFunc("/api/search/clear", s.handleClearByStatus)
 	mux.HandleFunc("/api/search/clear-rejected", s.handleClearRejected)
+	mux.HandleFunc("/api/search/extract-images", s.handleExtractTorrentImages)
+	mux.HandleFunc("/api/search/activity", s.handleSearchActivity)
+	mux.HandleFunc("/api/logs", s.handleLogs)
 
 	// Suggestions API endpoints
 	mux.HandleFunc("/api/suggestions", s.handleSuggestionsAPI)
 	mux.HandleFunc("/api/suggestions/stats", s.handleSuggestionsStatsAPI)
 	mux.HandleFunc("/api/suggestions/search", s.handleSearchSuggestionsAPI)
+	mux.HandleFunc("/api/suggestions/grouped", s.handleGroupedSuggestionsAPI)
+	mux.HandleFunc("/api/suggestions/grouped/search", s.handleSearchGroupedSuggestionsAPI)
 	mux.HandleFunc("/api/suggestions/recommendations", s.handleRecommendationsAPI)
 	mux.HandleFunc("/api/suggestions/quality-score", s.handleQualityScoreAPI)
 	mux.HandleFunc("/api/suggestions/generate", s.handleGenerateSuggestions)
@@ -89,6 +157,11 @@ func (s *HTTPServer) Start() error {
 
 	// Sources, Rules, Tasks, Stats API endpoints
 	mux.HandleFunc("/api/sources", s.handleSources)
+	mux.HandleFunc("/api/sources/jackett-indexers", s.handleAllJackettIndexers)
+	mux.HandleFunc("/api/sources/", s.handleSourceDetail)
+	mux.HandleFunc("/api/sources/create", s.handleCreateSource)
+	mux.HandleFunc("/api/sources/update", s.handleUpdateSource)
+	mux.HandleFunc("/api/sources/delete", s.handleDeleteSource)
 	mux.HandleFunc("/api/rules", s.handleRules)
 	mux.HandleFunc("/api/tasks", s.handleTasks)
 	mux.HandleFunc("/api/tasks/cancel", s.handleCancelTask)
@@ -101,13 +174,23 @@ func (s *HTTPServer) Start() error {
 	mux.HandleFunc("/api/downloads/stream", s.handleDownloadsStream)
 	mux.HandleFunc("/api/stats", s.handleStats)
 
-	// VPN status endpoint
+	// RSS feed endpoints
+	mux.HandleFunc("/api/rss", s.handleRSSFeeds)
+	mux.HandleFunc("/api/rss/create", s.handleCreateRSSFeed)
+	mux.HandleFunc("/api/rss/update", s.handleUpdateRSSFeed)
+	mux.HandleFunc("/api/rss/delete", s.handleDeleteRSSFeed)
+	mux.HandleFunc("/api/rss/check", s.handleCheckRSSFeed)
+
+	// VPN endpoints
 	mux.HandleFunc("/api/vpn/status", s.handleVPNStatus)
+	mux.HandleFunc("/api/vpn/connect", s.handleVPNConnect)
+	mux.HandleFunc("/api/vpn/disconnect", s.handleVPNDisconnect)
 
 	// Media library endpoints
 	mux.HandleFunc("/api/library/movies", s.handleLibraryMovies)
 	mux.HandleFunc("/api/library/poster", s.handleFetchPoster)
 	mux.HandleFunc("/api/library/poster-by-title", s.handleFetchPosterByTitle)
+	mux.HandleFunc("/api/library/poster-file", s.handlePosterFile)
 	mux.HandleFunc("/api/library/fetch-all-posters", s.handleFetchAllPosters)
 	mux.HandleFunc("/api/library/refresh-jellyfin-posters", s.handleRefreshJellyfinPosters)
 	mux.HandleFunc("/api/library/reprocess", s.handleReprocessLibrary)
@@ -117,6 +200,9 @@ func (s *HTTPServer) Start() error {
 	mux.HandleFunc("/api/library/tag/assign", s.handleAssignTag)
 	mux.HandleFunc("/api/library/tag/remove", s.handleRemoveTag)
 
+	// Health check endpoint
+	mux.HandleFunc("/api/health", s.handleHealth)
+
 	// Catch-all handler for React SPA routing
 	mux.HandleFunc("/", s.ServeReactSPA)
 
@@ -124,7 +210,7 @@ func (s *HTTPServer) Start() error {
 		Addr:         s.addr,
 		Handler:      s.recoveryMiddleware(s.corsMiddleware(mux)),
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 120 * time.Second,
 	}
 
 	log.Printf("[HTTP] Starting HTTP server on %s", s.addr)
@@ -192,7 +278,11 @@ func (s *HTTPServer) ServeReactSPA(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Serve the React app's index.html for all other routes
-	indexPath := "/home/josh/media-manager/web/dist/index.html"
+	webRoot := os.Getenv("WEB_ROOT")
+	if webRoot == "" {
+		webRoot = "/home/josh/media-manager/web/dist"
+	}
+	indexPath := filepath.Join(webRoot, "index.html")
 	html, err := os.ReadFile(indexPath)
 	if err != nil {
 		log.Printf("[HTTP] Failed to read React index.html: %v", err)
@@ -221,7 +311,7 @@ func (s *HTTPServer) handleSuggestionsAPI(w http.ResponseWriter, r *http.Request
 	limitStr := r.URL.Query().Get("limit")
 	offsetStr := r.URL.Query().Get("offset")
 
-	limit := 20
+	limit := 0
 	offset := 0
 
 	if limitStr != "" {
@@ -243,10 +333,10 @@ func (s *HTTPServer) handleSuggestionsAPI(w http.ResponseWriter, r *http.Request
 	}
 
 	response := map[string]interface{}{
-		"suggestions": suggestions,
-		"total":       total,
-		"limit":       limit,
-		"offset":      offset,
+		"data":   suggestions,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -254,6 +344,90 @@ func (s *HTTPServer) handleSuggestionsAPI(w http.ResponseWriter, r *http.Request
 }
 
 func (s *HTTPServer) handleSearchSuggestionsAPI(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	status := r.URL.Query().Get("status")
+	sortBy := r.URL.Query().Get("sort_by")
+	minSeedersStr := r.URL.Query().Get("min_seeders")
+	limitStr := r.URL.Query().Get("limit")
+	offsetStr := r.URL.Query().Get("offset")
+
+	limit := 0
+	offset := 0
+	minSeeders := 0
+
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = l
+		}
+	}
+
+	if offsetStr != "" {
+		if o, err := strconv.Atoi(offsetStr); err == nil {
+			offset = o
+		}
+	}
+
+	if minSeedersStr != "" {
+		if m, err := strconv.Atoi(minSeedersStr); err == nil {
+			minSeeders = m
+		}
+	}
+
+	suggestions, total, err := s.suggestionService.SearchSuggestions(query, status, sortBy, minSeeders, limit, offset)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to search suggestions: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"data":   suggestions,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func (s *HTTPServer) handleGroupedSuggestionsAPI(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	limitStr := r.URL.Query().Get("limit")
+	offsetStr := r.URL.Query().Get("offset")
+
+	limit := 100
+	offset := 0
+
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = l
+		}
+	}
+
+	if offsetStr != "" {
+		if o, err := strconv.Atoi(offsetStr); err == nil {
+			offset = o
+		}
+	}
+
+	groups, total, err := s.suggestionService.ListGroupedSuggestions(status, limit, offset)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to list grouped suggestions: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"data":   groups,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func (s *HTTPServer) handleSearchGroupedSuggestionsAPI(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
 	status := r.URL.Query().Get("status")
 	sortBy := r.URL.Query().Get("sort_by")
@@ -283,17 +457,17 @@ func (s *HTTPServer) handleSearchSuggestionsAPI(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	suggestions, total, err := s.suggestionService.SearchSuggestions(query, status, sortBy, minSeeders, limit, offset)
+	groups, total, err := s.suggestionService.SearchGroupedSuggestions(query, status, sortBy, minSeeders, limit, offset)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to search suggestions: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Failed to search grouped suggestions: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	response := map[string]interface{}{
-		"suggestions": suggestions,
-		"total":       total,
-		"limit":       limit,
-		"offset":      offset,
+		"data":   groups,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -420,19 +594,23 @@ func (s *HTTPServer) handleApproveSuggestion(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := s.suggestionService.ApproveSuggestion(uint(id), ""); err != nil {
+	// Check for auto-start parameter
+	autoStart := r.URL.Query().Get("auto_start") == "true"
+
+	if err := s.suggestionService.ApproveSuggestion(uint(id), "", autoStart); err != nil {
 		log.Printf("[HTTP] Failed to approve suggestion %d: %v", id, err)
 		http.Error(w, fmt.Sprintf("Failed to approve suggestion: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("[HTTP] Approved suggestion %d", id)
+	log.Printf("[HTTP] Approved suggestion %d (auto_start: %v)", id, autoStart)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"id":      id,
-		"message": "Suggestion approved",
+		"success":     true,
+		"id":          id,
+		"message":     "Suggestion approved",
+		"auto_start":  autoStart,
 	})
 }
 
@@ -508,7 +686,7 @@ func (s *HTTPServer) handleBulkApprove(w http.ResponseWriter, r *http.Request) {
 	// Approve each selected item
 	successCount := 0
 	for _, id := range req.IDs {
-		if err := s.suggestionService.ApproveSuggestion(id, "Bulk approved"); err != nil {
+		if err := s.suggestionService.ApproveSuggestion(id, "Bulk approved", false); err != nil {
 			log.Printf("[HTTP] Failed to approve suggestion %d: %v", id, err)
 		} else {
 			successCount++
@@ -713,41 +891,88 @@ func (s *HTTPServer) handleRefreshSearchPosters(w http.ResponseWriter, r *http.R
 // handleSearch performs torrent search and returns JSON
 func (s *HTTPServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
-	if query == "" {
-		// Return empty results if no query
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"results": []models.DownloadSuggestion{},
-			"query":   "",
-		})
+	
+	// Check if download manager is available
+	if s.downloadManager == nil {
+		jsonError(w, "Search service not available", http.StatusServiceUnavailable)
 		return
+	}
+
+	searchStart := time.Now()
+
+	// Get enabled sources for activity logging and response
+	var enabledSources []models.DownloadSource
+	s.db.GetDB().Where("enabled = ?", true).Find(&enabledSources)
+	sourceMap := make(map[uint]*models.DownloadSource)
+	providerNames := make([]string, len(enabledSources))
+	for i, src := range enabledSources {
+		providerNames[i] = src.Name
+		sourceMap[src.ID] = &enabledSources[i]
+	}
+
+	// Parse selected indexers from query
+	indexersParam := r.URL.Query().Get("indexers")
+	var selectedIndexers []string
+	if indexersParam != "" {
+		selectedIndexers = strings.Split(indexersParam, ",")
+		log.Printf("[SEARCH] Using specific indexers: %v", selectedIndexers)
 	}
 
 	// Perform real-time torrent search
 	log.Printf("[SEARCH] Searching for: %s", query)
 
-	// Create a temporary download rule for searching
 	rule := &models.DownloadRule{
 		Name:        "Search: " + query,
 		SearchQuery: query,
 		Enabled:     true,
+		Indexers:    indexersParam,
 	}
 
-	// Execute search without downloading
-	results, err := s.downloadManager.SearchWithoutDownload(rule)
+	searchResult, err := s.downloadManager.SearchWithoutDownload(rule)
 	if err != nil {
 		log.Printf("[SEARCH] Search failed: %v", err)
-		http.Error(w, fmt.Sprintf("Search failed: %v", err), http.StatusInternalServerError)
+		s.logSearchActivity(SearchActivity{
+			Query:           query,
+			Timestamp:       time.Now(),
+			Duration:        time.Since(searchStart).Seconds(),
+			Providers:       providerNames,
+			ProviderTimings: searchResult.Timings,
+			Error:           err.Error(),
+		})
+		jsonError(w, fmt.Sprintf("Search failed: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("[SEARCH] Found %d results for '%s'", len(results), query)
+	results := searchResult.Results
+	totalResults := len(results)
+	log.Printf("[SEARCH] Found %d total results for '%s'", totalResults, query)
 
-	// Save results to database as suggestions (for approve/reject functionality)
-	created := 0
+	// Apply pagination
+	limitStr := r.URL.Query().Get("limit")
+	offsetStr := r.URL.Query().Get("offset")
+	if limitStr != "" {
+		limit, _ := strconv.Atoi(limitStr)
+		offset, _ := strconv.Atoi(offsetStr)
+		if limit > 0 {
+			if offset < len(results) {
+				end := offset + limit
+				if end > len(results) {
+					end = len(results)
+				}
+				results = results[offset:end]
+			} else {
+				results = []models.SearchResult{}
+			}
+			log.Printf("[SEARCH] Paginated to %d results (offset: %d, limit: %d)", len(results), offset, limit)
+		}
+	}
+
+	// Build suggestions from search results directly (no redundant DB query)
+	suggestions := make([]models.DownloadSuggestion, 0, len(results))
 	for _, result := range results {
-		suggestion := &models.DownloadSuggestion{
+		suggestion := models.DownloadSuggestion{
 			SourceID:   result.SourceID,
+			Indexer:    result.Indexer,
 			Title:      result.Title,
 			InfoHash:   result.InfoHash,
 			MagnetLink: result.MagnetLink,
@@ -758,29 +983,241 @@ func (s *HTTPServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 			Category:   result.Category,
 			UploadDate: result.UploadDate,
 			Status:     "pending",
-			PosterURL:  "",
+			PosterURL:  result.PosterURL,
 			TMDbID:     0,
 		}
-
-		// Use FirstOrCreate to avoid duplicates
-		if err := s.db.GetDB().
-			Where("info_hash = ?", suggestion.InfoHash).
-			FirstOrCreate(suggestion).Error; err != nil {
-			log.Printf("[WARNING] Failed to save search result: %v", err)
-			continue
+		// Populate source relation from memory
+		if src, ok := sourceMap[result.SourceID]; ok {
+			suggestion.Source = src
 		}
-		created++
+		suggestions = append(suggestions, suggestion)
 	}
 
-	log.Printf("[SEARCH] Saved %d search results to database", created)
+	// Batch insert with ON CONFLICT DO NOTHING for performance
+	created := 0
+	if len(suggestions) > 0 {
+		// Use Clauses to ignore duplicates on unique index (info_hash)
+		result := s.db.GetDB().Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "info_hash"}},
+			DoNothing: true,
+		}).CreateInBatches(suggestions, 100)
+
+		if result.Error != nil {
+			log.Printf("[WARNING] Failed to batch save search results: %v", result.Error)
+		} else {
+			created = int(result.RowsAffected)
+			log.Printf("[SEARCH] Batch saved %d search results to database (inserted %d new)", len(suggestions), created)
+		}
+	}
+
+	// Fetch posters synchronously for first batch (visible results)
+	// Then async for all remaining results
+	if s.tmdbService != nil && len(suggestions) > 0 {
+		posterStart := time.Now()
+		syncFetchCount := 20
+		if len(suggestions) < syncFetchCount {
+			syncFetchCount = len(suggestions)
+		}
+
+		// Synchronous fetch for visible results (first page)
+		fetched := 0
+		for i := 0; i < syncFetchCount; i++ {
+			if suggestions[i].PosterURL != "" {
+				continue
+			}
+
+			posterURL, tmdbID, err := s.tmdbService.FetchPosterForTask(suggestions[i].Title)
+			if err == nil && posterURL != "" {
+				// Update in-memory so response includes it
+				suggestions[i].PosterURL = posterURL
+				suggestions[i].TMDbID = tmdbID
+				// Update database for caching
+				s.db.GetDB().Model(&models.DownloadSuggestion{}).Where("id = ?", suggestions[i].ID).Updates(map[string]interface{}{
+					"poster_url": posterURL,
+					"tmdb_id":    tmdbID,
+				})
+				fetched++
+			}
+		}
+
+		// Async fetch for ALL remaining results (including pagination)
+		go func(suggestionsToFetch []models.DownloadSuggestion) {
+			asyncFetched := 0
+			asyncFailed := 0
+
+			for i := range suggestionsToFetch {
+				if suggestionsToFetch[i].PosterURL != "" {
+					continue
+				}
+
+				posterURL, tmdbID, err := s.tmdbService.FetchPosterForTask(suggestionsToFetch[i].Title)
+				if err == nil && posterURL != "" {
+					// Update database for caching (fire and forget)
+					s.db.GetDB().Model(&models.DownloadSuggestion{}).Where("id = ?", suggestionsToFetch[i].ID).Updates(map[string]interface{}{
+						"poster_url": posterURL,
+						"tmdb_id":    tmdbID,
+					})
+					asyncFetched++
+				} else {
+					asyncFailed++
+				}
+			}
+			log.Printf("[SEARCH] Background poster fetch complete: %d sync + %d async fetched, %d failed, %d total (%.2fs)",
+				fetched, asyncFetched, asyncFailed, len(suggestionsToFetch), time.Since(posterStart).Seconds())
+		}(suggestions)
+	}
+
+	searchDuration := time.Since(searchStart)
+	s.logSearchActivity(SearchActivity{
+		Query:           query,
+		Timestamp:       time.Now(),
+		Duration:        searchDuration.Seconds(),
+		ResultCount:     len(results),
+		SavedCount:      created,
+		Providers:       providerNames,
+		ProviderTimings: searchResult.Timings,
+	})
 
 	// Return results as JSON
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"results": results,
-		"query":   query,
-		"saved":   created,
+		"results":          suggestions,
+		"total":            totalResults,
+		"query":            query,
+		"saved":            created,
+		"providers":        providerNames,
+		"provider_timings": searchResult.Timings,
+		"cached":           len(results) > 0 && searchDuration.Seconds() < 0.05,
 	})
+}
+
+func (s *HTTPServer) handleSearchActivity(w http.ResponseWriter, r *http.Request) {
+	activities := s.getSearchActivities()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"activities": activities,
+	})
+}
+
+func (s *HTTPServer) handleLogs(w http.ResponseWriter, r *http.Request) {
+	// Read recent log lines from service log
+	logPath := "tmp/service.log"
+	if envPath := os.Getenv("SERVICE_LOG_PATH"); envPath != "" {
+		logPath = envPath
+	}
+
+	lines := 50
+	if n := r.URL.Query().Get("lines"); n != "" {
+		if parsed, err := strconv.Atoi(n); err == nil && parsed > 0 {
+			lines = parsed
+		}
+	}
+
+	filter := r.URL.Query().Get("filter")
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"logs": []string{},
+		})
+		return
+	}
+
+	// Split into lines and get last N
+	allLines := strings.Split(string(data), "\n")
+	var filtered []string
+	for _, line := range allLines {
+		if line == "" {
+			continue
+		}
+		if filter != "" {
+			if strings.Contains(line, filter) || strings.Contains(line, "[SEARCH]") || strings.Contains(line, "[TMDB]") || strings.Contains(line, "[TORRENT]") || strings.Contains(line, "[Jackett]") {
+				filtered = append(filtered, line)
+			}
+		} else {
+			filtered = append(filtered, line)
+		}
+	}
+
+	// Get last N lines
+	start := len(filtered) - lines
+	if start < 0 {
+		start = 0
+	}
+	result := filtered[start:]
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"logs":  result,
+		"total": len(filtered),
+	})
+}
+
+// copyFile copies a file from src to dst
+func copyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, sourceFile)
+	return err
+}
+
+// extractTorrentPoster attempts to extract cover art from a torrent magnet link.
+// It saves the first found image to the web images directory and returns the public URL.
+func (s *HTTPServer) extractTorrentPoster(magnetLink string) (string, error) {
+	if s.downloadManager == nil || magnetLink == "" {
+		return "", fmt.Errorf("no download manager or magnet link")
+	}
+
+	log.Printf("[TORRENT] Attempting to extract cover art from torrent")
+
+	images, err := s.downloadManager.ExtractImagesFromTorrent(magnetLink)
+	if err != nil {
+		return "", fmt.Errorf("extraction failed: %w", err)
+	}
+	if len(images) == 0 {
+		return "", fmt.Errorf("no images found in torrent")
+	}
+
+	// Use the first image found as the poster
+	sourcePath := images[0]
+
+	// Generate a unique filename based on magnet link hash
+	hash := sha1.Sum([]byte(magnetLink))
+	filename := hex.EncodeToString(hash[:]) + filepath.Ext(sourcePath)
+
+	// Determine web images directory
+	imagesRoot := os.Getenv("IMAGES_ROOT")
+	if imagesRoot == "" {
+		imagesRoot = "/home/josh/media-manager/web/images"
+	}
+
+	// Ensure directory exists
+	if err := os.MkdirAll(imagesRoot, 0755); err != nil {
+		return "", fmt.Errorf("failed to create images directory: %w", err)
+	}
+
+	destPath := filepath.Join(imagesRoot, filename)
+
+	// Copy the extracted image to the web-accessible directory
+	if err := copyFile(sourcePath, destPath); err != nil {
+		return "", fmt.Errorf("failed to copy image: %w", err)
+	}
+
+	posterURL := "/images/" + filename
+	log.Printf("[TORRENT] Saved torrent cover art to %s", posterURL)
+
+	return posterURL, nil
 }
 
 func (s *HTTPServer) handleFetchSearchPoster(w http.ResponseWriter, r *http.Request) {
@@ -807,11 +1244,65 @@ func (s *HTTPServer) handleFetchSearchPoster(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
+	// Fallback: try extracting cover art from torrent
+	if suggestion.PosterURL == "" && suggestion.MagnetLink != "" {
+		posterURL, err := s.extractTorrentPoster(suggestion.MagnetLink)
+		if err == nil && posterURL != "" {
+			suggestion.PosterURL = posterURL
+			s.db.GetDB().Save(&suggestion)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"id":         id,
 		"poster_url": suggestion.PosterURL,
 		"title":      suggestion.Title,
+	})
+}
+
+func (s *HTTPServer) handleExtractTorrentImages(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		MagnetLink string `json:"magnet_link"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.MagnetLink == "" {
+		http.Error(w, "Magnet link required", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("[HTTP] Extracting images from torrent: %s", req.MagnetLink)
+
+	// Check if we have a native torrent client that supports image extraction
+	images, err := s.downloadManager.ExtractImagesFromTorrent(req.MagnetLink)
+	if err != nil {
+		log.Printf("[HTTP] Failed to extract images: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK) // Return 200 with error info
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"images":    []string{},
+			"count":     0,
+			"error":     err.Error(),
+			"supported": false,
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"images":    images,
+		"count":     len(images),
+		"supported": true,
 	})
 }
 
@@ -844,6 +1335,290 @@ func (s *HTTPServer) handleSources(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"sources": sources,
+	})
+}
+
+// handleCreateSource creates a new download source
+func (s *HTTPServer) handleCreateSource(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var source models.DownloadSource
+	if err := json.NewDecoder(r.Body).Decode(&source); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if source.Name == "" || source.Type == "" {
+		http.Error(w, "Name and type are required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.db.GetDB().Create(&source).Error; err != nil {
+		http.Error(w, fmt.Sprintf("Failed to create source: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(source)
+}
+
+// handleUpdateSource updates an existing download source
+func (s *HTTPServer) handleUpdateSource(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodPut {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var source models.DownloadSource
+	if err := json.NewDecoder(r.Body).Decode(&source); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if source.ID == 0 {
+		http.Error(w, "Source ID is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.db.GetDB().Model(&models.DownloadSource{}).Where("id = ?", source.ID).Updates(map[string]interface{}{
+		"name":     source.Name,
+		"type":     source.Type,
+		"url":      source.URL,
+		"api_key":  source.APIKey,
+		"enabled":  source.Enabled,
+		"priority": source.Priority,
+	}).Error; err != nil {
+		http.Error(w, fmt.Sprintf("Failed to update source: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// handleDeleteSource deletes a download source
+func (s *HTTPServer) handleDeleteSource(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID uint `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.ID == 0 {
+		http.Error(w, "Source ID is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.db.GetDB().Delete(&models.DownloadSource{}, req.ID).Error; err != nil {
+		http.Error(w, fmt.Sprintf("Failed to delete source: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// handleSourceDetail handles requests to /api/sources/{id}/*
+func (s *HTTPServer) handleSourceDetail(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/sources/")
+	parts := strings.Split(path, "/")
+	if len(parts) < 2 {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return
+	}
+
+	sourceID, err := strconv.Atoi(parts[0])
+	if err != nil {
+		http.Error(w, "Invalid source ID", http.StatusBadRequest)
+		return
+	}
+
+	action := parts[1]
+
+	switch action {
+	case "jackett-indexers":
+		s.handleJackettIndexers(w, r, uint(sourceID))
+	default:
+		http.Error(w, "Unknown action", http.StatusNotFound)
+	}
+}
+
+// handleJackettIndexers returns the list of configured indexers from a Jackett instance
+// Uses a dummy search query since the /indexers endpoint requires admin cookies
+func (s *HTTPServer) handleJackettIndexers(w http.ResponseWriter, r *http.Request, sourceID uint) {
+	// Get the source
+	var source models.DownloadSource
+	if err := s.db.GetDB().First(&source, sourceID).Error; err != nil {
+		http.Error(w, "Source not found", http.StatusNotFound)
+		return
+	}
+
+	if source.Type != "jackett" {
+		http.Error(w, "Source is not a Jackett instance", http.StatusBadRequest)
+		return
+	}
+
+	if source.URL == "" || source.APIKey == "" {
+		http.Error(w, "Jackett URL or API key not configured", http.StatusBadRequest)
+		return
+	}
+
+	// Build the Jackett search API URL with a dummy query
+	// The search response includes an Indexers array with status info
+	jackettURL := strings.TrimSuffix(source.URL, "/")
+	searchURL := fmt.Sprintf("%s/api/v2.0/indexers/all/results?apikey=%s&Query=test", jackettURL, source.APIKey)
+
+	// Make request to Jackett with timeout
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(searchURL)
+	if err != nil {
+		log.Printf("[HTTP] Failed to fetch Jackett indexers: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to fetch indexers from Jackett: %v", err), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[HTTP] Jackett returned status %d: %s", resp.StatusCode, string(body))
+		http.Error(w, fmt.Sprintf("Jackett returned status %d", resp.StatusCode), http.StatusBadGateway)
+		return
+	}
+
+	// Parse Jackett search response - it includes an Indexers array
+	var jackettResponse struct {
+		Indexers []struct {
+			ID          string `json:"ID"`
+			Name        string `json:"Name"`
+			Status      int    `json:"Status"`
+			Results     int    `json:"Results"`
+			Error       string `json:"Error"`
+			ElapsedTime int    `json:"ElapsedTime"`
+		} `json:"Indexers"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&jackettResponse); err != nil {
+		log.Printf("[HTTP] Failed to parse Jackett response: %v", err)
+		http.Error(w, "Failed to parse Jackett response", http.StatusInternalServerError)
+		return
+	}
+
+	// Format response
+	type IndexerInfo struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Status      string `json:"status"`
+		Results     int    `json:"results"`
+		Error       string `json:"error,omitempty"`
+		ElapsedTime int    `json:"elapsed_ms"`
+	}
+
+	indexers := make([]IndexerInfo, 0, len(jackettResponse.Indexers))
+	for _, idx := range jackettResponse.Indexers {
+		status := "unknown"
+		switch idx.Status {
+		case 0:
+			status = "disabled"
+		case 1:
+			status = "enabled"
+		case 2:
+			status = "error"
+		}
+		indexers = append(indexers, IndexerInfo{
+			ID:          idx.ID,
+			Name:        idx.Name,
+			Status:      status,
+			Results:     idx.Results,
+			Error:       idx.Error,
+			ElapsedTime: idx.ElapsedTime,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"source":   source.Name,
+		"indexers": indexers,
+	})
+}
+
+// handleAllJackettIndexers returns indexers from all configured Jackett sources
+// Reads indexers from Jackett's config directory to avoid slow API calls
+func (s *HTTPServer) handleAllJackettIndexers(w http.ResponseWriter, r *http.Request) {
+	// Get all Jackett sources
+	var sources []models.DownloadSource
+	if err := s.db.GetDB().Where("type = ? AND enabled = ?", "jackett", true).Find(&sources).Error; err != nil {
+		http.Error(w, fmt.Sprintf("Failed to fetch Jackett sources: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	type IndexerInfo struct {
+		ID     string `json:"id"`
+		Name   string `json:"name"`
+		Status string `json:"status"`
+	}
+
+	type SourceIndexers struct {
+		Source   string        `json:"source"`
+		URL      string        `json:"url"`
+		Indexers []IndexerInfo `json:"indexers"`
+	}
+
+	allSources := make([]SourceIndexers, 0, len(sources))
+
+	for _, source := range sources {
+		if source.URL == "" || source.APIKey == "" {
+			continue
+		}
+
+		// Read configured indexers from Jackett's Indexers directory
+		// The indexer ID is the filename without .json extension
+		indexersDir := filepath.Join(os.Getenv("HOME"), ".config", "Jackett", "Indexers")
+		entries, err := os.ReadDir(indexersDir)
+		if err != nil {
+			log.Printf("[HTTP] Failed to read Jackett indexers directory: %v", err)
+			continue
+		}
+
+		indexers := make([]IndexerInfo, 0)
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+				continue
+			}
+			// Skip backup files
+			if strings.HasSuffix(entry.Name(), ".json.bak") {
+				continue
+			}
+			id := strings.TrimSuffix(entry.Name(), ".json")
+			// Convert kebab-case to readable name
+			name := strings.ReplaceAll(id, "-", " ")
+			name = strings.Title(name)
+			indexers = append(indexers, IndexerInfo{
+				ID:     id,
+				Name:   name,
+				Status: "enabled",
+			})
+		}
+
+		allSources = append(allSources, SourceIndexers{
+			Source:   source.Name,
+			URL:      source.URL,
+			Indexers: indexers,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"sources": allSources,
 	})
 }
 
@@ -1209,7 +1984,7 @@ func (s *HTTPServer) handleDownloadsStream(w http.ResponseWriter, r *http.Reques
 // handleStats returns server statistics as JSON
 func (s *HTTPServer) handleStats(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[HTTP] handleStats called from %s", r.RemoteAddr)
-	
+
 	// Safe defaults
 	response := map[string]interface{}{
 		"downloads": map[string]int{
@@ -1270,6 +2045,150 @@ func (s *HTTPServer) handleVPNStatus(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleVPNConnect attempts to connect the VPN
+func (s *HTTPServer) handleVPNConnect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	log.Println("[VPN] Connect requested via API")
+
+	if _, err := exec.LookPath("nordvpn"); err != nil {
+		http.Error(w, "NordVPN not installed", http.StatusServiceUnavailable)
+		return
+	}
+
+	exec.Command("/etc/init.d/nordvpn", "start").Start()
+	time.Sleep(2 * time.Second)
+
+	cmd := exec.Command("nordvpn", "connect")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("[VPN] Connect failed: %v, output: %s", err, string(output))
+		http.Error(w, fmt.Sprintf("Failed to connect: %s", string(output)), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("[VPN] Connect output: %s", string(output))
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "connecting", "message": string(output)})
+}
+
+// handleVPNDisconnect disconnects the VPN
+func (s *HTTPServer) handleVPNDisconnect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	log.Println("[VPN] Disconnect requested via API")
+
+	if _, err := exec.LookPath("nordvpn"); err != nil {
+		http.Error(w, "NordVPN not installed", http.StatusServiceUnavailable)
+		return
+	}
+
+	cmd := exec.Command("nordvpn", "disconnect")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("[VPN] Disconnect failed: %v, output: %s", err, string(output))
+		http.Error(w, fmt.Sprintf("Failed to disconnect: %s", string(output)), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("[VPN] Disconnect output: %s", string(output))
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "disconnected", "message": string(output)})
+}
+
+// commonLocalPosterNames lists filenames commonly used for local poster art
+var commonLocalPosterNames = []string{
+	"poster.jpg", "poster.png", "poster.jpeg", "poster.webp",
+	"folder.jpg", "folder.png", "folder.jpeg", "folder.webp",
+	"cover.jpg", "cover.png", "cover.jpeg", "cover.webp",
+	"movie.jpg", "movie.png", "movie.jpeg", "movie.webp",
+}
+
+// findLocalPoster searches a movie directory for local poster image files (case-insensitive)
+func findLocalPoster(moviePath string) string {
+	dir := filepath.Dir(moviePath)
+
+	// First try exact match
+	for _, name := range commonLocalPosterNames {
+		posterPath := filepath.Join(dir, name)
+		if info, err := os.Stat(posterPath); err == nil && !info.IsDir() {
+			return posterPath
+		}
+	}
+
+	// Case-insensitive fallback: list directory and check case-insensitively
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		nameLower := strings.ToLower(entry.Name())
+		for _, posterName := range commonLocalPosterNames {
+			if nameLower == posterName {
+				return filepath.Join(dir, entry.Name())
+			}
+		}
+	}
+
+	return ""
+}
+
+// handlePosterFile serves a local poster image file
+func (s *HTTPServer) handlePosterFile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	posterPath := r.URL.Query().Get("path")
+	if posterPath == "" {
+		http.Error(w, "Path parameter required", http.StatusBadRequest)
+		return
+	}
+
+	// Security check: ensure the path is within the media directory
+	mediaDir := "/mnt/media"
+	if envDir := os.Getenv("MEDIA_DIR"); envDir != "" {
+		mediaDir = envDir
+	}
+
+	absPath, err := filepath.Abs(posterPath)
+	if err != nil {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return
+	}
+
+	absMediaDir, err := filepath.Abs(mediaDir)
+	if err != nil {
+		http.Error(w, "Invalid media directory", http.StatusInternalServerError)
+		return
+	}
+
+	if !strings.HasPrefix(absPath, absMediaDir) {
+		http.Error(w, "Access denied", http.StatusForbidden)
+		return
+	}
+
+	// Check if file exists
+	if info, err := os.Stat(absPath); err != nil || info.IsDir() {
+		http.Error(w, "File not found", http.StatusNotFound)
+		return
+	}
+
+	// Serve the file
+	http.ServeFile(w, r, absPath)
+}
+
 // handleLibraryMovies returns the media library as JSON
 func (s *HTTPServer) handleLibraryMovies(w http.ResponseWriter, r *http.Request) {
 	// Try to use Jellyfin first
@@ -1301,6 +2220,33 @@ func (s *HTTPServer) handleLibraryMovies(w http.ResponseWriter, r *http.Request)
 				posterURL := "/images/placeholder-movie.jpg"
 				if imageTag, ok := item.ImageTags["Primary"]; ok {
 					posterURL = jellyfinClient.GetImageURL(item.Id, imageTag)
+				} else {
+					// Jellyfin has no poster - try local file, then DB cache, then TMDb
+					if item.Path != "" {
+						movieDir := filepath.Dir(item.Path)
+						// Map Jellyfin's Docker path to actual path if needed
+						movieDir = strings.Replace(movieDir, "/media/movies", "/mnt/media/Movies", 1)
+						if localPoster := findLocalPoster(filepath.Join(movieDir, "movie.mkv")); localPoster != "" {
+							posterURL = "/api/library/poster-file?path=" + url.QueryEscape(localPoster)
+						}
+					}
+					// If still no poster, try DB cache
+					if posterURL == "/images/placeholder-movie.jpg" && s.tmdbService != nil {
+						cleanName, year := s.tmdbService.ExtractMovieInfo(item.Name)
+						cleanTitle := s.tmdbService.CleanTitle(cleanName)
+						if cleanTitle != "" {
+							var metadata models.MovieMetadata
+							if err := s.db.GetDB().Where("clean_title = ?", cleanTitle).First(&metadata).Error; err == nil && metadata.PosterURL != "" {
+								posterURL = metadata.PosterURL
+							} else {
+								// Not in cache, try fetching from TMDb
+								if fetchedURL, _, err := s.tmdbService.FetchPosterForTask(item.Name); err == nil && fetchedURL != "" {
+									posterURL = fetchedURL
+								}
+							}
+							_ = year
+						}
+					}
 				}
 
 				// Calculate file size from media sources
@@ -1375,13 +2321,25 @@ func (s *HTTPServer) handleLibraryMovies(w http.ResponseWriter, r *http.Request)
 
 						posterURL := "/images/placeholder-movie.jpg"
 						movieName, year := s.tmdbService.ExtractMovieInfo(title)
-						cleanMovieTitle := s.tmdbService.CleanTitle(movieName)
 
-						if cleanMovieTitle != "" {
-							var metadata models.MovieMetadata
-							if err := s.db.GetDB().Where("clean_title = ?", cleanMovieTitle).
-								First(&metadata).Error; err == nil && metadata.PosterURL != "" {
-								posterURL = metadata.PosterURL
+						// Check for local poster file first
+						if localPoster := findLocalPoster(path); localPoster != "" {
+							posterURL = "/api/library/poster-file?path=" + url.QueryEscape(localPoster)
+						} else if s.tmdbService != nil {
+							// Fall back to DB cache, then fetch from TMDb
+							cleanMovieTitle := s.tmdbService.CleanTitle(movieName)
+
+							if cleanMovieTitle != "" {
+								var metadata models.MovieMetadata
+								if err := s.db.GetDB().Where("clean_title = ?", cleanMovieTitle).
+									First(&metadata).Error; err == nil && metadata.PosterURL != "" {
+									posterURL = metadata.PosterURL
+								} else {
+									// Not in cache, fetch from TMDb
+									if fetchedURL, _, err := s.tmdbService.FetchPosterForTask(title); err == nil && fetchedURL != "" {
+										posterURL = fetchedURL
+									}
+								}
 							}
 						}
 
@@ -1412,7 +2370,53 @@ func (s *HTTPServer) handleLibraryMovies(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *HTTPServer) handleFetchPoster(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "Not implemented", http.StatusNotImplemented)
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	title := r.URL.Query().Get("title")
+	moviePath := r.URL.Query().Get("path")
+
+	if title == "" && moviePath == "" {
+		http.Error(w, "Title or path parameter required", http.StatusBadRequest)
+		return
+	}
+
+	// If path provided, check for local poster first
+	if moviePath != "" {
+		if localPoster := findLocalPoster(moviePath); localPoster != "" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{
+				"poster_url": "/api/library/poster-file?path=" + url.QueryEscape(localPoster),
+			})
+			return
+		}
+		// Derive title from path if not provided
+		if title == "" {
+			title = filepath.Base(filepath.Dir(moviePath))
+			if title == "." || title == "Movies" {
+				title = strings.TrimSuffix(filepath.Base(moviePath), filepath.Ext(moviePath))
+			}
+		}
+	}
+
+	if s.tmdbService == nil {
+		http.Error(w, "TMDb service not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	posterURL, _, err := s.tmdbService.FetchPosterForTask(title)
+	if err != nil {
+		log.Printf("[HTTP] Failed to fetch poster for '%s': %v", title, err)
+		http.Error(w, "Failed to fetch poster", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"poster_url": posterURL,
+	})
 }
 
 func (s *HTTPServer) handleFetchPosterByTitle(w http.ResponseWriter, r *http.Request) {
@@ -1429,8 +2433,11 @@ func (s *HTTPServer) handleFetchPosterByTitle(w http.ResponseWriter, r *http.Req
 
 	posterURL, _, err := s.tmdbService.FetchPosterForTask(title)
 	if err != nil {
-		log.Printf("[HTTP] Failed to fetch poster for %s: %v", title, err)
-		http.Error(w, "Failed to fetch poster", http.StatusInternalServerError)
+		log.Printf("[HTTP] Failed to fetch poster for '%s': %v", title, err)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"poster_url": "",
+		})
 		return
 	}
 
@@ -1452,7 +2459,10 @@ func (s *HTTPServer) handleFetchAllPosters(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Scan the media directory for all video files
-	mediaDir := "/mnt/media/Downloads"
+	mediaDir := "/mnt/media/Movies"
+	if envDir := os.Getenv("MEDIA_DIR"); envDir != "" {
+		mediaDir = envDir
+	}
 
 	type MediaFile struct {
 		Path  string
@@ -1502,11 +2512,17 @@ func (s *HTTPServer) handleFetchAllPosters(w http.ResponseWriter, r *http.Reques
 	failedCount := 0
 
 	for _, media := range mediaFiles {
+		// Skip if local poster already exists
+		if localPoster := findLocalPoster(media.Path); localPoster != "" {
+			cachedCount++
+			continue
+		}
+
 		// Extract clean movie name and year using the same logic as TMDb service
 		movieName, _ := s.tmdbService.ExtractMovieInfo(media.Title)
 		cleanTitle := s.tmdbService.CleanTitle(movieName)
 
-		// Check if already cached
+		// Check if already cached in DB
 		var metadata models.MovieMetadata
 		result := s.db.GetDB().Where("clean_title = ?", cleanTitle).First(&metadata)
 
@@ -1672,23 +2688,356 @@ func (s *HTTPServer) handleRefreshJellyfinPosters(w http.ResponseWriter, r *http
 }
 
 func (s *HTTPServer) handleDeleteMovie(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "Not implemented", http.StatusNotImplemented)
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID   uint   `json:"id"`
+		Path string `json:"path"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	var moviePath string
+
+	if req.Path != "" {
+		moviePath = req.Path
+	} else if req.ID != 0 {
+		// Look up media file by ID
+		var mediaFile models.MediaFile
+		if err := s.db.GetDB().First(&mediaFile, req.ID).Error; err != nil {
+			log.Printf("[HTTP] Movie not found with ID %d: %v", req.ID, err)
+			http.Error(w, "Movie not found", http.StatusNotFound)
+			return
+		}
+		moviePath = mediaFile.Path
+	} else {
+		http.Error(w, "Missing path or id parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Validate the path is within the media directory to prevent directory traversal
+	mediaDir := "/mnt/media"
+	if !strings.HasPrefix(moviePath, mediaDir) {
+		log.Printf("[HTTP] Invalid movie path (outside media dir): %s", moviePath)
+		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return
+	}
+
+	// Check if path exists
+	info, err := os.Stat(moviePath)
+	if err != nil {
+		log.Printf("[HTTP] Movie path not found: %s", moviePath)
+		http.Error(w, "Movie not found on disk", http.StatusNotFound)
+		return
+	}
+
+	// Delete the file or directory
+	if info.IsDir() {
+		err = os.RemoveAll(moviePath)
+	} else {
+		err = os.Remove(moviePath)
+		// Also try to remove empty parent directory
+		parentDir := filepath.Dir(moviePath)
+		if remaining, _ := os.ReadDir(parentDir); len(remaining) == 0 {
+			os.Remove(parentDir)
+		}
+	}
+
+	if err != nil {
+		log.Printf("[HTTP] Failed to delete movie at %s: %v", moviePath, err)
+		http.Error(w, fmt.Sprintf("Failed to delete movie: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Remove from database if it exists
+	if err := s.db.GetDB().Where("path = ?", moviePath).Delete(&models.MediaFile{}).Error; err != nil {
+		log.Printf("[HTTP] Failed to delete media file from database: %v", err)
+	}
+
+	log.Printf("[HTTP] Deleted movie: %s", moviePath)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"path":    moviePath,
+		"message": "Movie deleted successfully",
+	})
 }
 
 func (s *HTTPServer) handleTags(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "Not implemented", http.StatusNotImplemented)
+	tags, err := s.db.GetTags()
+	if err != nil {
+		log.Printf("[HTTP] Failed to fetch tags: %v", err)
+		http.Error(w, "Failed to fetch tags", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"tags": tags,
+	})
 }
 
 func (s *HTTPServer) handleCreateTag(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "Not implemented", http.StatusNotImplemented)
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Name  string `json:"name"`
+		Color string `json:"color"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		http.Error(w, "Tag name is required", http.StatusBadRequest)
+		return
+	}
+
+	tag := &models.Tag{
+		Name:  req.Name,
+		Color: req.Color,
+	}
+
+	if err := s.db.CreateTag(tag); err != nil {
+		log.Printf("[HTTP] Failed to create tag: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to create tag: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("[HTTP] Created tag: %s", req.Name)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"tag":     tag,
+		"message": "Tag created successfully",
+	})
 }
 
 func (s *HTTPServer) handleAssignTag(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "Not implemented", http.StatusNotImplemented)
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Path  string `json:"path"`
+		TagID uint   `json:"tag_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if req.Path == "" || req.TagID == 0 {
+		http.Error(w, "Path and tag_id are required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.db.AssignTagToMediaFile(req.Path, req.TagID); err != nil {
+		log.Printf("[HTTP] Failed to assign tag %d to %s: %v", req.TagID, req.Path, err)
+		http.Error(w, fmt.Sprintf("Failed to assign tag: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("[HTTP] Assigned tag %d to %s", req.TagID, req.Path)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Tag assigned successfully",
+	})
 }
 
 func (s *HTTPServer) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "Not implemented", http.StatusNotImplemented)
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Path  string `json:"path"`
+		TagID uint   `json:"tag_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if req.Path == "" || req.TagID == 0 {
+		http.Error(w, "Path and tag_id are required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.db.RemoveTagFromMediaFile(req.Path, req.TagID); err != nil {
+		log.Printf("[HTTP] Failed to remove tag %d from %s: %v", req.TagID, req.Path, err)
+		http.Error(w, fmt.Sprintf("Failed to remove tag: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("[HTTP] Removed tag %d from %s", req.TagID, req.Path)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Tag removed successfully",
+	})
+}
+
+// handleHealth returns the health status of the server
+func (s *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":    "healthy",
+		"timestamp": time.Now().UTC(),
+	})
+}
+
+// RSS Feed handlers
+func (s *HTTPServer) handleRSSFeeds(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var feeds []models.RSSFeed
+	if err := s.db.GetDB().Find(&feeds).Error; err != nil {
+		log.Printf("[HTTP] Failed to fetch RSS feeds: %v", err)
+		jsonError(w, "Failed to fetch RSS feeds", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"feeds": feeds,
+	})
+}
+
+func (s *HTTPServer) handleCreateRSSFeed(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var feed models.RSSFeed
+	if err := json.NewDecoder(r.Body).Decode(&feed); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if feed.Name == "" || feed.URL == "" {
+		http.Error(w, "Name and URL are required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.db.GetDB().Create(&feed).Error; err != nil {
+		log.Printf("[HTTP] Failed to create RSS feed: %v", err)
+		jsonError(w, "Failed to create RSS feed", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"feed":    feed,
+	})
+}
+
+func (s *HTTPServer) handleUpdateRSSFeed(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var feed models.RSSFeed
+	if err := json.NewDecoder(r.Body).Decode(&feed); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.db.GetDB().Save(&feed).Error; err != nil {
+		log.Printf("[HTTP] Failed to update RSS feed: %v", err)
+		jsonError(w, "Failed to update RSS feed", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"feed":    feed,
+	})
+}
+
+func (s *HTTPServer) handleDeleteRSSFeed(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID uint `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.db.GetDB().Delete(&models.RSSFeed{}, req.ID).Error; err != nil {
+		log.Printf("[HTTP] Failed to delete RSS feed: %v", err)
+		jsonError(w, "Failed to delete RSS feed", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "RSS feed deleted",
+	})
+}
+
+func (s *HTTPServer) handleCheckRSSFeed(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID uint `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	var feed models.RSSFeed
+	if err := s.db.GetDB().First(&feed, req.ID).Error; err != nil {
+		jsonError(w, "Feed not found", http.StatusNotFound)
+		return
+	}
+
+	// TODO: Trigger immediate check
+	feed.LastCheck = time.Now()
+	s.db.GetDB().Save(&feed)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Feed check triggered",
+	})
 }
 
 // Helper function for ternary operator

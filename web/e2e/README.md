@@ -15,8 +15,9 @@ This directory contains end-to-end tests for the Media Manager React web applica
 - Clear Completed/Failed buttons
 - Task list display with progress bars
 - Task action buttons (Cancel, Restart, Delete)
-- Task details (status, size, seeders, progress)
-- Error message display
+- **Task actions (clicking Cancel, Restart, Delete)**
+- Task details (status, size, seeders, progress, error messages)
+- Empty state handling
 
 ### Library (`library.spec.ts`)
 - Library page UI elements
@@ -28,12 +29,16 @@ This directory contains end-to-end tests for the Media Manager React web applica
 
 ### Search (`search.spec.ts`)
 - Search page UI elements
-- Search input functionality
-- Status filter dropdown
-- Suggestion cards display
-- Approve/Reject buttons
-- Bulk selection and actions
-- Generate Suggestions functionality
+- Search input with icon
+- Search button functionality
+- **Tab switching (Search Results / Suggestions)**
+- **Search functionality with API integration**
+- **Download buttons for search results**
+- **Disabled download buttons when no magnet link**
+- Search result metadata (size, seeders, leechers)
+- Empty states for both tabs
+- **Approve/Reject suggestions**
+- **Image error handling with fallback**
 
 ### Suggestions (`suggestions.spec.ts`)
 - Suggestions page UI elements
@@ -63,6 +68,16 @@ This directory contains end-to-end tests for the Media Manager React web applica
 - VPN status card in Settings
 - Auto-refresh functionality
 - Mobile responsiveness
+- **VPN warning banner**
+- **Dismiss VPN warning**
+
+### VPN Actions (`vpn-actions.spec.ts`)
+- **Connect VPN button**
+- **Disconnect VPN button**
+- **Connect/Disconnect API calls**
+- **Loading states during VPN operations**
+- **VPN status refresh after actions**
+- **Button disabled states during operations**
 
 ### Toast Notifications (`toast.spec.ts`)
 - Toast display on actions
@@ -70,6 +85,41 @@ This directory contains end-to-end tests for the Media Manager React web applica
 - Auto-dismiss after timeout
 - Manual dismiss functionality
 - Multiple toast stacking
+
+### Error States (`error-states.spec.ts`)
+- **API failure handling**
+- **404 error handling**
+- **Network error handling**
+- **Task action error handling**
+- **Slow API response handling**
+- **Error recovery**
+
+### Accessibility (`accessibility.spec.ts`)
+- **Heading structure**
+- **Keyboard navigation**
+- **Focus indicators**
+- **ARIA labels**
+- **Alt text on images**
+- **Landmark regions**
+- **Focus order**
+- **Form labels**
+
+### Responsive Design (`responsive.spec.ts`)
+- **Mobile viewport (375x667)**
+- **Tablet viewport (768x1024)**
+- **Desktop viewport (1280x720)**
+- **Grid layout adaptation**
+- **Touch target sizes**
+- **No horizontal scroll**
+- **Landscape orientation**
+
+### Theme (`theme.spec.ts`)
+- **Default dark theme**
+- **Theme toggle**
+- **Theme persistence across navigation**
+- **Theme persistence after reload**
+- **Background and text colors**
+- **Theme on all pages**
 
 ## Running Tests
 
@@ -113,6 +163,11 @@ npx playwright test --project=webkit
 npx playwright test dashboard.spec.ts
 ```
 
+### Run Tests by Tag
+```bash
+npx playwright test --grep "accessibility"
+```
+
 ## Configuration
 
 Tests are configured in `playwright.config.ts`:
@@ -121,6 +176,7 @@ Tests are configured in `playwright.config.ts`:
 - Mobile devices: Pixel 5, iPhone 12
 - Screenshots: On failure only
 - Videos: On first retry
+- Trace: On first retry
 
 ## Test Structure
 
@@ -158,11 +214,29 @@ When VPN is disconnected:
 
 - `/api/stats` - Dashboard statistics
 - `/api/tasks` - Download tasks list
+- `/api/tasks/cancel` - Cancel a task
+- `/api/tasks/restart` - Restart a task
+- `/api/tasks/delete` - Delete a task
+- `/api/tasks/clear-completed` - Clear completed tasks
+- `/api/tasks/clear-failed` - Clear failed tasks
 - `/api/library/movies` - Media library
+- `/api/library/reprocess` - Clean library filenames
 - `/api/suggestions` - Download suggestions
 - `/api/suggestions/stats` - Suggestion statistics
 - `/api/suggestions/generate` - Generate suggestions
+- `/api/suggestions/approve` - Approve suggestion
+- `/api/suggestions/reject` - Reject suggestion
+- `/api/search` - Search torrents
 - `/api/sources` - Download sources
 - `/api/rules` - Download rules
-- `/api/library/reprocess` - Clean library filenames
 - `/api/vpn/status` - VPN connection status
+- `/api/vpn/connect` - Connect VPN
+- `/api/vpn/disconnect` - Disconnect VPN
+
+## Best Practices
+
+1. **Wait for API responses**: Always wait for API responses before asserting
+2. **Conditional assertions**: Use conditional checks for data-dependent assertions
+3. **Error handling**: Tests should handle empty states and errors gracefully
+4. **Isolation**: Each test should be independent
+5. **Cleanup**: No persistent state changes between tests

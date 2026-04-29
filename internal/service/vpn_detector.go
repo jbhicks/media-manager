@@ -75,8 +75,8 @@ var nordVPNCountryCodes = map[string]string{
 
 // VPNDetector handles detection of VPN connections
 type VPNDetector struct {
-	lastCheck   time.Time
-	cachedResult bool
+	lastCheck      time.Time
+	cachedResult   bool
 	cachedProvider *VPNProvider
 }
 
@@ -93,8 +93,8 @@ func (vd *VPNDetector) IsVPNActive() (bool, *VPNProvider) {
 	}
 
 	provider := &VPNProvider{
-		Name: "Unknown",
-		Type: "unknown",
+		Name:   "Unknown",
+		Type:   "unknown",
 		Active: false,
 	}
 
@@ -159,22 +159,24 @@ func (vd *VPNDetector) checkNordVPN(provider *VPNProvider) bool {
 		provider.Type = "nordvpn"
 		provider.Active = true
 
-		// Parse server
-		if server := vd.parseNordVPNOutput(status, "Server"); server != "" {
-			provider.Server = server
-			
-			// Parse country from server name (e.g., "us1234.nordvpn.com" -> "us" -> "United States")
-			countryCode := vd.parseNordVPNCountryCode(server)
+		// Parse server info
+		provider.Server = vd.parseNordVPNOutput(status, "Server")
+
+		// Parse country (this is the human-readable country name)
+		if country := vd.parseNordVPNOutput(status, "Country"); country != "" {
+			provider.Location = country
+		} else if hostname := vd.parseNordVPNOutput(status, "Hostname"); hostname != "" {
+			// Fallback: parse country code from hostname (e.g., "us1234.nordvpn.com" -> "us" -> "United States")
+			countryCode := vd.parseNordVPNCountryCode(hostname)
 			if countryName, ok := nordVPNCountryCodes[countryCode]; ok {
 				provider.Location = countryName
+			} else if countryCode != "" {
+				provider.Location = strings.ToUpper(countryCode)
 			} else {
-				// Fallback: use country code or full server name
-				if countryCode != "" {
-					provider.Location = strings.ToUpper(countryCode)
-				} else {
-					provider.Location = server
-				}
+				provider.Location = provider.Server
 			}
+		} else {
+			provider.Location = provider.Server
 		}
 
 		log.Printf("[VPN] NordVPN is connected to: %s (Location: %s)", provider.Server, provider.Location)
@@ -190,7 +192,7 @@ func (vd *VPNDetector) parseNordVPNCountryCode(server string) string {
 	// Remove domain part
 	server = strings.TrimSuffix(server, ".nordvpn.com")
 	server = strings.TrimSuffix(server, ".nordvpn")
-	
+
 	// Extract first 2 letters which is the country code
 	if len(server) >= 2 {
 		return strings.ToLower(server[:2])
@@ -246,15 +248,15 @@ func (vd *VPNDetector) checkVPNInterfaces(provider *VPNProvider) bool {
 // isVPNInterface checks if interface name matches VPN patterns
 func (vd *VPNDetector) isVPNInterface(name string) bool {
 	vpnPatterns := []string{
-		"tun",      // OpenVPN, generic TUN
-		"tap",      // OpenVPN TAP
-		"wg",       // WireGuard
-		"nordlynx", // NordVPN WireGuard
-		"nordtun",  // NordVPN TUN
-		"ppp",      // PPTP/L2TP
-		"ipsec",    // IPsec
-		"proton",   // ProtonVPN
-		"mullvad",  // Mullvad
+		"tun",        // OpenVPN, generic TUN
+		"tap",        // OpenVPN TAP
+		"wg",         // WireGuard
+		"nordlynx",   // NordVPN WireGuard
+		"nordtun",    // NordVPN TUN
+		"ppp",        // PPTP/L2TP
+		"ipsec",      // IPsec
+		"proton",     // ProtonVPN
+		"mullvad",    // Mullvad
 		"windscribe", // Windscribe
 	}
 
@@ -310,20 +312,20 @@ func (vd *VPNDetector) getVPNNameFromInterface(name string) string {
 // checkVPNProcesses checks for running VPN processes
 func (vd *VPNDetector) checkVPNProcesses(provider *VPNProvider) bool {
 	vpnProcesses := map[string]string{
-		"nordvpnd":       "NordVPN",
-		"openvpn":        "OpenVPN",
-		"wg-quick":       "WireGuard",
-		"wireguard-go":   "WireGuard",
-		"protonvpn":      "ProtonVPN",
-		"mullvad-vpn":    "Mullvad VPN",
-		"expressvpnd":    "ExpressVPN",
-		"windscribe":     "Windscribe",
-		"surfshark":      "Surfshark",
-		"cyberghost":     "CyberGhost",
+		"nordvpnd":              "NordVPN",
+		"openvpn":               "OpenVPN",
+		"wg-quick":              "WireGuard",
+		"wireguard-go":          "WireGuard",
+		"protonvpn":             "ProtonVPN",
+		"mullvad-vpn":           "Mullvad VPN",
+		"expressvpnd":           "ExpressVPN",
+		"windscribe":            "Windscribe",
+		"surfshark":             "Surfshark",
+		"cyberghost":            "CyberGhost",
 		"privateinternetaccess": "PIA",
-		"pia-client":     "PIA",
-		"hotspotshield":  "Hotspot Shield",
-		"tunnelbear":     "TunnelBear",
+		"pia-client":            "PIA",
+		"hotspotshield":         "Hotspot Shield",
+		"tunnelbear":            "TunnelBear",
 	}
 
 	// Check /proc for running processes

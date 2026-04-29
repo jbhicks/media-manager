@@ -1,0 +1,28 @@
+# Git
+.git/
+.gitignore
+.gitmodules
+
+# Build artifacts
+bin/
+tmp/
+*.log
+
+# Web
+web/node_modules/
+
+# Data
+data/
+media/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore

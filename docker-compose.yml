@@ -13,15 +13,19 @@ services:
       - .env
     
     environment:
+      - PORT=8080
       - NORDVPN_TOKEN=${NORDVPN_TOKEN}
       - NORDVPN_SERVER=${NORDVPN_SERVER:-}
       - VPN_PROTOCOL=${VPN_PROTOCOL:-nordlynx}
       - PIHOLE_IP=${PIHOLE_IP:-}
+      - VPN_WHITELIST_SUBNETS=${VPN_WHITELIST_SUBNETS:-192.168.1.0/24,10.0.0.0/8,172.16.0.0/12}
       - DB_PATH=/data/media.db
       - DOWNLOAD_PATH=/mnt/media/Downloads
       - LIBRARY_PATH=/mnt/media/Movies
       - TORRENT_CLIENT_TYPE=${TORRENT_CLIENT_TYPE:-native}
       - MAX_CONCURRENT_DOWNLOADS=${MAX_CONCURRENT_DOWNLOADS:-5}
+      - JACKETT_URL=http://192.168.1.49:9117
+      - JACKETT_API_KEY=xzvzhznfjsnit25fpa8mloxh66h40svz
     
     volumes:
       - ./data:/data
@@ -29,11 +33,17 @@ services:
       - ./config:/config:ro
     
     ports:
-      - "8080:8080"
+      - "0.0.0.0:8080:8080"
+    
+    privileged: true
     
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
+      - SYS_ADMIN
+    
+    security_opt:
+      - seccomp:unconfined
     
     sysctls:
       - net.ipv4.conf.all.src_valid_mark=1

@@ -93,7 +93,7 @@ func TestSuggestionService_ApproveSuggestion(t *testing.T) {
 		t.Fatalf("Failed to create suggestion: %v", err)
 	}
 
-	if err := suggestionService.ApproveSuggestion(suggestion.ID, "Looks good"); err != nil {
+	if err := suggestionService.ApproveSuggestion(suggestion.ID, "Looks good", false); err != nil {
 		t.Fatalf("Failed to approve suggestion: %v", err)
 	}
 

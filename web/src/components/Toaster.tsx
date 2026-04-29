@@ -17,7 +17,7 @@ export function Toaster() {
             toast.type === 'info' && 'border-blue-500/20 bg-blue-500/10 text-blue-500'
           )}
         >
-          <span className="text-sm font-medium">{toast.message}</span>
+          <span className="text-sm font-medium max-w-md break-words">{toast.message}</span>
           <button
             onClick={() => removeToast(toast.id)}
             className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground h-6 w-6"

@@ -145,11 +145,29 @@ export interface MediaItem {
   path: string;
 }
 
+export interface SuggestionGroup {
+  tmdb_id: number;
+  title: string;
+  poster_url: string;
+  primary: DownloadSuggestion;
+  alternates: DownloadSuggestion[];
+  total_options: number;
+}
+
 export interface SuggestionStats {
   pending: number;
   approved: number;
   rejected: number;
   total: number;
+}
+
+export interface SuggestionGroup {
+  tmdb_id: number;
+  title: string;
+  poster_url: string;
+  primary: DownloadSuggestion;
+  alternates: DownloadSuggestion[];
+  total_options: number;
 }
 
 export interface DownloadStats {

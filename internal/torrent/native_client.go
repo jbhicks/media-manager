@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/anacrolix/torrent"
@@ -132,6 +133,95 @@ func (n *NativeClient) AddTorrentFromFile(torrentFile string, downloadDir string
 	}()
 
 	return nil
+}
+
+// ExtractImagesFromTorrent adds a magnet, waits for metadata, and downloads only image files
+func (n *NativeClient) ExtractImagesFromTorrent(magnetLink string, timeout time.Duration) ([]string, error) {
+	t, err := n.client.AddMagnet(magnetLink)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add magnet: %w", err)
+	}
+
+	log.Printf("[TORRENT] Inspecting torrent for images: %s", t.Name())
+
+	// Wait for metadata with timeout
+	select {
+	case <-t.GotInfo():
+		log.Printf("[TORRENT] Got metadata for: %s", t.Name())
+	case <-time.After(timeout):
+		t.Drop()
+		return nil, fmt.Errorf("timeout waiting for torrent metadata")
+	}
+
+	// Find image files
+	info := t.Info()
+	if info == nil {
+		t.Drop()
+		return nil, fmt.Errorf("no torrent info available")
+	}
+
+	var imageFiles []string
+	for i, file := range info.Files {
+		pathStr := filepath.Join(file.Path...)
+		name := strings.ToLower(pathStr)
+		if strings.HasSuffix(name, ".jpg") || strings.HasSuffix(name, ".jpeg") ||
+			strings.HasSuffix(name, ".png") || strings.HasSuffix(name, ".gif") ||
+			strings.HasSuffix(name, ".webp") {
+			log.Printf("[TORRENT] Found image file: %s", pathStr)
+			imageFiles = append(imageFiles, pathStr)
+			// Download only this file
+			t.Files()[i].Download()
+		}
+	}
+
+	if len(imageFiles) == 0 {
+		log.Printf("[TORRENT] No image files found in torrent: %s", t.Name())
+		t.Drop()
+		return nil, nil
+	}
+
+	// Wait for images to download
+	log.Printf("[TORRENT] Downloading %d image files...", len(imageFiles))
+	deadline := time.Now().Add(timeout)
+	for {
+		allDone := true
+		for i := range info.Files {
+			pathStr := filepath.Join(info.Files[i].Path...)
+			name := strings.ToLower(pathStr)
+			if strings.HasSuffix(name, ".jpg") || strings.HasSuffix(name, ".jpeg") ||
+				strings.HasSuffix(name, ".png") || strings.HasSuffix(name, ".gif") ||
+				strings.HasSuffix(name, ".webp") {
+				if t.Files()[i].BytesCompleted() < t.Files()[i].Length() {
+					allDone = false
+					break
+				}
+			}
+		}
+		if allDone {
+			break
+		}
+		if time.Now().After(deadline) {
+			log.Printf("[TORRENT] Timeout downloading images")
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// Build full paths
+	var imagePaths []string
+	for _, imgPath := range imageFiles {
+		fullPath := filepath.Join(n.downloadDir, imgPath)
+		if _, err := os.Stat(fullPath); err == nil {
+			imagePaths = append(imagePaths, fullPath)
+		}
+	}
+
+	log.Printf("[TORRENT] Extracted %d images from torrent", len(imagePaths))
+
+	// Drop the torrent so we don't seed the full content
+	t.Drop()
+
+	return imagePaths, nil
 }
 
 func (n *NativeClient) WaitForCompletion(timeout time.Duration) {

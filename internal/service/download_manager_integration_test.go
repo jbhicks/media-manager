@@ -65,13 +65,13 @@ func TestSearchAndDisplayResults(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fmt.Printf("\n=== Search Query: %s (category: %s) ===\n", tt.query, tt.category)
 
-			results, err := searcher.Search(tt.query, tt.category, 10)
-			if err != nil {
-				t.Errorf("Search failed: %v", err)
-				return
-			}
+		results, _, err := searcher.Search(tt.query, tt.category, 10, nil)
+		if err != nil {
+			t.Errorf("Search failed: %v", err)
+			return
+		}
 
-			fmt.Printf("Found %d results:\n\n", len(results))
+		fmt.Printf("Found %d results:\n\n", len(results))
 
 			for i, result := range results {
 				fmt.Printf("[%d] %s\n", i+1, result.Title)
@@ -194,7 +194,7 @@ func TestSearchForMoviesToDownload(t *testing.T) {
 	for i, query := range queries {
 		fmt.Printf("[Query %d/%d] Searching: '%s'\n", i+1, len(queries), query)
 
-		results, err := searcher.Search(query, rule.MediaType, 100)
+		results, _, err := searcher.Search(query, rule.MediaType, 100, nil)
 		if err != nil {
 			fmt.Printf("  ⚠ Search failed: %v\n\n", err)
 			continue

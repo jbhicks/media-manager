@@ -6,8 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/user/media-manager/internal/db"
@@ -22,14 +24,19 @@ type TorrentClient interface {
 	RemoveTorrent(torrentID int, deleteData bool) error
 }
 
+type TorrentImageExtractor interface {
+	ExtractImagesFromTorrent(magnetLink string, timeout time.Duration) ([]string, error)
+}
+
 type DownloadManager struct {
-	db              *db.Database
-	torrentClient   TorrentClient
-	torrentSearcher *torrent.TorrentSearcher
-	updateCallback  func()
-	serviceConfig   *models.ServiceConfig
-	jellyfinClient  *jellyfin.Client
-	vpnDetector     *VPNDetector
+	db                *db.Database
+	torrentClient     TorrentClient
+	imageExtractor    TorrentImageExtractor
+	torrentSearcher   *torrent.TorrentSearcher
+	updateCallback    func()
+	serviceConfig     *models.ServiceConfig
+	jellyfinClient    *jellyfin.Client
+	vpnDetector       *VPNDetector
 }
 
 func NewDownloadManager(database *db.Database, cfg *models.ServiceConfig) (*DownloadManager, error) {
@@ -93,9 +100,19 @@ func NewDownloadManager(database *db.Database, cfg *models.ServiceConfig) (*Down
 		}
 	}
 
+	// Always create a native client for image extraction (works regardless of main client)
+	var imageExtractor TorrentImageExtractor
+	if nativeClient, err := torrent.NewNativeClient("/tmp/media-manager-images"); err == nil {
+		imageExtractor = nativeClient
+		log.Println("[TORRENT] Native image extractor initialized")
+	} else {
+		log.Printf("[WARN] Failed to create native client for image extraction: %v", err)
+	}
+
 	dm := &DownloadManager{
 		db:              database,
 		torrentClient:   torrentClient,
+		imageExtractor:  imageExtractor,
 		torrentSearcher: torrentSearcher,
 		serviceConfig:   cfg,
 		jellyfinClient:  jellyfinClient,
@@ -202,7 +219,7 @@ func (dm *DownloadManager) SearchAndDownload(rule *models.DownloadRule) error {
 	for i, query := range queries {
 		log.Printf("[DOWNLOAD] Search %d/%d: %s", i+1, len(queries), query)
 
-		results, err := dm.torrentSearcher.Search(query, rule.MediaType, 100)
+		results, _, err := dm.torrentSearcher.Search(query, rule.MediaType, 100, nil)
 		if err != nil {
 			log.Printf("[WARN] Search failed for '%s': %v", query, err)
 			continue
@@ -519,7 +536,7 @@ func (dm *DownloadManager) isVPNActive() bool {
 	if dm.vpnDetector == nil {
 		dm.vpnDetector = NewVPNDetector()
 	}
-	
+
 	active, _ := dm.vpnDetector.IsVPNActive()
 	return active
 }
@@ -671,10 +688,144 @@ func (dm *DownloadManager) RestartTask(taskID uint) error {
 	return nil
 }
 
-func (dm *DownloadManager) SearchWithoutDownload(rule *models.DownloadRule) ([]models.SearchResult, error) {
+// StartTask starts a pending download task
+func (dm *DownloadManager) StartTask(taskID uint) error {
+	var task models.DownloadTask
+	if err := dm.db.GetDB().First(&task, taskID).Error; err != nil {
+		return fmt.Errorf("task not found: %w", err)
+	}
+
+	if task.Status != "pending" {
+		return fmt.Errorf("task is not pending (status: %s)", task.Status)
+	}
+
+	// Check VPN
+	if !dm.isVPNActive() {
+		return fmt.Errorf("VPN is not active, refusing to start download")
+	}
+
+	if dm.torrentClient == nil {
+		return fmt.Errorf("no torrent client configured")
+	}
+
+	// Check concurrent download limit
+	var currentDownloads int64
+	if err := dm.db.GetDB().Model(&models.DownloadTask{}).
+		Where("status = ?", "downloading").
+		Count(&currentDownloads).Error; err != nil {
+		return fmt.Errorf("failed to count current downloads: %w", err)
+	}
+
+	maxConcurrent := dm.serviceConfig.MaxConcurrentDownloads
+	if maxConcurrent <= 0 {
+		maxConcurrent = 5
+	}
+
+	if int(currentDownloads) >= maxConcurrent {
+		return fmt.Errorf("max concurrent downloads reached (%d/%d)", currentDownloads, maxConcurrent)
+	}
+
+	// Check if already downloaded
+	exists, err := dm.CheckIfAlreadyDownloaded(task.InfoHash)
+	if err != nil {
+		log.Printf("[WARN] Failed to check if torrent exists: %v", err)
+	} else if exists {
+		return fmt.Errorf("torrent already downloaded")
+	}
+
+	log.Printf("[DOWNLOAD] Starting task %d: %s", task.ID, task.Title)
+
+	torrentID, err := dm.torrentClient.AddTorrent(task.MagnetLink, task.DownloadPath)
+	if err != nil {
+		return fmt.Errorf("failed to add torrent: %w", err)
+	}
+
+	task.TorrentID = torrentID
+	task.Status = "downloading"
+	startTime := time.Now()
+	task.StartedAt = &startTime
+
+	if err := dm.db.GetDB().Save(&task).Error; err != nil {
+		return fmt.Errorf("failed to update task: %w", err)
+	}
+
+	dm.notifyUpdate()
+
+	log.Printf("[DOWNLOAD] Task %d started (Transmission ID: %d)", task.ID, torrentID)
+	return nil
+}
+
+type SearchResult struct {
+	Results []models.SearchResult
+	Timings []torrent.ProviderTiming
+}
+
+// searchCacheEntry holds cached search results with TTL
+
+type searchCacheEntry struct {
+	results   SearchResult
+	query     string
+	mediaType string
+	createdAt time.Time
+}
+
+var (
+	searchCache      = make(map[string]*searchCacheEntry)
+	searchCacheMutex sync.RWMutex
+	searchCacheTTL   = 5 * time.Minute
+)
+
+func getCacheKey(query, mediaType string) string {
+	return query + "|" + mediaType
+}
+
+func (dm *DownloadManager) getCachedSearch(query, mediaType string) *SearchResult {
+	searchCacheMutex.RLock()
+	defer searchCacheMutex.RUnlock()
+
+	entry, ok := searchCache[getCacheKey(query, mediaType)]
+	if !ok {
+		return nil
+	}
+
+	if time.Since(entry.createdAt) > searchCacheTTL {
+		return nil
+	}
+
+	log.Printf("[SEARCH] Cache hit for '%s' (%s), %d results", query, mediaType, len(entry.results.Results))
+	return &entry.results
+}
+
+func (dm *DownloadManager) setCachedSearch(query, mediaType string, result SearchResult) {
+	searchCacheMutex.Lock()
+	defer searchCacheMutex.Unlock()
+
+	searchCache[getCacheKey(query, mediaType)] = &searchCacheEntry{
+		results:   result,
+		query:     query,
+		mediaType: mediaType,
+		createdAt: time.Now(),
+	}
+}
+
+func (dm *DownloadManager) SearchWithoutDownload(rule *models.DownloadRule) (SearchResult, error) {
 	queries := dm.generateSearchQueries(rule.SearchQuery, rule.MediaType)
 	log.Printf("[SEARCH] Generated %d search queries", len(queries))
 	startTime := time.Now()
+
+	// Parse indexers from rule
+	var indexers []string
+	if rule.Indexers != "" {
+		indexers = strings.Split(rule.Indexers, ",")
+		log.Printf("[SEARCH] Using indexers: %v", indexers)
+	}
+
+	// Check cache for single-query searches (typical user search)
+	if len(queries) == 1 {
+		if cached := dm.getCachedSearch(queries[0], rule.MediaType); cached != nil {
+			return *cached, nil
+		}
+	}
 
 	// Use worker pool to limit concurrent Jackett requests (prevents overwhelming Jackett)
 	maxConcurrentSearches := 5 // Limit to 5 concurrent Jackett requests
@@ -686,6 +837,7 @@ func (dm *DownloadManager) SearchWithoutDownload(rule *models.DownloadRule) ([]m
 	type searchResult struct {
 		query   string
 		results []models.SearchResult
+		timings []torrent.ProviderTiming
 		err     error
 	}
 
@@ -695,11 +847,16 @@ func (dm *DownloadManager) SearchWithoutDownload(rule *models.DownloadRule) ([]m
 	// Start worker pool
 	for w := 0; w < maxConcurrentSearches; w++ {
 		go func(workerID int) {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[PANIC] Worker %d recovered from panic: %v\n%s", workerID+1, r, debug.Stack())
+				}
+			}()
 			for job := range jobsChan {
 				log.Printf("[SEARCH] Worker %d: Search %d/%d: %s", workerID+1, job.index+1, len(queries), job.query)
 				searchStart := time.Now()
 
-				results, err := dm.torrentSearcher.Search(job.query, rule.MediaType, 100)
+				results, timings, err := dm.torrentSearcher.Search(job.query, rule.MediaType, 1000, indexers)
 
 				searchDuration := time.Since(searchStart)
 				if err != nil {
@@ -708,7 +865,7 @@ func (dm *DownloadManager) SearchWithoutDownload(rule *models.DownloadRule) ([]m
 					log.Printf("[SEARCH] Worker %d: Search %d/%d found %d results for '%s' (%.2fs)", workerID+1, job.index+1, len(queries), len(results), job.query, searchDuration.Seconds())
 				}
 
-				resultsChan <- searchResult{query: job.query, results: results, err: err}
+				resultsChan <- searchResult{query: job.query, results: results, timings: timings, err: err}
 			}
 		}(w)
 	}
@@ -721,6 +878,7 @@ func (dm *DownloadManager) SearchWithoutDownload(rule *models.DownloadRule) ([]m
 
 	// Collect all results
 	allResults := make([]models.SearchResult, 0)
+	allTimings := make([]torrent.ProviderTiming, 0)
 	seenHashes := make(map[string]bool)
 
 	for range queries {
@@ -728,6 +886,8 @@ func (dm *DownloadManager) SearchWithoutDownload(rule *models.DownloadRule) ([]m
 		if sr.err != nil {
 			continue
 		}
+
+		allTimings = append(allTimings, sr.timings...)
 
 		for _, result := range sr.results {
 			if result.InfoHash != "" && !seenHashes[result.InfoHash] {
@@ -766,7 +926,17 @@ func (dm *DownloadManager) SearchWithoutDownload(rule *models.DownloadRule) ([]m
 	totalDuration := time.Since(startTime)
 	log.Printf("[SEARCH] Search completed in %.2fs total", totalDuration.Seconds())
 
-	return uniqueFiltered, nil
+	result := SearchResult{
+		Results: uniqueFiltered,
+		Timings: allTimings,
+	}
+
+	// Cache single-query searches
+	if len(queries) == 1 {
+		dm.setCachedSearch(queries[0], rule.MediaType, result)
+	}
+
+	return result, nil
 }
 
 func (dm *DownloadManager) SetUpdateCallback(callback func()) {
@@ -1455,12 +1625,12 @@ func (dm *DownloadManager) GetVPNStatus() map[string]interface{} {
 	if dm.vpnDetector == nil {
 		dm.vpnDetector = NewVPNDetector()
 	}
-	
+
 	active, provider := dm.vpnDetector.IsVPNActive()
-	
+
 	status := "disconnected"
 	message := "VPN is not active"
-	
+
 	if active {
 		status = "connected"
 		if provider.Location != "" {
@@ -1473,16 +1643,25 @@ func (dm *DownloadManager) GetVPNStatus() map[string]interface{} {
 			message = "VPN is active"
 		}
 	}
-	
+
 	return map[string]interface{}{
-		"active":    active,
-		"status":    status,
-		"message":   message,
-		"ip":        "",
-		"location":  provider.Location,
-		"country":   "",
-		"provider":  provider.Name,
-		"server":    provider.Server,
-		"type":      provider.Type,
+		"active":   active,
+		"status":   status,
+		"message":  message,
+		"ip":       "",
+		"location": provider.Location,
+		"country":  "",
+		"provider": provider.Name,
+		"server":   provider.Server,
+		"type":     provider.Type,
 	}
+}
+
+// ExtractImagesFromTorrent extracts image files from a torrent magnet link
+func (dm *DownloadManager) ExtractImagesFromTorrent(magnetLink string) ([]string, error) {
+	if dm.imageExtractor == nil {
+		return nil, fmt.Errorf("image extractor not available")
+	}
+
+	return dm.imageExtractor.ExtractImagesFromTorrent(magnetLink, 30*time.Second)
 }

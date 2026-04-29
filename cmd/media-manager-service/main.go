@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/joho/godotenv"
 	"github.com/user/media-manager/internal/config"
 	"github.com/user/media-manager/internal/db"
 	"github.com/user/media-manager/internal/service"
@@ -13,6 +14,13 @@ import (
 
 func main() {
 	log.Println("[SERVICE] Starting Media Manager Service...")
+
+	// Load .env file if it exists
+	if err := godotenv.Load(); err != nil {
+		log.Println("[SERVICE] No .env file found, using environment variables")
+	} else {
+		log.Println("[SERVICE] Loaded .env file")
+	}
 
 	// Get the media directory from args or use current directory
 	dir := "."

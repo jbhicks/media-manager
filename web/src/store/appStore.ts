@@ -46,18 +46,19 @@ export const useAppStore = create<AppState>((set) => ({
   
   // Toasts
   toasts: [],
-  addToast: (message, type = 'info') => {
-    const id = Math.random().toString(36).substring(7)
-    set((state) => ({
-      toasts: [...state.toasts, { id, message, type }],
-    }))
-    // Auto-remove after 3 seconds
-    setTimeout(() => {
+    addToast: (message, type = 'info') => {
+      const id = Math.random().toString(36).substring(7)
       set((state) => ({
-        toasts: state.toasts.filter((t) => t.id !== id),
+        toasts: [...state.toasts, { id, message, type }],
       }))
-    }, 3000)
-  },
+      // Auto-remove: 3s for success/info, 8s for errors (so user can read them)
+      const duration = type === 'error' ? 8000 : 3000
+      setTimeout(() => {
+        set((state) => ({
+          toasts: state.toasts.filter((t) => t.id !== id),
+        }))
+      }, duration)
+    },
   removeToast: (id) =>
     set((state) => ({
       toasts: state.toasts.filter((t) => t.id !== id),

@@ -41,9 +41,11 @@ export default defineConfig({
       use: { ...devices['iPhone 12'] },
     },
   ],
-  webServer: {
-    command: 'echo "Please start the backend server manually with: make dev"',
-    url: 'http://localhost:8080',
-    reuseExistingServer: true,
-  },
+  // Note: The backend server must be running manually before running tests
+  // Start with: make dev
+  // webServer: {
+  //   command: 'echo "Please start the backend server manually with: make dev" && sleep infinity',
+  //   url: 'http://localhost:8080',
+  //   reuseExistingServer: true,
+  // },
 })

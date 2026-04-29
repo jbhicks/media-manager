@@ -266,8 +266,6 @@ func (t *treeContextCatcher) TappedSecondary(e *fyne.PointEvent) {
 	widget.ShowPopUpMenuAtPosition(menu, canvas, e.AbsolutePosition)
 }
 
-
-
 // simpleTreeOverlayRenderer implements a minimal renderer for the transparent overlay
 type simpleTreeOverlayRenderer struct {
 	objs []fyne.CanvasObject

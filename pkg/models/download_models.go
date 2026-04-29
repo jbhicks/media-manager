@@ -38,6 +38,7 @@ type DownloadRule struct {
 	AutoDownload       bool      `json:"auto_download" gorm:"default:false"`
 	DestinationPath    string    `json:"destination_path"`
 	Schedule           string    `json:"schedule,omitempty"`
+	Indexers           string    `json:"indexers,omitempty"`
 	LastRun            time.Time `json:"last_run"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
@@ -61,7 +62,7 @@ type DownloadTask struct {
 	Progress     float64         `json:"progress" gorm:"default:0"`
 	DownloadPath string          `json:"download_path,omitempty"`
 	PosterURL    string          `json:"poster_url,omitempty"`
-	TMDbID       int             `json:"tmdb_id,omitempty"`
+	TMDbID       int             `json:"tmdb_id,omitempty" gorm:"column:tmdb_id"`
 	Error        string          `json:"error,omitempty"`
 	StartedAt    *time.Time      `json:"started_at,omitempty"`
 	CompletedAt  *time.Time      `json:"completed_at,omitempty"`
@@ -73,10 +74,12 @@ type SearchResult struct {
 	ID         uint            `json:"id" gorm:"primaryKey"`
 	SourceID   uint            `json:"source_id"`
 	Source     *DownloadSource `json:"source,omitempty" gorm:"foreignKey:SourceID"`
+	Indexer    string          `json:"indexer,omitempty"`
 	Title      string          `json:"title"`
 	InfoHash   string          `json:"info_hash,omitempty" gorm:"index"`
 	MagnetLink string          `json:"magnet_link,omitempty"`
 	TorrentURL string          `json:"torrent_url,omitempty"`
+	PosterURL  string          `json:"poster_url,omitempty"`
 	Size       int64           `json:"size"`
 	Seeders    int             `json:"seeders"`
 	Leechers   int             `json:"leechers"`
@@ -90,6 +93,7 @@ type DownloadSuggestion struct {
 	ID           uint            `json:"id" gorm:"primaryKey"`
 	SourceID     uint            `json:"source_id"`
 	Source       *DownloadSource `json:"source,omitempty" gorm:"foreignKey:SourceID"`
+	Indexer      string          `json:"indexer,omitempty"`
 	Title        string          `json:"title" gorm:"index"`
 	InfoHash     string          `json:"info_hash" gorm:"index;uniqueIndex"`
 	MagnetLink   string          `json:"magnet_link,omitempty"`
@@ -103,7 +107,7 @@ type DownloadSuggestion struct {
 	Quality      string          `json:"quality,omitempty"`
 	UploadDate   time.Time       `json:"upload_date,omitempty" gorm:"index"`
 	PosterURL    string          `json:"poster_url,omitempty"`
-	TMDbID       int             `json:"tmdb_id,omitempty"`
+	TMDbID       int             `json:"tmdb_id,omitempty" gorm:"column:tmdb_id"`
 	Status       string          `json:"status" gorm:"default:'pending';index"`
 	RejectedAt   *time.Time      `json:"rejected_at,omitempty"`
 	ApprovedAt   *time.Time      `json:"approved_at,omitempty"`
@@ -111,6 +115,16 @@ type DownloadSuggestion struct {
 	Notes        string          `json:"notes,omitempty"`
 	CreatedAt    time.Time       `json:"created_at"`
 	UpdatedAt    time.Time       `json:"updated_at"`
+}
+
+// SuggestionGroup represents a group of suggestions for the same movie/TV show
+type SuggestionGroup struct {
+	TMDbID       int                  `json:"tmdb_id"`
+	Title        string               `json:"title"`
+	PosterURL    string               `json:"poster_url"`
+	Primary      DownloadSuggestion   `json:"primary"`
+	Alternates   []DownloadSuggestion `json:"alternates"`
+	TotalOptions int                  `json:"total_options"`
 }
 
 type DownloadHistory struct {
@@ -122,4 +136,20 @@ type DownloadHistory struct {
 	DeletedAt    time.Time `json:"deleted_at"`
 	Reason       string    `json:"reason,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
+}
+
+type RSSFeed struct {
+	ID          uint      `json:"id" gorm:"primaryKey"`
+	Name        string    `json:"name"`
+	URL         string    `json:"url"`
+	Enabled     bool      `json:"enabled" gorm:"default:true"`
+	Interval    int       `json:"interval_minutes" gorm:"default:60"`
+	LastCheck   time.Time `json:"last_check"`
+	LastError   string    `json:"last_error,omitempty"`
+	AutoApprove bool      `json:"auto_approve" gorm:"default:false"`
+	MinSeeders  int       `json:"min_seeders" gorm:"default:10"`
+	Quality     string    `json:"quality,omitempty"`
+	Category    string    `json:"category,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }

@@ -1,6 +1,7 @@
 package tagger
 
 import (
+	"os"
 	"testing"
 	"time"
 )
@@ -125,6 +126,10 @@ func TestExtractDetailedMetadata(t *testing.T) {
 
 	// Test with one of the sample video files
 	testFile := "../../media/big_buck_bunny_480p_stereo [avidemux 30sec].mp4"
+
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Skipf("Test video file not found: %s", testFile)
+	}
 
 	metadata, err := tagger.ExtractDetailedMetadata(testFile)
 	if err != nil {

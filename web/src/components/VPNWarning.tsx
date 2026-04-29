@@ -4,11 +4,11 @@ import { useState } from 'react'
 import { cn } from '@/lib/utils'
 
 export function VPNWarning() {
-  const { data: vpnStatus } = useVPNStatus()
+  const { data: vpnStatus, isLoading } = useVPNStatus()
   const [dismissed, setDismissed] = useState(false)
 
-  // Only show when VPN is disconnected
-  if (vpnStatus?.active || dismissed) {
+  // Don't show while loading or when connected
+  if (isLoading || vpnStatus?.active || dismissed) {
     return null
   }
 

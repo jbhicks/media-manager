@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { useSources, useRules, useVPNStatus } from '@/hooks/useApi'
+import { useSources, useRules, useVPNStatus, useVPNConnect, useVPNDisconnect } from '@/hooks/useApi'
 import { Settings2, Database, Server, Shield, ShieldCheck, ShieldAlert, MapPin, Globe, Wifi } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -9,6 +9,8 @@ export function Settings() {
   const { data: sources } = useSources()
   const { data: rules } = useRules()
   const { data: vpnStatus, isLoading: vpnLoading } = useVPNStatus()
+  const connectVPN = useVPNConnect()
+  const disconnectVPN = useVPNDisconnect()
 
   return (
     <div className="space-y-6">
@@ -155,6 +157,28 @@ export function Settings() {
                   {vpnStatus?.message || 'Checking VPN status...'}
                 </p>
               )}
+
+              <div className="flex gap-2 pt-2">
+                {!vpnStatus?.active ? (
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => connectVPN.mutate()}
+                    disabled={connectVPN.isPending || disconnectVPN.isPending}
+                  >
+                    {connectVPN.isPending ? 'Connecting...' : 'Connect VPN'}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => disconnectVPN.mutate()}
+                    disabled={connectVPN.isPending || disconnectVPN.isPending}
+                  >
+                    {disconnectVPN.isPending ? 'Disconnecting...' : 'Disconnect VPN'}
+                  </Button>
+                )}
+              </div>
 
               <div className="rounded-md bg-muted p-3">
                 <p className="text-xs text-muted-foreground">

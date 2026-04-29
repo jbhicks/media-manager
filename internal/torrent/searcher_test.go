@@ -11,12 +11,12 @@ type mockSearchProvider struct {
 	name     string
 	enabled  bool
 	results  []models.SearchResult
-	searchFn func(query string, category string) ([]models.SearchResult, error)
+	searchFn func(query string, category string, indexers []string) ([]models.SearchResult, error)
 }
 
-func (m *mockSearchProvider) Search(query string, category string) ([]models.SearchResult, error) {
+func (m *mockSearchProvider) Search(query string, category string, indexers []string) ([]models.SearchResult, error) {
 	if m.searchFn != nil {
-		return m.searchFn(query, category)
+		return m.searchFn(query, category, indexers)
 	}
 	return m.results, nil
 }
@@ -140,9 +140,9 @@ func TestTorrentSearcher_Search(t *testing.T) {
 				&mockSearchProvider{
 					name:    "provider1",
 					enabled: true,
-					searchFn: func(query, category string) ([]models.SearchResult, error) {
-						return nil, fmt.Errorf("search failed")
-					},
+				searchFn: func(query, category string, indexers []string) ([]models.SearchResult, error) {
+					return nil, fmt.Errorf("search failed")
+				},
 				},
 				&mockSearchProvider{
 					name:    "provider2",
@@ -166,7 +166,7 @@ func TestTorrentSearcher_Search(t *testing.T) {
 				ts.AddProvider(provider)
 			}
 
-			results, err := ts.Search(tt.query, tt.category, tt.maxResults)
+			results, _, err := ts.Search(tt.query, tt.category, tt.maxResults, nil)
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 			}
@@ -183,7 +183,7 @@ func TestTorrentSearcher_SearchMovies(t *testing.T) {
 	provider := &mockSearchProvider{
 		name:    "test-provider",
 		enabled: true,
-		searchFn: func(query, category string) ([]models.SearchResult, error) {
+		searchFn: func(query, category string, indexers []string) ([]models.SearchResult, error) {
 			if category != "movies" {
 				t.Errorf("expected category 'movies', got '%s'", category)
 			}
@@ -224,7 +224,7 @@ func TestTorrentSearcher_SearchMovies(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results, err := ts.SearchMovies(tt.title, tt.year, tt.quality)
+			results, _, err := ts.SearchMovies(tt.title, tt.year, tt.quality)
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 			}
@@ -245,7 +245,7 @@ func TestTorrentSearcher_SearchTV(t *testing.T) {
 	provider := &mockSearchProvider{
 		name:    "test-provider",
 		enabled: true,
-		searchFn: func(query, category string) ([]models.SearchResult, error) {
+		searchFn: func(query, category string, indexers []string) ([]models.SearchResult, error) {
 			if category != "tv" {
 				t.Errorf("expected category 'tv', got '%s'", category)
 			}
@@ -298,7 +298,7 @@ func TestTorrentSearcher_SearchTV(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results, err := ts.SearchTV(tt.title, tt.season, tt.episode, tt.quality)
+			results, _, err := ts.SearchTV(tt.title, tt.season, tt.episode, tt.quality)
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 			}
