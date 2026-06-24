@@ -25,11 +25,12 @@ type MediaManagerApp struct {
 	db          *db.Database
 	mainView    *views.MainView
 	mediaDir    string
+	launchFiles []string
 	scanner     *scanner.MediaScanner
 	zoomManager *zoom.Manager
 }
 
-func NewMediaManagerApp(mediaDir string) (*MediaManagerApp, error) {
+func NewMediaManagerApp(mediaDir string, launchFiles []string) (*MediaManagerApp, error) {
 	// Check CLEAR_DB_ON_START env var
 	clearDB := os.Getenv("CLEAR_DB_ON_START") == "true"
 
@@ -64,17 +65,17 @@ func NewMediaManagerApp(mediaDir string) (*MediaManagerApp, error) {
 	}
 
 	fyneApp := app.NewWithID("com.mediamanager.app")
-	if len(assets.LogoSVG) > 0 {
-		fmt.Printf("[DEBUG] Setting app icon (SVG) (size: %d bytes)\n", len(assets.LogoSVG))
-		logoRes := fyne.NewStaticResource("logo.svg", assets.LogoSVG)
+	if len(assets.LogoPNG) > 0 {
+		fmt.Printf("[DEBUG] Setting app icon (PNG) (size: %d bytes)\n", len(assets.LogoPNG))
+		logoRes := fyne.NewStaticResource("logo.png", assets.LogoPNG)
 		fyneApp.SetIcon(logoRes)
 	} else {
-		fmt.Println("[WARN] Logo asset is empty or nil!")
+		fmt.Println("[WARN] PNG logo asset is empty or nil!")
 	}
 
 	window := fyneApp.NewWindow("Media Manager")
-	if len(assets.LogoSVG) > 0 {
-		window.SetIcon(fyne.NewStaticResource("logo.svg", assets.LogoSVG))
+	if len(assets.LogoPNG) > 0 {
+		window.SetIcon(fyne.NewStaticResource("logo.png", assets.LogoPNG))
 	}
 
 	// Initialize zoom manager with config values
@@ -95,6 +96,7 @@ func NewMediaManagerApp(mediaDir string) (*MediaManagerApp, error) {
 		config:      cfg,
 		db:          database,
 		mediaDir:    mediaDir,
+		launchFiles: launchFiles,
 		scanner:     mediaScanner,
 		zoomManager: zoomMgr,
 	}, nil
@@ -163,7 +165,7 @@ func (app *MediaManagerApp) RebuildMissingPreviews() {
 }
 
 func (app *MediaManagerApp) setupUI() {
-	mainView := views.NewMainView(app.config, app.db, app.window, app.mediaDir)
+	mainView := views.NewMainView(app.config, app.db, app.window, app.mediaDir, app.launchFiles)
 	app.mainView = mainView
 
 	// Now that mainView is set, add zoom callback to refresh the grid
@@ -225,10 +227,27 @@ func (app *MediaManagerApp) clampWindowToContent() {
 }
 
 func (app *MediaManagerApp) setupMenuBar() {
+	recentFoldersMenu := fyne.NewMenu("Recent Folders")
+	for _, folder := range app.config.MediaDirs {
+		folderPath := folder
+		if folderPath == "" {
+			continue
+		}
+		recentFoldersMenu.Items = append(recentFoldersMenu.Items, fyne.NewMenuItem(folderPath, func() {
+			if app.mainView != nil {
+				app.mainView.SwitchMediaDirectory(folderPath)
+				app.mediaDir = folderPath
+			}
+		}))
+	}
+	recentFoldersItem := fyne.NewMenuItem("Recent Folders", nil)
+	recentFoldersItem.ChildMenu = recentFoldersMenu
+
 	fileMenu := fyne.NewMenu("File",
 		fyne.NewMenuItem("Add Folder...", func() {
 			// TODO: Implement folder selection dialog
 		}),
+		recentFoldersItem,
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Settings...", func() {
 			// TODO: Implement settings dialog

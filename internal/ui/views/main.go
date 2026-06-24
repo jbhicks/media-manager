@@ -20,7 +20,6 @@ import (
 
 	"github.com/user/media-manager/internal/config"
 	"github.com/user/media-manager/internal/db"
-	"github.com/user/media-manager/internal/preview"
 	"github.com/user/media-manager/internal/tagger"
 	"github.com/user/media-manager/internal/ui/components"
 	"github.com/user/media-manager/pkg/models"
@@ -42,18 +41,25 @@ type SortableMediaFile struct {
 }
 
 type MainView struct {
-	config             *config.Config
-	database           *db.Database
-	mediaGridContainer *fyne.Container
-	mediaGridWrapper   *container.Scroll // Scroll wrapper for media grid
-	window             fyne.Window
-	mediaDir           string
-	foldersTree        *widget.Tree
-	filter             string
-	recursiveSearch    bool
-	debugLog           *widget.TextGrid
-	debugWriter        io.Writer
-	showDebugLog       bool
+	config              *config.Config
+	database            *db.Database
+	mediaGridContainer  *fyne.Container
+	mediaGridWrapper    *container.Scroll // Scroll wrapper for media grid
+	loadingContainer    *fyne.Container
+	loadingLabel        *widget.Label
+	window              fyne.Window
+	mediaDir            string
+	launchFocusFiles    map[string]bool
+	launchFocusActive   bool
+	launchFocusPrompted bool
+	foldersTree         *widget.Tree
+	filter              string
+	recursiveSearch     bool
+	isLoadingMedia      bool
+	loadingMessage      string
+	debugLog            *widget.TextGrid
+	debugWriter         io.Writer
+	showDebugLog        bool
 	// Sorting state
 	sortBy        string
 	sortAscending bool
@@ -73,7 +79,107 @@ type MainView struct {
 	folderCache map[string]*FolderCache
 }
 
+func (v *MainView) effectiveFilter() string {
+	return v.filter
+}
+
+func (v *MainView) isLaunchFocusedFile(fileName string) bool {
+	if !v.launchFocusActive || len(v.launchFocusFiles) == 0 {
+		return true
+	}
+	_, ok := v.launchFocusFiles[strings.ToLower(fileName)]
+	return ok
+}
+
+func (v *MainView) clearLaunchFocus() {
+	if !v.launchFocusActive {
+		return
+	}
+	v.launchFocusActive = false
+	v.RefreshMediaGrid()
+}
+
+func (v *MainView) maybeShowLaunchFocusPrompt() {
+	if v.window == nil || !v.launchFocusActive || v.launchFocusPrompted {
+		return
+	}
+	v.launchFocusPrompted = true
+
+	message := "Opened from Explorer. The grid is focused to the selected files."
+	if len(v.launchFocusFiles) == 1 {
+		for name := range v.launchFocusFiles {
+			message = fmt.Sprintf("Opened from Explorer: %s", name)
+		}
+	}
+
+	prompt := dialog.NewCustomConfirm(
+		"Opened from Explorer",
+		"Clear Focus",
+		"Keep",
+		widget.NewLabel(message),
+		func(clear bool) {
+			if clear {
+				v.clearLaunchFocus()
+			}
+		},
+		v.window,
+	)
+	prompt.Show()
+}
+
+func (v *MainView) scrollToCardIndex(index int, cardHeight float32) {
+	if v.mediaGridWrapper == nil || v.mediaGridContainer == nil {
+		return
+	}
+
+	viewHeight := v.mediaGridWrapper.Size().Height
+	if viewHeight <= 0 {
+		return
+	}
+
+	cardWidth := components.CardWidth()
+	gridWidth := v.mediaGridContainer.Size().Width
+	if gridWidth <= 0 && v.window != nil && v.window.Canvas() != nil {
+		gridWidth = v.window.Canvas().Size().Width
+	}
+
+	columns := int(gridWidth / cardWidth)
+	if columns < 1 {
+		columns = 1
+	}
+
+	row := index / columns
+	targetY := float32(row) * cardHeight
+	if viewHeight > cardHeight {
+		targetY -= (viewHeight - cardHeight) * 0.5
+	}
+	if targetY < 0 {
+		targetY = 0
+	}
+
+	maxY := v.mediaGridContainer.MinSize().Height - viewHeight
+	if maxY < 0 {
+		maxY = 0
+	}
+	if targetY > maxY {
+		targetY = maxY
+	}
+
+	v.mediaGridWrapper.Offset = fyne.NewPos(0, targetY)
+	v.mediaGridWrapper.Refresh()
+}
+
 func (v *MainView) SaveConfig() {
+	if v.database != nil {
+		if folders, err := v.database.GetFolders(); err == nil {
+			folderPaths := make([]string, len(folders))
+			for i, f := range folders {
+				folderPaths[i] = normalizeTreePath(f.Path)
+			}
+			v.config.MediaDirs = folderPaths
+		}
+	}
+
 	// Update config with current UI state
 	v.config.SortBy = v.sortBy
 	v.config.SortAscending = v.sortAscending
@@ -84,6 +190,7 @@ func (v *MainView) SaveConfig() {
 	v.config.ShowDebugLog = v.showDebugLog
 	v.config.MainContentSplitOffset = v.GetMainContentSplitOffset()
 	v.config.SidebarSplitOffset = v.GetSidebarSplitOffset()
+	v.config.OpenBranches = normalizeOpenBranches(v.config.OpenBranches, v.config.MediaDirs)
 
 	// Also save current window size (frequent saves ensure size persists during development)
 	if v.window != nil && v.window.Canvas() != nil {
@@ -97,6 +204,65 @@ func (v *MainView) SaveConfig() {
 	if err := config.SaveConfig(v.config); err != nil {
 		fmt.Printf("[ERROR] Failed to save config: %v\n", err)
 	}
+}
+
+func normalizeTreePath(path string) string {
+	if path == "" {
+		return ""
+	}
+
+	cleaned := filepath.Clean(filepath.FromSlash(path))
+	if volume := filepath.VolumeName(cleaned); volume != "" {
+		cleaned = strings.ToUpper(volume) + cleaned[len(volume):]
+	}
+	return cleaned
+}
+
+func treePathKey(path string) string {
+	return strings.ToLower(normalizeTreePath(path))
+}
+
+func isUnderRoot(path string, rootKeys map[string]string) bool {
+	pathKey := treePathKey(path)
+	for rootKey := range rootKeys {
+		if pathKey == rootKey || strings.HasPrefix(pathKey, rootKey+`\`) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeOpenBranches(openBranches map[string]bool, roots []string) map[string]bool {
+	if len(openBranches) == 0 {
+		return make(map[string]bool)
+	}
+
+	rootKeys := make(map[string]string, len(roots))
+	for _, root := range roots {
+		normalizedRoot := normalizeTreePath(root)
+		if normalizedRoot == "" {
+			continue
+		}
+		rootKeys[treePathKey(normalizedRoot)] = normalizedRoot
+	}
+
+	normalized := make(map[string]bool, len(openBranches))
+	for branch := range openBranches {
+		normalizedBranch := normalizeTreePath(branch)
+		if normalizedBranch == "" || !isUnderRoot(normalizedBranch, rootKeys) {
+			continue
+		}
+		if _, err := os.Stat(normalizedBranch); err != nil {
+			continue
+		}
+		if root, ok := rootKeys[treePathKey(normalizedBranch)]; ok {
+			normalized[root] = true
+			continue
+		}
+		normalized[normalizedBranch] = true
+	}
+
+	return normalized
 }
 
 func (v *MainView) getChildDirs(path string) []string {
@@ -135,9 +301,10 @@ func (v *MainView) createFoldersTree() *widget.Tree {
 	}
 	folderPaths := make([]string, len(folders))
 	for i, f := range folders {
-		folderPaths[i] = f.Path
+		folderPaths[i] = normalizeTreePath(f.Path)
 	}
 	v.config.MediaDirs = folderPaths
+	v.config.OpenBranches = normalizeOpenBranches(v.config.OpenBranches, folderPaths)
 	if v.mediaDir == "" && len(folderPaths) > 0 {
 		v.mediaDir = folderPaths[0]
 	}
@@ -172,11 +339,11 @@ func (v *MainView) createFoldersTree() *widget.Tree {
 		tree.OpenBranch(id)
 	}
 	tree.OnBranchOpened = func(id string) {
-		v.config.OpenBranches[id] = true
+		v.config.OpenBranches[normalizeTreePath(id)] = true
 		v.SaveConfig()
 	}
 	tree.OnBranchClosed = func(id string) {
-		delete(v.config.OpenBranches, id)
+		delete(v.config.OpenBranches, normalizeTreePath(id))
 		v.SaveConfig()
 	}
 	// Open branches from saved state
@@ -433,12 +600,20 @@ func (v *MainView) RefreshMediaGridWithForce(forceRegenerate bool) {
 		log.Println("[DEBUG] RefreshMediaGrid called")
 	}
 
+	if v.isLoadingMedia {
+		v.showLoadingPlaceholder()
+		return
+	}
+
 	// Get current card dimensions (these scale with zoom level)
 	cardWidth := components.CardWidth()
 	cardHeight := components.CardHeight()
 
 	// Collect all cards
 	var cards []fyne.CanvasObject
+	focusedCardIndex := -1
+	var focusedCard *components.MediaCard
+	effectiveFilter := strings.ToLower(v.effectiveFilter())
 	if v.mediaDir != "" && len(v.sortedFiles) > 0 {
 		for _, sf := range v.sortedFiles {
 			var fileName string
@@ -452,7 +627,11 @@ func (v *MainView) RefreshMediaGridWithForce(forceRegenerate bool) {
 			}
 
 			// Apply filter
-			if v.filter != "" && !strings.Contains(strings.ToLower(fileName), strings.ToLower(v.filter)) {
+			if effectiveFilter != "" && !strings.Contains(strings.ToLower(fileName), effectiveFilter) {
+				continue
+			}
+
+			if !v.isLaunchFocusedFile(fileName) {
 				continue
 			}
 
@@ -501,9 +680,21 @@ func (v *MainView) RefreshMediaGridWithForce(forceRegenerate bool) {
 					}
 				})
 			}
+			// Capture index for closure
+			idx := len(cards)
 			card.SetOnDelete(func() {
+				// Remove the deleted file from v.sortedFiles
+				if idx < len(v.sortedFiles) {
+					v.sortedFiles = append(v.sortedFiles[:idx], v.sortedFiles[idx+1:]...)
+				}
 				v.RefreshMediaGrid()
 			})
+
+			if v.launchFocusActive && focusedCard == nil {
+				focusedCard = card
+				focusedCardIndex = len(cards)
+			}
+
 			cards = append(cards, card)
 		}
 	}
@@ -517,7 +708,60 @@ func (v *MainView) RefreshMediaGridWithForce(forceRegenerate bool) {
 		v.mediaGridWrapper.Refresh()
 	}
 
+	if focusedCard != nil {
+		focusedCard.SetHighlighted(true)
+		v.scrollToCardIndex(focusedCardIndex, cardHeight)
+	}
+
 	fmt.Printf("Media grid refreshed with card size: %.0fx%.0f, %d files\n", cardWidth, cardHeight, len(cards))
+}
+
+func (v *MainView) showLoadingPlaceholder() {
+	if v.loadingLabel != nil {
+		message := v.loadingMessage
+		if message == "" {
+			message = "Scanning folders and loading media..."
+		}
+		v.loadingLabel.SetText(message)
+	}
+
+	if v.loadingContainer != nil {
+		v.loadingContainer.Show()
+		v.loadingContainer.Refresh()
+	}
+
+	if v.mediaGridWrapper != nil {
+		v.mediaGridWrapper.Content = container.NewCenter(container.NewVBox(
+			widget.NewLabel("Please wait while media is being loaded."),
+			widget.NewProgressBarInfinite(),
+		))
+		v.mediaGridWrapper.Refresh()
+	}
+}
+
+func (v *MainView) hideLoadingPlaceholder() {
+	if v.loadingContainer != nil {
+		v.loadingContainer.Hide()
+		v.loadingContainer.Refresh()
+	}
+}
+
+func (v *MainView) setMediaLoadingState(loading bool, message string) {
+	v.isLoadingMedia = loading
+	if message != "" {
+		v.loadingMessage = message
+	}
+
+	if v.loadingLabel == nil {
+		return
+	}
+
+	if loading {
+		v.showLoadingPlaceholder()
+		return
+	}
+
+	v.hideLoadingPlaceholder()
 }
 
 func (v *MainView) createMediaGrid() fyne.CanvasObject {
@@ -526,6 +770,9 @@ func (v *MainView) createMediaGrid() fyne.CanvasObject {
 	cardWidth := components.CardWidth()
 	cardHeight := components.CardHeight()
 	var cards []fyne.CanvasObject
+	focusedCardIndex := -1
+	var focusedCard *components.MediaCard
+	effectiveFilter := strings.ToLower(v.effectiveFilter())
 	if v.mediaDir != "" && len(v.sortedFiles) > 0 {
 		for _, sf := range v.sortedFiles {
 			var fileName string
@@ -539,7 +786,11 @@ func (v *MainView) createMediaGrid() fyne.CanvasObject {
 			}
 
 			// Apply filter
-			if v.filter != "" && !strings.Contains(strings.ToLower(fileName), strings.ToLower(v.filter)) {
+			if effectiveFilter != "" && !strings.Contains(strings.ToLower(fileName), effectiveFilter) {
+				continue
+			}
+
+			if !v.isLaunchFocusedFile(fileName) {
 				continue
 			}
 
@@ -579,6 +830,12 @@ func (v *MainView) createMediaGrid() fyne.CanvasObject {
 			card.SetOnDelete(func() {
 				v.RefreshMediaGrid()
 			})
+
+			if v.launchFocusActive && focusedCard == nil {
+				focusedCard = card
+				focusedCardIndex = len(cards)
+			}
+
 			cards = append(cards, card)
 		}
 	}
@@ -587,6 +844,12 @@ func (v *MainView) createMediaGrid() fyne.CanvasObject {
 	// Create a scroll container wrapper so the grid can scroll when content exceeds viewport
 	// This prevents the window from expanding past screen bounds with many files
 	v.mediaGridWrapper = container.NewVScroll(v.mediaGridContainer)
+	if focusedCard != nil {
+		focusedCard.SetHighlighted(true)
+		fyne.Do(func() {
+			v.scrollToCardIndex(focusedCardIndex, cardHeight)
+		})
+	}
 	return v.mediaGridWrapper
 }
 
@@ -680,8 +943,10 @@ func (v *MainView) loadMediaMetadataAsync(mediaDir string, callback func([]Sorta
 			if dbFile, err := v.database.GetMediaFileByPath(filePath); err == nil {
 				mediaFile = dbFile
 			} else {
-				// File doesn't exist in database, create it
-				width, height, duration, _ := preview.GetMetadata(filePath)
+				// File doesn't exist in database, create it.
+				// Avoid eager ffprobe here to keep large directory loads responsive.
+				// Metadata can be filled in later by preview generation/background paths.
+				width, height, duration := 0, 0, 0
 				mediaType := components.GetMediaType(filePath)
 				fileTypeStr := "unknown"
 				switch mediaType {
@@ -884,7 +1149,20 @@ func (v *MainView) updateFolderCache(dir string, files []SortableMediaFile) {
 
 // setMediaDirectory changes directory and loads metadata async
 func (v *MainView) setMediaDirectory(dir string) {
-	if v.mediaDir == dir {
+	v.setMediaDirectoryInternal(dir, false)
+}
+
+// SwitchMediaDirectory switches to a directory selected from external UI controls.
+func (v *MainView) SwitchMediaDirectory(dir string) {
+	v.setMediaDirectory(dir)
+}
+
+func (v *MainView) setMediaDirectoryInternal(dir string, forceReload bool) {
+	if dir == "" {
+		return
+	}
+
+	if !forceReload && v.mediaDir == dir {
 		return
 	}
 
@@ -895,6 +1173,7 @@ func (v *MainView) setMediaDirectory(dir string) {
 		fmt.Printf("[DEBUG] Using cached data for folder: %s (%d files)\n", dir, len(cache.Files))
 		v.mediaDir = dir
 		v.sortedFiles = v.sortLoadedFiles(cache.Files)
+		v.setMediaLoadingState(false, "")
 		v.SaveConfig() // Save selected folder
 		v.RefreshMediaGrid()
 		v.refreshTagsList()
@@ -905,7 +1184,9 @@ func (v *MainView) setMediaDirectory(dir string) {
 	fmt.Printf("[DEBUG] Loading folder from disk: %s\n", dir)
 	v.mediaDir = dir
 	v.sortedFiles = nil // Clear current data while loading
-	v.SaveConfig()      // Save selected folder
+	v.setMediaLoadingState(true, "Scanning folders and loading media...")
+	v.SaveConfig() // Save selected folder
+	v.RefreshMediaGrid()
 
 	// Load metadata async
 	v.loadMediaMetadataAsync(dir, func(files []SortableMediaFile) {
@@ -913,6 +1194,7 @@ func (v *MainView) setMediaDirectory(dir string) {
 			// Update cache with loaded data
 			v.updateFolderCache(dir, files)
 			v.sortedFiles = v.sortLoadedFiles(files)
+			v.setMediaLoadingState(false, "")
 			v.RefreshMediaGrid()
 			// Refresh tags list in case new tags were created
 			v.refreshTagsList()
@@ -922,6 +1204,7 @@ func (v *MainView) setMediaDirectory(dir string) {
 
 func (v *MainView) Build() fyne.CanvasObject {
 	mainContent := v.buildMainContent()
+	v.maybeShowLaunchFocusPrompt()
 
 	// Add debug log panel if enabled
 	if v.showDebugLog {
@@ -1030,10 +1313,16 @@ func (v *MainView) buildMainContent() fyne.CanvasObject {
 		// Clear folder cache since recursive mode affects what files are loaded
 		v.folderCache = make(map[string]*FolderCache)
 		// Reload metadata when recursive mode changes
-		v.setMediaDirectory(v.mediaDir)
+		v.setMediaDirectoryInternal(v.mediaDir, true)
 		v.SaveConfig() // Save recursive search setting
 	})
 	recursiveCheck.SetChecked(v.recursiveSearch)
+
+	v.loadingLabel = widget.NewLabel("Scanning folders and loading media...")
+	v.loadingContainer = container.NewHBox(widget.NewProgressBarInfinite(), v.loadingLabel)
+	if !v.isLoadingMedia {
+		v.loadingContainer.Hide()
+	}
 
 	debugLogCheck := widget.NewCheck("Show Debug Log", func(checked bool) {
 		v.showDebugLog = checked
@@ -1089,13 +1378,13 @@ func (v *MainView) buildMainContent() fyne.CanvasObject {
 				fmt.Printf("[ERROR] Failed to add folder to DB: %v\n", err)
 				return
 			}
-			v.config.MediaDirs = append(v.config.MediaDirs, folderPath)
 			v.setMediaDirectory(folderPath)
 			v.foldersTree = v.createFoldersTree()
 			if v.treeScroll != nil {
 				v.treeScroll.Content = v.foldersTree
 				v.treeScroll.Refresh()
 			}
+			v.SaveConfig()
 		}, v.window)
 		dialog.Resize(fyne.NewSize(800, 600))
 		dialog.Show()
@@ -1163,13 +1452,23 @@ func (v *MainView) buildMainContent() fyne.CanvasObject {
 							v.treeScroll.Content = v.foldersTree
 							v.treeScroll.Refresh()
 						}
+						v.SaveConfig()
 					}, v.window)
 				confirmDialog.Show()
 			}, v.window)
 		selectDialog.Show()
 	})
 
-	buttonBox := container.NewHBox(refreshBtn, forceRegenerateBtn, addFolderBtn, deleteFolderBtn, clearTagsBtn, recursiveCheck, debugLogCheck)
+	buttonBox := container.NewHBox(
+		refreshBtn,
+		forceRegenerateBtn,
+		addFolderBtn,
+		deleteFolderBtn,
+		clearTagsBtn,
+		recursiveCheck,
+		debugLogCheck,
+		v.loadingContainer,
+	)
 	toolbar := container.NewBorder(nil, nil, sortControls, buttonBox, filterEntry)
 	if v.mediaDir != "" && v.foldersTree != nil {
 		v.foldersTree.Select(v.mediaDir)
@@ -1206,20 +1505,31 @@ func (v *MainView) GetSortAscending() bool {
 	return v.sortAscending
 }
 
-func NewMainView(cfg *config.Config, db *db.Database, window fyne.Window, mediaDir string) *MainView {
+func NewMainView(cfg *config.Config, db *db.Database, window fyne.Window, mediaDir string, launchFiles []string) *MainView {
+	launchFocusFiles := make(map[string]bool)
+	for _, filePath := range launchFiles {
+		if strings.EqualFold(filepath.Clean(filepath.Dir(filePath)), filepath.Clean(mediaDir)) {
+			launchFocusFiles[strings.ToLower(filepath.Base(filePath))] = true
+		}
+	}
+	launchFocusActive := len(launchFocusFiles) > 0
+
 	mv := &MainView{
-		config:          cfg,
-		database:        db,
-		window:          window,
-		mediaDir:        mediaDir,
-		sortBy:          cfg.SortBy,          // Load from config
-		sortAscending:   cfg.SortAscending,   // Load from config
-		selectedTags:    cfg.SelectedTags,    // Load from config
-		filter:          cfg.FilterText,      // Load from config
-		recursiveSearch: cfg.RecursiveSearch, // Load from config
-		showDebugLog:    cfg.ShowDebugLog,    // Load from config
-		tagger:          tagger.NewFilenameTagger(db),
-		folderCache:     make(map[string]*FolderCache), // Initialize folder cache
+		config:            cfg,
+		database:          db,
+		window:            window,
+		mediaDir:          mediaDir,
+		launchFocusFiles:  launchFocusFiles,
+		launchFocusActive: launchFocusActive,
+		sortBy:            cfg.SortBy,          // Load from config
+		sortAscending:     cfg.SortAscending,   // Load from config
+		selectedTags:      cfg.SelectedTags,    // Load from config
+		filter:            cfg.FilterText,      // Load from config
+		recursiveSearch:   cfg.RecursiveSearch, // Load from config
+		showDebugLog:      cfg.ShowDebugLog,    // Load from config
+		tagger:            tagger.NewFilenameTagger(db),
+		folderCache:       make(map[string]*FolderCache), // Initialize folder cache
+		loadingMessage:    "Scanning folders and loading media...",
 	}
 	// Initialize selectedTags map if nil
 	if mv.selectedTags == nil {
@@ -1240,9 +1550,11 @@ func NewMainView(cfg *config.Config, db *db.Database, window fyne.Window, mediaD
 	mv.refreshTagsList()
 	// Load initial metadata async
 	if mv.mediaDir != "" {
+		mv.setMediaLoadingState(true, "Scanning folders and loading media...")
 		mv.loadMediaMetadataAsync(mv.mediaDir, func(files []SortableMediaFile) {
 			fyne.Do(func() {
 				mv.sortedFiles = mv.sortLoadedFiles(files)
+				mv.setMediaLoadingState(false, "")
 				// Don't call RefreshMediaGrid here as Build() will be called next
 				// Refresh tags list in case new tags were created
 				mv.refreshTagsList()

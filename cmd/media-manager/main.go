@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/fsnotify/fsnotify"
@@ -11,6 +12,17 @@ import (
 	"github.com/user/media-manager/internal/config"
 	"github.com/user/media-manager/internal/db"
 )
+
+type launchTarget struct {
+	path        string
+	forceParent bool
+}
+
+type launchRequest struct {
+	dir         string
+	launchFiles []string
+	explicitDir bool
+}
 
 func main() {
 	// Check for dev-reset flag
@@ -55,18 +67,34 @@ func clearCacheAndDb() {
 	}
 }
 
-func run(runner func(string)) {
-	dir, explicitDir := getDirectoryFromArgs()
+func run(runner func(string, []string)) {
+	request := resolveLaunchRequest()
+	dir := request.dir
+	explicitDir := request.explicitDir
+	launchFiles := request.launchFiles
+
+	if len(launchFiles) == 1 {
+		log.Printf("Opening parent directory for file: %s -> %s", launchFiles[0], dir)
+	} else if len(launchFiles) > 1 {
+		log.Printf("Opening parent directory for %d selected files: %s", len(launchFiles), dir)
+	}
 
 	// Load config first to check for saved MediaDirs
 	cfg, _ := config.LoadConfig("")
 
-	// If no explicit directory was provided and config has saved directories, use the last one
-	if !explicitDir && cfg != nil && len(cfg.MediaDirs) > 0 {
-		lastDir := cfg.MediaDirs[len(cfg.MediaDirs)-1]
-		if lastDir != "" {
-			dir = lastDir
-			log.Printf("Opening last directory from config: %s", dir)
+	// If no explicit directory was provided, prefer the saved selected folder.
+	if !explicitDir && cfg != nil {
+		if cfg.SelectedFolder != "" {
+			if info, err := os.Stat(cfg.SelectedFolder); err == nil && info.IsDir() {
+				dir = cfg.SelectedFolder
+				log.Printf("Opening selected folder from config: %s", dir)
+			}
+		} else if len(cfg.MediaDirs) > 0 {
+			lastDir := cfg.MediaDirs[len(cfg.MediaDirs)-1]
+			if lastDir != "" {
+				dir = lastDir
+				log.Printf("Opening last directory from config: %s", dir)
+			}
 		}
 	}
 
@@ -82,27 +110,102 @@ func run(runner func(string)) {
 		log.Printf("[DEBUG] main.go: Could not load config, DB path unknown.")
 	}
 	if runner != nil {
-		runner(dir)
+		runner(dir, launchFiles)
 	}
 }
 
-func getDirectoryFromArgs() (string, bool) {
-	if len(os.Args) > 1 {
-		for _, arg := range os.Args[1:] {
-			if !strings.HasPrefix(arg, "-") {
-				return arg, true // Explicit directory provided
+func resolveLaunchRequest() launchRequest {
+	explicitTargets := collectLaunchTargets(os.Args[1:])
+	if len(explicitTargets) == 0 {
+		cwd, err := os.Getwd()
+		if err != nil {
+			log.Fatalf("Failed to get current directory: %v", err)
+		}
+		return launchRequest{dir: cwd, explicitDir: false}
+	}
+
+	dirs := make([]string, 0, len(explicitTargets))
+	launchFiles := make([]string, 0, len(explicitTargets))
+
+	for _, target := range explicitTargets {
+		info, err := os.Stat(target.path)
+		if err != nil {
+			if target.forceParent {
+				dirs = append(dirs, filepath.Dir(target.path))
+				continue
 			}
+			dirs = append(dirs, target.path)
+			continue
+		}
+
+		if target.forceParent {
+			dirs = append(dirs, filepath.Dir(target.path))
+			continue
+		}
+
+		if info.IsDir() {
+			dirs = append(dirs, target.path)
+			continue
+		}
+
+		parentDir := filepath.Dir(target.path)
+		dirs = append(dirs, parentDir)
+		launchFiles = append(launchFiles, target.path)
+	}
+
+	if len(dirs) == 0 {
+		cwd, err := os.Getwd()
+		if err != nil {
+			log.Fatalf("Failed to get current directory: %v", err)
+		}
+		return launchRequest{dir: cwd, explicitDir: false}
+	}
+
+	selectedDir := dirs[0]
+	for _, dir := range dirs[1:] {
+		if !pathsEqual(selectedDir, dir) {
+			log.Printf("[WARN] Multiple directories selected; using first: %s", selectedDir)
+			break
 		}
 	}
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		log.Fatalf("Failed to get current directory: %v", err)
+	filteredFiles := make([]string, 0, len(launchFiles))
+	for _, file := range launchFiles {
+		if pathsEqual(filepath.Dir(file), selectedDir) {
+			filteredFiles = append(filteredFiles, file)
+		}
 	}
-	return cwd, false // No explicit directory, using fallback
+
+	return launchRequest{dir: selectedDir, launchFiles: filteredFiles, explicitDir: true}
 }
 
-func runApp(dir string) {
+func collectLaunchTargets(args []string) []launchTarget {
+	targets := make([]launchTarget, 0)
+	forceParentNext := false
+
+	for _, arg := range args {
+		if arg == "--open-parent" {
+			forceParentNext = true
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		targets = append(targets, launchTarget{path: arg, forceParent: forceParentNext})
+		forceParentNext = false
+	}
+
+	return targets
+}
+
+func pathsEqual(a, b string) bool {
+	if strings.EqualFold(filepath.Clean(a), filepath.Clean(b)) {
+		return true
+	}
+	return false
+}
+
+func runApp(dir string, launchFiles []string) {
 	if os.Getenv("CLEAR_DB_ON_START") == "true" {
 		// Load config to get the correct database path
 		cfg, err := config.LoadConfig(dir)
@@ -121,7 +224,7 @@ func runApp(dir string) {
 		}
 	}
 	log.Printf("[DEBUG] main.go: Passing dir to app: %s", dir)
-	application, err := app.NewMediaManagerApp(dir)
+	application, err := app.NewMediaManagerApp(dir, launchFiles)
 	if err != nil {
 		log.Fatalf("Failed to create application!: %v", err)
 	}

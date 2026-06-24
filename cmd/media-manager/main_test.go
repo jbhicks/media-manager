@@ -63,6 +63,82 @@ func TestMainPathArgument(t *testing.T) {
 	}
 }
 
+func TestMainFileArgumentUsesParentAndLaunchFile(t *testing.T) {
+	testDir := t.TempDir()
+	testFile := filepath.Join(testDir, "sample.mp4")
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	os.Args = []string{"media-manager", testFile}
+
+	var gotDir string
+	var gotLaunchFiles []string
+	run(func(dir string, launchFiles []string) {
+		gotDir = dir
+		gotLaunchFiles = launchFiles
+	})
+
+	if gotDir != testDir {
+		t.Fatalf("Expected parent dir %s, got %s", testDir, gotDir)
+	}
+	if len(gotLaunchFiles) != 1 || gotLaunchFiles[0] != testFile {
+		t.Fatalf("Expected launch files [%s], got %v", testFile, gotLaunchFiles)
+	}
+}
+
+func TestMainOpenParentArgumentDoesNotLaunchFileFocus(t *testing.T) {
+	testDir := t.TempDir()
+	testFile := filepath.Join(testDir, "sample.mp4")
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	os.Args = []string{"media-manager", "--open-parent", testFile}
+
+	var gotDir string
+	var gotLaunchFiles []string
+	run(func(dir string, launchFiles []string) {
+		gotDir = dir
+		gotLaunchFiles = launchFiles
+	})
+
+	if gotDir != testDir {
+		t.Fatalf("Expected parent dir %s, got %s", testDir, gotDir)
+	}
+	if len(gotLaunchFiles) != 0 {
+		t.Fatalf("Expected no launch focus files, got %v", gotLaunchFiles)
+	}
+}
+
+func TestMainMultiFileSelectionSameDirectory(t *testing.T) {
+	testDir := t.TempDir()
+	fileA := filepath.Join(testDir, "a.mp4")
+	fileB := filepath.Join(testDir, "b.mp4")
+	if err := os.WriteFile(fileA, []byte("a"), 0644); err != nil {
+		t.Fatalf("Failed to create fileA: %v", err)
+	}
+	if err := os.WriteFile(fileB, []byte("b"), 0644); err != nil {
+		t.Fatalf("Failed to create fileB: %v", err)
+	}
+
+	os.Args = []string{"media-manager", fileA, fileB}
+
+	var gotDir string
+	var gotLaunchFiles []string
+	run(func(dir string, launchFiles []string) {
+		gotDir = dir
+		gotLaunchFiles = launchFiles
+	})
+
+	if gotDir != testDir {
+		t.Fatalf("Expected selected dir %s, got %s", testDir, gotDir)
+	}
+	if len(gotLaunchFiles) != 2 {
+		t.Fatalf("Expected 2 launch files, got %v", gotLaunchFiles)
+	}
+}
+
 // TestLastFolderRemembered verifies that the last opened folder is saved and loaded on restart
 func TestLastFolderRemembered(t *testing.T) {
 	// Create a temporary config directory

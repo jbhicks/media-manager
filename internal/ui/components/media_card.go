@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -78,6 +79,7 @@ type MediaCard struct {
 	labelBackground    *canvas.LinearGradient // Bottom gradient overlay
 	background         *canvas.Rectangle      // Card background with rounded corners
 	hoverOverlay       *canvas.Rectangle      // Semi-transparent hover effect
+	highlightOverlay   *canvas.Rectangle      // Temporary highlight for launch focus
 	content            fyne.CanvasObject
 	isHovered          bool
 	hasAnimation       bool
@@ -138,6 +140,11 @@ func NewMediaCardWithForce(file models.MediaFile, thumbDir string, forceRegenera
 	card.hoverOverlay = canvas.NewRectangle(color.Transparent)
 	card.hoverOverlay.CornerRadius = CardCornerRadius
 
+	// Setup highlight overlay (initially transparent)
+	card.highlightOverlay = canvas.NewRectangle(color.Transparent)
+	card.highlightOverlay.CornerRadius = CardCornerRadius
+	card.highlightOverlay.StrokeWidth = 0
+
 	// Setup bottom gradient for label legibility (transparent to semi-opaque black)
 	card.labelBackground = canvas.NewLinearGradient(
 		color.NRGBA{0, 0, 0, 0},   // Top: fully transparent
@@ -178,6 +185,9 @@ func (mc *MediaCard) setupContent() {
 	case MediaTypeImage:
 		go mc.loadPreview("image")
 	case MediaTypeVideo:
+		// Always request the static thumbnail in background so cards update as soon as
+		// preview generation completes. Animated previews remain lazy on hover.
+		mc.content = widget.NewIcon(theme.MediaPlayIcon())
 		go mc.loadPreview("video")
 	case MediaTypeFile:
 		mc.content = widget.NewIcon(theme.FileIcon())
@@ -335,6 +345,33 @@ func (mc *MediaCard) SetOnDelete(callback func()) {
 	mc.onDelete = callback
 }
 
+func (mc *MediaCard) SetHighlighted(highlighted bool) {
+	fyne.Do(func() {
+		if highlighted {
+			mc.highlightOverlay.FillColor = color.NRGBA{255, 210, 0, 40}
+			mc.highlightOverlay.StrokeColor = color.NRGBA{255, 210, 0, 220}
+			mc.highlightOverlay.StrokeWidth = 2
+			mc.highlightOverlay.Refresh()
+
+			go func() {
+				time.Sleep(3 * time.Second)
+				fyne.Do(func() {
+					mc.highlightOverlay.FillColor = color.Transparent
+					mc.highlightOverlay.StrokeColor = color.Transparent
+					mc.highlightOverlay.StrokeWidth = 0
+					mc.highlightOverlay.Refresh()
+				})
+			}()
+			return
+		}
+
+		mc.highlightOverlay.FillColor = color.Transparent
+		mc.highlightOverlay.StrokeColor = color.Transparent
+		mc.highlightOverlay.StrokeWidth = 0
+		mc.highlightOverlay.Refresh()
+	})
+}
+
 func (mc *MediaCard) openFile() error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
@@ -378,33 +415,35 @@ func (mc *MediaCard) MinSize() fyne.Size {
 
 func (mc *MediaCard) CreateRenderer() fyne.WidgetRenderer {
 	r := &mediaCardRenderer{
-		card:            mc,
-		background:      mc.background,
-		content:         mc.content,
-		hoverOverlay:    mc.hoverOverlay,
-		labelBackground: mc.labelBackground,
-		label:           mc.label,
-		durationBadge:   mc.durationBadge,
-		durationLabel:   mc.durationLabel,
-		extensionBadge:  mc.extensionBadge,
-		extensionLabel:  mc.extensionLabel,
+		card:             mc,
+		background:       mc.background,
+		content:          mc.content,
+		hoverOverlay:     mc.hoverOverlay,
+		highlightOverlay: mc.highlightOverlay,
+		labelBackground:  mc.labelBackground,
+		label:            mc.label,
+		durationBadge:    mc.durationBadge,
+		durationLabel:    mc.durationLabel,
+		extensionBadge:   mc.extensionBadge,
+		extensionLabel:   mc.extensionLabel,
 	}
 	r.updateObjectsCache()
 	return r
 }
 
 type mediaCardRenderer struct {
-	card            *MediaCard
-	background      *canvas.Rectangle
-	content         fyne.CanvasObject
-	hoverOverlay    *canvas.Rectangle
-	labelBackground *canvas.LinearGradient
-	label           *canvas.Text
-	durationBadge   *canvas.Rectangle
-	durationLabel   *canvas.Text
-	extensionBadge  *canvas.Rectangle
-	extensionLabel  *canvas.Text
-	objects         []fyne.CanvasObject // Cached objects slice
+	card             *MediaCard
+	background       *canvas.Rectangle
+	content          fyne.CanvasObject
+	hoverOverlay     *canvas.Rectangle
+	highlightOverlay *canvas.Rectangle
+	labelBackground  *canvas.LinearGradient
+	label            *canvas.Text
+	durationBadge    *canvas.Rectangle
+	durationLabel    *canvas.Text
+	extensionBadge   *canvas.Rectangle
+	extensionLabel   *canvas.Text
+	objects          []fyne.CanvasObject // Cached objects slice
 }
 
 func (r *mediaCardRenderer) Layout(size fyne.Size) {
@@ -423,6 +462,10 @@ func (r *mediaCardRenderer) Layout(size fyne.Size) {
 	// Hover overlay fills entire card
 	r.hoverOverlay.Resize(size)
 	r.hoverOverlay.Move(fyne.NewPos(0, 0))
+
+	// Highlight overlay fills entire card
+	r.highlightOverlay.Resize(size)
+	r.highlightOverlay.Move(fyne.NewPos(0, 0))
 
 	// Bottom gradient for label - spans full width at bottom
 	r.labelBackground.Resize(fyne.NewSize(w, GradientHeight))
@@ -481,6 +524,7 @@ func (r *mediaCardRenderer) Refresh() {
 		r.content.Refresh()
 	}
 	r.hoverOverlay.Refresh()
+	r.highlightOverlay.Refresh()
 	r.labelBackground.Refresh()
 	r.label.Refresh()
 	if r.durationBadge != nil {
@@ -511,7 +555,7 @@ func (r *mediaCardRenderer) updateObjectsCache() {
 	if r.content != nil {
 		objs = append(objs, r.content)
 	}
-	objs = append(objs, r.hoverOverlay, r.labelBackground)
+	objs = append(objs, r.hoverOverlay, r.highlightOverlay, r.labelBackground)
 	if r.extensionBadge != nil {
 		objs = append(objs, r.extensionBadge)
 	}

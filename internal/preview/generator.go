@@ -34,9 +34,18 @@ type task struct {
 
 func initPool() {
 	poolOnce.Do(func() {
-		numWorkers := runtime.NumCPU()
-		if numWorkers > 4 {
-			numWorkers = 4 // Cap at 4 workers to avoid overwhelming I/O
+		numWorkers := 2 // Conservative default to keep UI responsive on large imports
+		if configured := os.Getenv("MEDIA_MANAGER_PREVIEW_WORKERS"); configured != "" {
+			if parsed, err := strconv.Atoi(configured); err == nil && parsed > 0 {
+				numWorkers = parsed
+			}
+		}
+		maxWorkers := runtime.NumCPU()
+		if maxWorkers > 4 {
+			maxWorkers = 4
+		}
+		if numWorkers > maxWorkers {
+			numWorkers = maxWorkers
 		}
 		taskChan = make(chan task, 100)
 		for i := 0; i < numWorkers; i++ {
@@ -83,6 +92,19 @@ func worker() {
 	}
 }
 
+func enqueueTask(t task, queuedMsg string) {
+	select {
+	case taskChan <- t:
+		fmt.Printf("[DEBUG] %s\n", queuedMsg)
+	default:
+		fmt.Printf("[WARN] Preview task queue full, deferring enqueue: %s\n", filepath.Base(t.srcPath))
+		go func() {
+			taskChan <- t
+			fmt.Printf("[DEBUG] %s\n", queuedMsg)
+		}()
+	}
+}
+
 // GenerateUniqueFilename creates a unique hex filename based on the source path
 func GenerateUniqueFilename(filePath, extension string) string {
 	// Include file modtime and size when available so previews change when file content changes
@@ -124,14 +146,7 @@ func GetPreviewWithForce(srcPath string, mediaType string, thumbDir string, forc
 		fmt.Printf("[DEBUG] Force regenerating preview: %s\n", srcPath)
 	}
 
-	// Queue for generation
-	select {
-	case taskChan <- task{srcPath: srcPath, destPath: destPath, mediaType: mediaType, taskType: "thumbnail"}:
-		fmt.Printf("[DEBUG] Queued thumbnail generation for: %s\n", filepath.Base(srcPath))
-	default:
-		// Queue full, maybe return error or log
-		fmt.Printf("[WARN] Preview task queue full for: %s\n", srcPath)
-	}
+	enqueueTask(task{srcPath: srcPath, destPath: destPath, mediaType: mediaType, taskType: "thumbnail"}, fmt.Sprintf("Queued thumbnail generation for: %s", filepath.Base(srcPath)))
 
 	return destPath, nil // Return the path even if it doesn't exist yet
 }
@@ -172,17 +187,7 @@ func GetPreviewWithCallback(srcPath string, mediaType string, thumbDir string, f
 		}
 	}
 
-	// Queue for generation with callback
-	select {
-	case taskChan <- task{srcPath: srcPath, destPath: destPath, mediaType: mediaType, taskType: "thumbnail", callback: wrappedCallback}:
-		fmt.Printf("[DEBUG] Queued thumbnail generation for: %s\n", filepath.Base(srcPath))
-	default:
-		// Queue full
-		fmt.Printf("[WARN] Preview task queue full for: %s\n", srcPath)
-		if callback != nil {
-			go callback("", fmt.Errorf("preview task queue full"))
-		}
-	}
+	enqueueTask(task{srcPath: srcPath, destPath: destPath, mediaType: mediaType, taskType: "thumbnail", callback: wrappedCallback}, fmt.Sprintf("Queued thumbnail generation for: %s", filepath.Base(srcPath)))
 
 	return destPath, nil
 }
@@ -225,16 +230,7 @@ func GetAnimatedPreviewWithCallback(srcPath string, thumbDir string, forceRegene
 		}
 	}
 
-	// Queue for generation with callback
-	select {
-	case taskChan <- task{srcPath: srcPath, destPath: destPath, mediaType: "video", taskType: "animated", callback: wrappedCallback}:
-		fmt.Printf("[DEBUG] Queued animation frame extraction for: %s\n", filepath.Base(srcPath))
-	default:
-		fmt.Printf("[WARN] Preview task queue full for animated: %s\n", srcPath)
-		if callback != nil {
-			go callback(nil, fmt.Errorf("preview task queue full"))
-		}
-	}
+	enqueueTask(task{srcPath: srcPath, destPath: destPath, mediaType: "video", taskType: "animated", callback: wrappedCallback}, fmt.Sprintf("Queued animation frame extraction for: %s", filepath.Base(srcPath)))
 
 	return destPath, nil
 }
