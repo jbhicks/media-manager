@@ -12,6 +12,7 @@ import (
 	"github.com/user/media-manager/internal/ffmpeg"
 	"github.com/user/media-manager/internal/preview"
 	"github.com/user/media-manager/internal/scanner"
+	"github.com/user/media-manager/internal/service"
 	"github.com/user/media-manager/internal/ui/assets"
 	"github.com/user/media-manager/internal/ui/views"
 	"github.com/user/media-manager/internal/ui/zoom"
@@ -19,15 +20,16 @@ import (
 )
 
 type MediaManagerApp struct {
-	fyneApp     fyne.App
-	window      fyne.Window
-	config      *config.Config
-	db          *db.Database
-	mainView    *views.MainView
-	mediaDir    string
-	launchFiles []string
-	scanner     *scanner.MediaScanner
-	zoomManager *zoom.Manager
+	fyneApp         fyne.App
+	window          fyne.Window
+	config          *config.Config
+	db              *db.Database
+	mainView        *views.MainView
+	mediaDir        string
+	launchFiles     []string
+	scanner         *scanner.MediaScanner
+	zoomManager     *zoom.Manager
+	downloadManager *service.DownloadManager
 }
 
 func NewMediaManagerApp(mediaDir string, launchFiles []string) (*MediaManagerApp, error) {
@@ -55,6 +57,17 @@ func NewMediaManagerApp(mediaDir string, launchFiles []string) (*MediaManagerApp
 	database, err = db.NewDatabase(cfg.DatabasePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize database: %w", err)
+	}
+
+	// Initialize download manager for the GUI
+	serviceConfig, err := database.GetOrCreateServiceConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load service config: %w", err)
+	}
+	downloadManager, err := service.NewDownloadManager(database, serviceConfig)
+	if err != nil {
+		fmt.Printf("[WARN] app.go: Failed to create download manager: %v\n", err)
+		downloadManager = nil
 	}
 
 	fmt.Printf("[DEBUG] app.go: Received mediaDir: %s\n", mediaDir)
@@ -91,14 +104,15 @@ func NewMediaManagerApp(mediaDir string, launchFiles []string) (*MediaManagerApp
 	// so the grid can be refreshed when zoom changes
 
 	return &MediaManagerApp{
-		fyneApp:     fyneApp,
-		window:      window,
-		config:      cfg,
-		db:          database,
-		mediaDir:    mediaDir,
-		launchFiles: launchFiles,
-		scanner:     mediaScanner,
-		zoomManager: zoomMgr,
+		fyneApp:         fyneApp,
+		window:          window,
+		config:          cfg,
+		db:              database,
+		mediaDir:        mediaDir,
+		launchFiles:     launchFiles,
+		scanner:         mediaScanner,
+		zoomManager:     zoomMgr,
+		downloadManager: downloadManager,
 	}, nil
 }
 
@@ -165,7 +179,7 @@ func (app *MediaManagerApp) RebuildMissingPreviews() {
 }
 
 func (app *MediaManagerApp) setupUI() {
-	mainView := views.NewMainView(app.config, app.db, app.window, app.mediaDir, app.launchFiles)
+	mainView := views.NewMainView(app.config, app.db, app.window, app.mediaDir, app.launchFiles, app.downloadManager)
 	app.mainView = mainView
 
 	// Now that mainView is set, add zoom callback to refresh the grid

@@ -28,11 +28,11 @@ type JackettProvider struct {
 
 func NewJackettProvider(source *models.DownloadSource) *JackettProvider {
 	flareSolverrURL := os.Getenv("FLARESOLVERR_URL")
-	
+
 	// Create HTTP client with FlareSolverr fallback support
 	var httpClient *http.Client
 	var flareClient *FlareSolverrClient
-	
+
 	if flareSolverrURL != "" {
 		flareClient = NewFlareSolverrClient(flareSolverrURL, 60*time.Second)
 		if err := flareClient.HealthCheck(); err != nil {
@@ -76,18 +76,18 @@ func (j *JackettProvider) IsEnabled() bool {
 func (j *JackettProvider) Search(query string, category string, indexers []string) ([]models.SearchResult, error) {
 	jackettBaseURL := strings.TrimSuffix(j.config.APIUrl, "/")
 	expiresAt := time.Now().Add(24 * time.Hour)
-	
+
 	allResults := make([]models.SearchResult, 0)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	
+
 	// Limit concurrent indexer searches to prevent overwhelming Jackett
 	maxConcurrent := 5
 	semaphore := make(chan struct{}, maxConcurrent)
-	
+
 	// Determine which indexers to search
 	var indexersToSearch []string
-	
+
 	if len(indexers) > 0 {
 		// Use specified indexers
 		indexersToSearch = indexers
@@ -104,7 +104,7 @@ func (j *JackettProvider) Search(query string, category string, indexers []strin
 			indexersToSearch = []string{"yts", "1337x", "thepiratebay"}
 		}
 	}
-	
+
 	// Search each indexer individually (preserves poster URLs)
 	for _, indexer := range indexersToSearch {
 		wg.Add(1)
@@ -117,66 +117,66 @@ func (j *JackettProvider) Search(query string, category string, indexers []strin
 			}()
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
-			
+
 			results, err := j.searchSingleIndexer(jackettBaseURL, idx, query, category, expiresAt)
 			if err != nil {
 				log.Printf("[Jackett] %s search failed: %v", idx, err)
 				return
 			}
-			
+
 			mu.Lock()
 			allResults = append(allResults, results...)
 			mu.Unlock()
 		}(indexer)
 	}
-	
+
 	wg.Wait()
-	
+
 	// If no results from individual indexers, fall back to /all
 	if len(allResults) == 0 && len(indexers) == 0 {
 		log.Printf("[Jackett] No results from individual indexers, falling back to /all")
 		return j.searchAllIndexers(jackettBaseURL, query, category, expiresAt)
 	}
-	
+
 	if len(allResults) == 0 {
 		return nil, fmt.Errorf("no results from any indexer")
 	}
-	
+
 	return allResults, nil
 }
 
 // searchAllIndexers uses Jackett's /all endpoint to search all configured indexers in parallel
 func (j *JackettProvider) searchAllIndexers(baseURL, query, category string, expiresAt time.Time) ([]models.SearchResult, error) {
 	searchURL := fmt.Sprintf("%s/api/v2.0/indexers/all/results", baseURL)
-	
+
 	// Use a longer timeout since we're searching all indexers
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, searchURL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("request creation failed: %w", err)
 	}
-	
+
 	q := req.URL.Query()
 	q.Set("apikey", j.config.APIKey)
 	q.Set("Query", query)
-	
+
 	if category == "movie" || category == "movies" {
 		q.Add("Category[]", "2000")
 	} else if category == "tv" {
 		q.Add("Category[]", "5000")
 	}
-	
+
 	req.URL.RawQuery = q.Encode()
-	
+
 	log.Printf("[Jackett] Searching all indexers for: %s", query)
 	resp, err := j.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("search request failed: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	// Use a custom response struct to handle date parsing gracefully
 	var result struct {
 		Results []struct {
@@ -192,47 +192,47 @@ func (j *JackettProvider) searchAllIndexers(baseURL, query, category string, exp
 			Poster      string      `json:"Poster"`
 		} `json:"Results"`
 	}
-	
+
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("response decode failed: %w", err)
 	}
-	
+
 	log.Printf("[Jackett] All indexers returned %d results", len(result.Results))
-	
+
 	return j.parseRawResults(result.Results, expiresAt), nil
 }
 
 // searchSingleIndexer searches a single indexer
 func (j *JackettProvider) searchSingleIndexer(baseURL, indexer, query, category string, expiresAt time.Time) ([]models.SearchResult, error) {
 	searchURL := fmt.Sprintf("%s/api/v2.0/indexers/%s/results", baseURL, indexer)
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, searchURL, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	q := req.URL.Query()
 	q.Set("apikey", j.config.APIKey)
 	q.Set("Query", query)
-	
+
 	if category == "movie" || category == "movies" {
 		q.Add("Category[]", "2000")
 	} else if category == "tv" {
 		q.Add("Category[]", "5000")
 	}
-	
+
 	req.URL.RawQuery = q.Encode()
-	
+
 	log.Printf("[Jackett] Searching %s for: %s", indexer, query)
 	resp, err := j.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	var result struct {
 		Results []struct {
 			Title       string      `json:"Title"`
@@ -250,36 +250,36 @@ func (j *JackettProvider) searchSingleIndexer(baseURL, indexer, query, category 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
-	
+
 	log.Printf("[Jackett] %s returned %d results", indexer, len(result.Results))
-	
+
 	return j.parseRawResults(result.Results, expiresAt), nil
 }
 
 // parseResults converts Jackett results to our SearchResult model
 func (j *JackettProvider) parseResults(jackettResults []jackett.Result, expiresAt time.Time) []models.SearchResult {
 	results := make([]models.SearchResult, 0, len(jackettResults))
-	
+
 	for _, r := range jackettResults {
 		leechers := r.Peers - r.Seeders
 		if leechers < 0 {
 			leechers = 0
 		}
-		
+
 		magnetLink := ""
 		if r.MagnetURI != nil {
 			if uri, ok := r.MagnetURI.(string); ok {
 				magnetLink = uri
 			}
 		}
-		
+
 		infoHash := ""
 		if r.InfoHash != nil {
 			if hash, ok := r.InfoHash.(string); ok {
 				infoHash = hash
 			}
 		}
-		
+
 		results = append(results, models.SearchResult{
 			SourceID:   j.sourceID,
 			Indexer:    r.Tracker,
@@ -294,7 +294,7 @@ func (j *JackettProvider) parseResults(jackettResults []jackett.Result, expiresA
 			ExpiresAt:  expiresAt,
 		})
 	}
-	
+
 	return filterCyrillicResults(results)
 }
 
@@ -333,27 +333,27 @@ func (j *JackettProvider) parseRawResults(jackettResults []struct {
 	Poster      string      `json:"Poster"`
 }, expiresAt time.Time) []models.SearchResult {
 	results := make([]models.SearchResult, 0, len(jackettResults))
-	
+
 	for _, r := range jackettResults {
 		leechers := r.Peers - r.Seeders
 		if leechers < 0 {
 			leechers = 0
 		}
-		
+
 		magnetLink := ""
 		if r.MagnetURI != nil {
 			if uri, ok := r.MagnetURI.(string); ok {
 				magnetLink = uri
 			}
 		}
-		
+
 		infoHash := ""
 		if r.InfoHash != nil {
 			if hash, ok := r.InfoHash.(string); ok {
 				infoHash = hash
 			}
 		}
-		
+
 		// Parse date - handle multiple formats
 		var uploadDate time.Time
 		if r.PublishDate != "" {
@@ -364,7 +364,7 @@ func (j *JackettProvider) parseRawResults(jackettResults []struct {
 				uploadDate, _ = time.Parse("2006-01-02T15:04:05", r.PublishDate)
 			}
 		}
-		
+
 		results = append(results, models.SearchResult{
 			SourceID:   j.sourceID,
 			Indexer:    r.Tracker,
@@ -380,7 +380,7 @@ func (j *JackettProvider) parseRawResults(jackettResults []struct {
 			PosterURL:  r.Poster,
 		})
 	}
-	
+
 	return filterCyrillicResults(results)
 }
 
@@ -392,7 +392,7 @@ func (j *JackettProvider) searchWithFlareSolverr(ctx context.Context, query stri
 	}
 
 	results := make([]models.SearchResult, 0)
-	
+
 	// Try YTS directly (doesn't always need FlareSolverr but benefits from it)
 	if category == "movie" || category == "movies" {
 		ytsResults, err := j.searchYTS(ctx, query)
@@ -400,55 +400,55 @@ func (j *JackettProvider) searchWithFlareSolverr(ctx context.Context, query stri
 			results = append(results, ytsResults...)
 		}
 	}
-	
+
 	// Try 1337x via FlareSolverr
 	torrentResults, err := j.search1337x(ctx, query)
 	if err == nil {
 		results = append(results, torrentResults...)
 	}
-	
+
 	return results, nil
 }
 
 // searchYTS searches YTS directly via their API (no Cloudflare usually)
 func (j *JackettProvider) searchYTS(ctx context.Context, query string) ([]models.SearchResult, error) {
 	apiURL := fmt.Sprintf("https://yts.mx/api/v2/list_movies.json?query_term=%s", url.QueryEscape(query))
-	
+
 	resp, err := j.flareSolverr.Get(ctx, apiURL)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Parse YTS response
 	if resp.Solution == nil {
 		return nil, fmt.Errorf("no solution from flaresolverr")
 	}
-	
+
 	// Simple parsing - in production you'd want proper JSON parsing
 	results := make([]models.SearchResult, 0)
 	expiresAt := time.Now().Add(24 * time.Hour)
-	
+
 	// Note: This is a simplified example. Full implementation would parse the JSON
 	_ = expiresAt
-	
+
 	return results, nil
 }
 
 // search1337x searches 1337x via FlareSolverr bypass
 func (j *JackettProvider) search1337x(ctx context.Context, query string) ([]models.SearchResult, error) {
 	searchURL := fmt.Sprintf("https://1337x.to/search/%s/1/", url.QueryEscape(query))
-	
+
 	resp, err := j.flareSolverr.Get(ctx, searchURL)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if resp.Solution == nil {
 		return nil, fmt.Errorf("no solution from flaresolverr")
 	}
-	
+
 	// Parse HTML response - in production you'd want goquery or similar
 	results := make([]models.SearchResult, 0)
-	
+
 	return results, nil
 }

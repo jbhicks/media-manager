@@ -26,7 +26,7 @@ type DirectIndexer struct {
 // NewDirectIndexer creates an indexer that scrapes directly (no Jackett needed)
 func NewDirectIndexer(source *models.DownloadSource) *DirectIndexer {
 	flareSolverrURL := source.URL // Use the URL field for FlareSolverr URL
-	
+
 	var flareClient flaresolverr.Client
 	if flareSolverrURL != "" {
 		flareClient = flaresolverr.New(flareSolverrURL, 60*time.Second, nil)
@@ -56,10 +56,10 @@ func (d *DirectIndexer) Search(query string, category string, indexers []string)
 	}
 
 	results := make([]models.SearchResult, 0)
-	
+
 	// Search multiple indexers in parallel
 	ctx := context.Background()
-	
+
 	// Try YTS (movies)
 	if category == "movie" || category == "movies" {
 		ytsResults, err := d.searchYTS(ctx, query)
@@ -69,7 +69,7 @@ func (d *DirectIndexer) Search(query string, category string, indexers []string)
 			results = append(results, ytsResults...)
 		}
 	}
-	
+
 	// Try 1337x
 	_1337xResults, err := d.search1337x(ctx, query)
 	if err != nil {
@@ -77,23 +77,23 @@ func (d *DirectIndexer) Search(query string, category string, indexers []string)
 	} else {
 		results = append(results, _1337xResults...)
 	}
-	
+
 	return results, nil
 }
 
 // searchYTS searches YTS API directly
 func (d *DirectIndexer) searchYTS(ctx context.Context, query string) ([]models.SearchResult, error) {
 	apiURL := fmt.Sprintf("https://yts.mx/api/v2/list_movies.json?query_term=%s&sort_by=seeders&order_by=desc", url.QueryEscape(query))
-	
+
 	resp, err := d.flareSolverr.Get(ctx, apiURL, uuid.Nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("yts flaresolverr request failed: %w", err)
 	}
-	
+
 	if resp.Solution == nil {
 		return nil, fmt.Errorf("no solution from flaresolverr")
 	}
-	
+
 	// Parse JSON response
 	var ytsResp struct {
 		Data struct {
@@ -101,24 +101,24 @@ func (d *DirectIndexer) searchYTS(ctx context.Context, query string) ([]models.S
 				Title    string `json:"title"`
 				Year     int    `json:"year"`
 				Torrents []struct {
-					URL      string `json:"url"`
-					Hash     string `json:"hash"`
-					Quality  string `json:"quality"`
-					Size     string `json:"size"`
-					Seeds    int    `json:"seeds"`
-					Peers    int    `json:"peers"`
+					URL     string `json:"url"`
+					Hash    string `json:"hash"`
+					Quality string `json:"quality"`
+					Size    string `json:"size"`
+					Seeds   int    `json:"seeds"`
+					Peers   int    `json:"peers"`
 				} `json:"torrents"`
 			} `json:"movies"`
 		} `json:"data"`
 	}
-	
+
 	if err := json.Unmarshal([]byte(resp.Solution.Response), &ytsResp); err != nil {
 		return nil, fmt.Errorf("failed to parse YTS response: %w", err)
 	}
-	
+
 	results := make([]models.SearchResult, 0)
 	expiresAt := time.Now().Add(24 * time.Hour)
-	
+
 	for _, movie := range ytsResp.Data.Movies {
 		for _, torrent := range movie.Torrents {
 			result := models.SearchResult{
@@ -134,7 +134,7 @@ func (d *DirectIndexer) searchYTS(ctx context.Context, query string) ([]models.S
 			results = append(results, result)
 		}
 	}
-	
+
 	log.Printf("[DirectIndexer] YTS returned %d results", len(results))
 	return results, nil
 }
@@ -142,16 +142,16 @@ func (d *DirectIndexer) searchYTS(ctx context.Context, query string) ([]models.S
 // search1337x searches 1337x via FlareSolverr bypass
 func (d *DirectIndexer) search1337x(ctx context.Context, query string) ([]models.SearchResult, error) {
 	searchURL := fmt.Sprintf("https://1337x.to/search/%s/1/", url.QueryEscape(query))
-	
+
 	resp, err := d.flareSolverr.Get(ctx, searchURL, uuid.Nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("1337x flaresolverr request failed: %w", err)
 	}
-	
+
 	if resp.Solution == nil {
 		return nil, fmt.Errorf("no solution from flaresolverr")
 	}
-	
+
 	// In a real implementation, you'd parse the HTML here
 	// For now, return empty results
 	log.Printf("[DirectIndexer] 1337x page loaded successfully, HTML parsing not yet implemented")
@@ -163,7 +163,7 @@ func parseSize(sizeStr string) int64 {
 	var size float64
 	var unit string
 	fmt.Sscanf(sizeStr, "%f %s", &size, &unit)
-	
+
 	switch unit {
 	case "GB":
 		return int64(size * 1024 * 1024 * 1024)

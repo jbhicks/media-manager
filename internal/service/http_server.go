@@ -607,10 +607,10 @@ func (s *HTTPServer) handleApproveSuggestion(w http.ResponseWriter, r *http.Requ
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":     true,
-		"id":          id,
-		"message":     "Suggestion approved",
-		"auto_start":  autoStart,
+		"success":    true,
+		"id":         id,
+		"message":    "Suggestion approved",
+		"auto_start": autoStart,
 	})
 }
 
@@ -891,7 +891,7 @@ func (s *HTTPServer) handleRefreshSearchPosters(w http.ResponseWriter, r *http.R
 // handleSearch performs torrent search and returns JSON
 func (s *HTTPServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
-	
+
 	// Check if download manager is available
 	if s.downloadManager == nil {
 		jsonError(w, "Search service not available", http.StatusServiceUnavailable)

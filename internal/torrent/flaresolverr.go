@@ -25,7 +25,7 @@ func NewFlareSolverrClient(baseURL string, timeout time.Duration) *FlareSolverrC
 	}
 
 	client := flaresolverr.New(baseURL, timeout, nil)
-	
+
 	return &FlareSolverrClient{
 		client:  client,
 		baseURL: baseURL,
@@ -46,7 +46,7 @@ func (f *FlareSolverrClient) Get(ctx context.Context, url string) (*flaresolverr
 	}
 
 	log.Printf("[FlareSolverr] Bypassing Cloudflare for: %s", url)
-	
+
 	resp, err := f.client.Get(ctx, url, uuid.Nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("flaresolverr request failed: %w", err)
@@ -63,7 +63,7 @@ func (f *FlareSolverrClient) Post(ctx context.Context, url string, postData stri
 	}
 
 	log.Printf("[FlareSolverr] POST request through proxy: %s", url)
-	
+
 	resp, err := f.client.Post(ctx, url, uuid.Nil, postData, nil)
 	if err != nil {
 		return nil, fmt.Errorf("flaresolverr POST request failed: %w", err)

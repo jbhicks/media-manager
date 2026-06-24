@@ -86,6 +86,9 @@ type MediaCard struct {
 	animatedRequested  bool // Whether animated preview has been requested
 	onDelete           func()
 	onPreviewGenerated func(filePath, previewPath string) // Callback to update database
+	onDragStart        func()
+	onDragEnd          func()
+	isDragging         bool
 	thumbDir           string
 	duration           int
 	extension          string
@@ -278,6 +281,35 @@ func (mc *MediaCard) updateAnimatedContent(framePaths []string) {
 }
 
 var _ desktop.Hoverable = (*MediaCard)(nil)
+var _ fyne.Draggable = (*MediaCard)(nil)
+
+// Dragged is called while the card is being dragged.
+func (mc *MediaCard) Dragged(*fyne.DragEvent) {
+	if !mc.isDragging {
+		mc.isDragging = true
+		if mc.onDragStart != nil {
+			mc.onDragStart()
+		}
+	}
+}
+
+// DragEnd is called when the drag operation ends.
+func (mc *MediaCard) DragEnd() {
+	mc.isDragging = false
+	if mc.onDragEnd != nil {
+		mc.onDragEnd()
+	}
+}
+
+// SetOnDragStart sets the callback invoked when the card starts being dragged.
+func (mc *MediaCard) SetOnDragStart(callback func()) {
+	mc.onDragStart = callback
+}
+
+// SetOnDragEnd sets the callback invoked when the card stops being dragged.
+func (mc *MediaCard) SetOnDragEnd(callback func()) {
+	mc.onDragEnd = callback
+}
 
 func (mc *MediaCard) MouseIn(*desktop.MouseEvent) {
 	mc.isHovered = true
@@ -351,6 +383,11 @@ func (mc *MediaCard) TappedSecondary(e *fyne.PointEvent) {
 
 func (mc *MediaCard) SetOnDelete(callback func()) {
 	mc.onDelete = callback
+}
+
+// FilePath returns the path of the media file represented by this card.
+func (mc *MediaCard) FilePath() string {
+	return mc.filePath
 }
 
 func (mc *MediaCard) SetHighlighted(highlighted bool) {

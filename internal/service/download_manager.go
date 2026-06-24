@@ -29,14 +29,14 @@ type TorrentImageExtractor interface {
 }
 
 type DownloadManager struct {
-	db                *db.Database
-	torrentClient     TorrentClient
-	imageExtractor    TorrentImageExtractor
-	torrentSearcher   *torrent.TorrentSearcher
-	updateCallback    func()
-	serviceConfig     *models.ServiceConfig
-	jellyfinClient    *jellyfin.Client
-	vpnDetector       *VPNDetector
+	db              *db.Database
+	torrentClient   TorrentClient
+	imageExtractor  TorrentImageExtractor
+	torrentSearcher *torrent.TorrentSearcher
+	updateCallback  func()
+	serviceConfig   *models.ServiceConfig
+	jellyfinClient  *jellyfin.Client
+	vpnDetector     *VPNDetector
 }
 
 func NewDownloadManager(database *db.Database, cfg *models.ServiceConfig) (*DownloadManager, error) {
@@ -497,6 +497,61 @@ func (dm *DownloadManager) startDownload(rule *models.DownloadRule, result *mode
 
 	log.Printf("[DOWNLOAD] Download started with ID: %d (Transmission ID: %d)", task.ID, torrentID)
 	return nil
+}
+
+// AddSearchResult adds a single search result as a download task and starts it.
+func (dm *DownloadManager) AddSearchResult(result *models.SearchResult) (*models.DownloadTask, error) {
+	if result == nil {
+		return nil, fmt.Errorf("result is nil")
+	}
+	if result.MagnetLink == "" && result.TorrentURL == "" {
+		return nil, fmt.Errorf("result has no magnet link or torrent URL")
+	}
+
+	if !dm.isVPNActive() {
+		return nil, fmt.Errorf("VPN is not active, refusing to start download for security")
+	}
+
+	if dm.torrentClient == nil {
+		return nil, fmt.Errorf("no torrent client configured")
+	}
+
+	magnet := result.MagnetLink
+	if magnet == "" {
+		magnet = result.TorrentURL
+	}
+
+	log.Printf("[DOWNLOAD] Starting download from search result: %s", result.Title)
+
+	torrentID, err := dm.torrentClient.AddTorrent(magnet, dm.serviceConfig.DownloadPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add torrent: %w", err)
+	}
+
+	startTime := time.Now()
+	task := &models.DownloadTask{
+		SourceID:     result.SourceID,
+		Title:        result.Title,
+		InfoHash:     result.InfoHash,
+		MagnetLink:   result.MagnetLink,
+		TorrentURL:   result.TorrentURL,
+		Size:         result.Size,
+		Seeders:      result.Seeders,
+		Leechers:     result.Leechers,
+		Status:       "downloading",
+		Progress:     0,
+		DownloadPath: filepath.Join(dm.serviceConfig.DownloadPath, result.Title),
+		StartedAt:    &startTime,
+	}
+
+	if err := dm.db.GetDB().Create(task).Error; err != nil {
+		return nil, fmt.Errorf("failed to create download task: %w", err)
+	}
+
+	dm.notifyUpdate()
+
+	log.Printf("[DOWNLOAD] Download started with ID: %d (Torrent ID: %d)", task.ID, torrentID)
+	return task, nil
 }
 
 func (dm *DownloadManager) CheckIfAlreadyDownloaded(infoHash string) (bool, error) {

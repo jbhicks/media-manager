@@ -356,7 +356,7 @@ func (t *TMDbService) ExtractMediaInfo(title string) MediaInfo {
 
 	// Remove language names and codes
 	cleanTitle = regexp.MustCompile(`(?i)\b(EN|ENG|ENGLISH|MULTI|DUAL|SUB(BED)?|DUBBED?|ITA|ITALIAN|CHINESE|KOREAN|JAPANESE|SPANISH|FRENCH|GERMAN|RUSSIAN)\b`).ReplaceAllString(cleanTitle, "")
-	
+
 	// Remove French-specific audio/video tags
 	cleanTitle = regexp.MustCompile(`(?i)\b(TRUEFRENCH|FRENCH|VOSTFR|SUBFRENCH|FASTSUB|HDLight|LIGHT|MULTI|VF|VO|VFI)\b`).ReplaceAllString(cleanTitle, "")
 	cleanTitle = regexp.MustCompile(`(?i)\b(WEBRIP|WEB-RIP|HDRip|BDRip|BRRip|DVDRip|HDTV|TVRip)\b`).ReplaceAllString(cleanTitle, "")

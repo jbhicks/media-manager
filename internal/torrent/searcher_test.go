@@ -140,9 +140,9 @@ func TestTorrentSearcher_Search(t *testing.T) {
 				&mockSearchProvider{
 					name:    "provider1",
 					enabled: true,
-				searchFn: func(query, category string, indexers []string) ([]models.SearchResult, error) {
-					return nil, fmt.Errorf("search failed")
-				},
+					searchFn: func(query, category string, indexers []string) ([]models.SearchResult, error) {
+						return nil, fmt.Errorf("search failed")
+					},
 				},
 				&mockSearchProvider{
 					name:    "provider2",

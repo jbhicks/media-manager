@@ -3,6 +3,7 @@ package db
 import (
 	"fmt"
 	"log"
+	"path/filepath"
 	"time"
 
 	"github.com/glebarez/sqlite"
@@ -163,10 +164,69 @@ func (d *Database) UpdateMediaFileFields(path string, updates map[string]interfa
 	return d.db.Model(&models.MediaFile{}).Where("path = ?", path).Updates(updates).Error
 }
 
+// UpdateMediaFilePath updates the path and filename for a media file record.
+func (d *Database) UpdateMediaFilePath(oldPath, newPath string) error {
+	updates := map[string]interface{}{
+		"path":     newPath,
+		"filename": filepath.Base(newPath),
+	}
+	return d.db.Model(&models.MediaFile{}).Where("path = ?", oldPath).Updates(updates).Error
+}
+
 func (d *Database) Close() error {
 	db, err := d.db.DB()
 	if err != nil {
 		return err
 	}
 	return db.Close()
+}
+
+// DownloadSource CRUD operations
+
+func (d *Database) GetDownloadSources() ([]models.DownloadSource, error) {
+	var sources []models.DownloadSource
+	err := d.db.Order("priority desc, name asc").Find(&sources).Error
+	return sources, err
+}
+
+func (d *Database) GetDownloadSourceByID(id uint) (*models.DownloadSource, error) {
+	var source models.DownloadSource
+	err := d.db.First(&source, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &source, nil
+}
+
+func (d *Database) CreateDownloadSource(source *models.DownloadSource) error {
+	return d.db.Create(source).Error
+}
+
+func (d *Database) UpdateDownloadSource(source *models.DownloadSource) error {
+	return d.db.Save(source).Error
+}
+
+func (d *Database) DeleteDownloadSource(id uint) error {
+	return d.db.Delete(&models.DownloadSource{}, id).Error
+}
+
+// GetOrCreateServiceConfig loads the service configuration, creating a default
+// record if one does not exist.
+func (d *Database) GetOrCreateServiceConfig() (*models.ServiceConfig, error) {
+	var cfg models.ServiceConfig
+	result := d.db.First(&cfg)
+	if result.Error != nil {
+		cfg = models.ServiceConfig{
+			DownloadEnabled:        false,
+			ScheduleInterval:       3600,
+			MaxConcurrentDownloads: 5,
+			TorrentClientType:      "transmission",
+			TorrentClientHost:      "localhost:9091",
+			JellyfinURL:            "http://localhost:8096",
+		}
+		if err := d.db.Create(&cfg).Error; err != nil {
+			return nil, err
+		}
+	}
+	return &cfg, nil
 }

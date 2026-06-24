@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"log"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -90,6 +91,33 @@ func (s *SuggestionService) CalculateTorrentQualityScore(title string, size int6
 		qualityScore = 100.0
 	}
 	score += qualityScore * 0.25
+
+	return score
+}
+
+// CalculateQualityScore calculates a quality score for a DownloadSuggestion.
+// Returns a value on a 0-10 scale balancing seeders, size, and quality markers.
+func (s *SuggestionService) CalculateQualityScore(suggestion *models.DownloadSuggestion) float64 {
+	score := 1.5
+
+	// Seeders: logarithmic scale so huge numbers don't dominate
+	score += math.Log10(float64(suggestion.Seeders + 1))
+
+	// Size: prefer 2-20 GB; penalize very small or very large
+	sizeGB := float64(suggestion.Size) / (1024 * 1024 * 1024)
+	if sizeGB >= 2.0 && sizeGB <= 20.0 {
+		score += 1.0
+	} else {
+		score -= 1.0
+	}
+
+	// Quality markers
+	qualityLower := strings.ToLower(suggestion.Quality)
+	if strings.Contains(qualityLower, "bluray") || strings.Contains(qualityLower, "brrip") {
+		score += 0.6
+	} else if strings.Contains(qualityLower, "web-dl") || strings.Contains(qualityLower, "webrip") {
+		score += 0.45
+	}
 
 	return score
 }
@@ -291,7 +319,7 @@ func (s *SuggestionService) ListSuggestions(status string, limit, offset int) ([
 // normalizeTitle strips quality markers, years, and common suffixes to create a grouping key
 func normalizeTitle(title string) string {
 	lower := strings.ToLower(title)
-	
+
 	// Remove year patterns (2019, (2019), [2019])
 	replacements := []string{
 		"1080p", "720p", "2160p", "4k", "uhd",
@@ -302,11 +330,11 @@ func normalizeTitle(title string) string {
 		"aac", "ac3", "dts", "dd5.1", "ddp5.1", "atmos",
 		"remux", "repack", "proper", "extended", "unrated",
 	}
-	
+
 	for _, r := range replacements {
 		lower = strings.ReplaceAll(lower, r, "")
 	}
-	
+
 	// Remove common separators and extra spaces
 	lower = strings.ReplaceAll(lower, ".", " ")
 	lower = strings.ReplaceAll(lower, "_", " ")
@@ -315,7 +343,7 @@ func normalizeTitle(title string) string {
 	lower = strings.ReplaceAll(lower, "]", " ")
 	lower = strings.ReplaceAll(lower, "(", " ")
 	lower = strings.ReplaceAll(lower, ")", " ")
-	
+
 	// Remove year numbers (4 digits that look like years)
 	// Simple approach: remove standalone 4-digit numbers
 	words := strings.Fields(lower)
@@ -329,7 +357,7 @@ func normalizeTitle(title string) string {
 		}
 		filtered = append(filtered, w)
 	}
-	
+
 	result := strings.Join(filtered, " ")
 	return strings.TrimSpace(result)
 }
@@ -339,7 +367,7 @@ func (s *SuggestionService) groupSuggestions(suggestions []models.DownloadSugges
 	// Group by TMDB ID first, then by normalized title
 	byTMDbID := make(map[int][]models.DownloadSuggestion)
 	byTitle := make(map[string][]models.DownloadSuggestion)
-	
+
 	for _, sug := range suggestions {
 		if sug.TMDbID > 0 {
 			byTMDbID[sug.TMDbID] = append(byTMDbID[sug.TMDbID], sug)
@@ -352,21 +380,21 @@ func (s *SuggestionService) groupSuggestions(suggestions []models.DownloadSugges
 			}
 		}
 	}
-	
+
 	var groups []models.SuggestionGroup
-	
+
 	// Process TMDB groups
 	for tmdbID, items := range byTMDbID {
 		group := s.buildGroup(tmdbID, items)
 		groups = append(groups, group)
 	}
-	
+
 	// Process title-based groups
 	for _, items := range byTitle {
 		group := s.buildGroup(0, items)
 		groups = append(groups, group)
 	}
-	
+
 	return groups
 }
 
@@ -430,16 +458,16 @@ func (s *SuggestionService) ListGroupedSuggestions(status string, limit, offset 
 	// Fetch all suggestions for the status (we need them all to group properly)
 	var suggestions []models.DownloadSuggestion
 	var total int64
-	
+
 	query := s.db.GetDB().Model(&models.DownloadSuggestion{}).Preload("Source")
 	if status != "" {
 		query = query.Where("status = ?", status)
 	}
-	
+
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	
+
 	if err := query.Order("seeders DESC").Find(&suggestions).Error; err != nil {
 		return nil, 0, err
 	}
@@ -640,7 +668,7 @@ func (s *SuggestionService) ApproveSuggestion(id uint, notes string, autoStart b
 			if err := tx.Save(task).Error; err != nil {
 				log.Printf("[WARNING] Failed to update task status for auto-start: %v", err)
 			}
-			
+
 			// Start download in background
 			go func() {
 				if err := s.downloadManager.StartTask(task.ID); err != nil {
@@ -654,12 +682,12 @@ func (s *SuggestionService) ApproveSuggestion(id uint, notes string, autoStart b
 						})
 				}
 			}()
-			
+
 			log.Printf("[SUGGESTIONS] Approved suggestion %d and auto-started download task %d (seeders: %d)", id, task.ID, suggestion.Seeders)
 		} else {
 			log.Printf("[SUGGESTIONS] Approved suggestion %d and created download task %d", id, task.ID)
 		}
-		
+
 		return nil
 	})
 }

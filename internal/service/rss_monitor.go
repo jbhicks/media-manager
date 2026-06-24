@@ -106,7 +106,7 @@ func (r *RSSMonitor) checkFeeds() {
 		}
 
 		log.Printf("[RSS] Checking feed: %s (%s)", feed.Name, feed.URL)
-		
+
 		if err := r.checkFeed(&feed); err != nil {
 			log.Printf("[RSS] Feed check failed for %s: %v", feed.Name, err)
 			r.db.GetDB().Model(&feed).Updates(map[string]interface{}{
@@ -224,7 +224,7 @@ func (r *RSSMonitor) processRSSItem(feed *models.RSSFeed, item *RSSItem) error {
 	// Auto-approve if enabled and meets criteria
 	if feed.AutoApprove {
 		log.Printf("[RSS] Auto-approving suggestion from feed '%s': %s", feed.Name, title)
-		
+
 		// Create download task directly
 		task := &models.DownloadTask{
 			Title:        title,

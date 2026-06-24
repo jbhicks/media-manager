@@ -9,12 +9,14 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -78,6 +80,17 @@ type MainView struct {
 	tagger       *tagger.FilenameTagger
 	// Folder caching to avoid expensive reloads
 	folderCache map[string]*FolderCache
+	// Downloads tab
+	downloadsView   *DownloadsView
+	downloadManager DownloadManager
+	// Drag-and-drop state
+	draggedFilePathVar string
+	dragMu             sync.Mutex
+}
+
+// DownloadManager is the subset of the service DownloadManager used by the UI.
+type DownloadManager interface {
+	AddSearchResult(result *models.SearchResult) (*models.DownloadTask, error)
 }
 
 func (v *MainView) effectiveFilter() string {
@@ -294,6 +307,42 @@ func (v *MainView) hasSubDirs(path string) bool {
 	return false
 }
 
+// folderNode is a tree node that can accept dropped media cards.
+type folderNode struct {
+	widget.Label
+	id   string
+	view *MainView
+}
+
+func newFolderNode(view *MainView) *folderNode {
+	n := &folderNode{view: view}
+	n.ExtendBaseWidget(n)
+	return n
+}
+
+var _ desktop.Hoverable = (*folderNode)(nil)
+
+// MouseIn handles the cursor entering the folder node. If a media card is
+// currently being dragged, treat this as a drop onto the folder.
+func (n *folderNode) MouseIn(e *desktop.MouseEvent) {
+	v := n.view
+	if v == nil || n.id == "" {
+		return
+	}
+
+	filePath := v.draggedFilePath()
+	if filePath == "" || n.id == filePath {
+		return
+	}
+
+	log.Printf("[DRAG] Dropped %s onto folder %s", filePath, n.id)
+	go v.moveFileToFolder(filePath, n.id)
+	v.clearDrag()
+}
+
+func (n *folderNode) MouseOut()                      {}
+func (n *folderNode) MouseMoved(*desktop.MouseEvent) {}
+
 func (v *MainView) createFoldersTree() *widget.Tree {
 	folders, err := v.database.GetFolders()
 	if err != nil || len(folders) == 0 {
@@ -323,14 +372,15 @@ func (v *MainView) createFoldersTree() *widget.Tree {
 			return v.hasSubDirs(id)
 		},
 		func(branch bool) fyne.CanvasObject {
-			return widget.NewLabel("Template")
+			return newFolderNode(v)
 		},
 		func(id string, branch bool, node fyne.CanvasObject) {
-			label := node.(*widget.Label)
+			folder := node.(*folderNode)
+			folder.id = id
 			if id == "" {
-				label.SetText("/")
+				folder.SetText("/")
 			} else {
-				label.SetText(filepath.Base(id))
+				folder.SetText(filepath.Base(id))
 			}
 		},
 	)
@@ -361,6 +411,84 @@ func (v *MainView) createFoldersTree() *widget.Tree {
 	// The caller that builds the layout will use v.createFoldersTree() and place the tree in a scroll.
 	// To actually use the overlay we replace the scroll's content where needed in buildMainContent.
 	return tree
+}
+
+func (v *MainView) setDraggedFilePath(path string) {
+	v.dragMu.Lock()
+	defer v.dragMu.Unlock()
+	v.draggedFilePathVar = path
+}
+
+func (v *MainView) draggedFilePath() string {
+	v.dragMu.Lock()
+	defer v.dragMu.Unlock()
+	return v.draggedFilePathVar
+}
+
+func (v *MainView) clearDrag() {
+	v.dragMu.Lock()
+	defer v.dragMu.Unlock()
+	v.draggedFilePathVar = ""
+}
+
+// moveFileToFolder moves a media file on disk and updates the database/UI.
+func (v *MainView) moveFileToFolder(filePath, destDir string) {
+	srcPath := normalizeTreePath(filePath)
+	destPath := normalizeTreePath(filepath.Join(destDir, filepath.Base(srcPath)))
+
+	if srcPath == destPath {
+		return
+	}
+
+	// Verify source is a file
+	info, err := os.Stat(srcPath)
+	if err != nil || info.IsDir() {
+		log.Printf("[DRAG] Source file not found or is a directory: %s", srcPath)
+		return
+	}
+
+	// Verify destination is a directory
+	destInfo, err := os.Stat(destDir)
+	if err != nil || !destInfo.IsDir() {
+		log.Printf("[DRAG] Destination is not a directory: %s", destDir)
+		return
+	}
+
+	// Move file
+	if err := os.Rename(srcPath, destPath); err != nil {
+		log.Printf("[DRAG] Failed to move %s to %s: %v", srcPath, destPath, err)
+		return
+	}
+
+	// Update database
+	if err := v.database.UpdateMediaFilePath(srcPath, destPath); err != nil {
+		log.Printf("[DRAG] Failed to update database path %s -> %s: %v", srcPath, destPath, err)
+	}
+
+	// Remove from current sorted files if visible
+	fyne.Do(func() {
+		found := false
+		for i, sf := range v.sortedFiles {
+			sfPath := sf.Entry.Name()
+			if v.recursiveSearch {
+				sfPath = normalizeTreePath(sfPath)
+			} else {
+				sfPath = normalizeTreePath(filepath.Join(v.mediaDir, sfPath))
+			}
+			if sfPath == srcPath {
+				v.sortedFiles = append(v.sortedFiles[:i], v.sortedFiles[i+1:]...)
+				found = true
+				break
+			}
+		}
+		if found {
+			v.RefreshMediaGrid()
+		}
+		// Ensure destination folder is visible/selected
+		if v.foldersTree != nil {
+			v.foldersTree.OpenBranch(destDir)
+		}
+	})
 }
 
 // treeContextCatcher is a transparent widget over the folders tree that captures
@@ -691,6 +819,15 @@ func (v *MainView) RefreshMediaGridWithForce(forceRegenerate bool) {
 				v.RefreshMediaGrid()
 			})
 
+			// Wire drag-and-drop for moving files into folders
+			dragPath := filePath
+			card.SetOnDragStart(func() {
+				v.setDraggedFilePath(dragPath)
+			})
+			card.SetOnDragEnd(func() {
+				v.clearDrag()
+			})
+
 			if v.launchFocusActive && focusedCard == nil {
 				focusedCard = card
 				focusedCardIndex = len(cards)
@@ -830,6 +967,15 @@ func (v *MainView) createMediaGrid() fyne.CanvasObject {
 			})
 			card.SetOnDelete(func() {
 				v.RefreshMediaGrid()
+			})
+
+			// Wire drag-and-drop for moving files into folders
+			dragPath := filePath
+			card.SetOnDragStart(func() {
+				v.setDraggedFilePath(dragPath)
+			})
+			card.SetOnDragEnd(func() {
+				v.clearDrag()
 			})
 
 			if v.launchFocusActive && focusedCard == nil {
@@ -1239,6 +1385,15 @@ func (v *MainView) Build() fyne.CanvasObject {
 	mainContent := v.buildMainContent()
 	v.maybeShowLaunchFocusPrompt()
 
+	if v.downloadsView == nil {
+		v.downloadsView = NewDownloadsView(v.database, v.window, v.downloadManager)
+	}
+
+	tabs := container.NewAppTabs(
+		container.NewTabItem("Media", mainContent),
+		container.NewTabItem("Downloads", v.downloadsView.Build()),
+	)
+
 	// Add debug log panel if enabled
 	if v.showDebugLog {
 		if v.debugLog == nil {
@@ -1248,10 +1403,10 @@ func (v *MainView) Build() fyne.CanvasObject {
 		}
 		debugScroll := container.NewScroll(v.debugLog)
 		debugScroll.SetMinSize(fyne.NewSize(0, 200))
-		return container.NewBorder(nil, debugScroll, nil, nil, mainContent)
+		return container.NewBorder(nil, debugScroll, nil, nil, tabs)
 	}
 
-	return mainContent
+	return tabs
 }
 
 // updateDebugLogVisibility toggles the debug log panel without rebuilding the entire UI
@@ -1538,7 +1693,7 @@ func (v *MainView) GetSortAscending() bool {
 	return v.sortAscending
 }
 
-func NewMainView(cfg *config.Config, db *db.Database, window fyne.Window, mediaDir string, launchFiles []string) *MainView {
+func NewMainView(cfg *config.Config, db *db.Database, window fyne.Window, mediaDir string, launchFiles []string, downloadManager DownloadManager) *MainView {
 	launchFocusFiles := make(map[string]bool)
 	for _, filePath := range launchFiles {
 		if strings.EqualFold(filepath.Clean(filepath.Dir(filePath)), filepath.Clean(mediaDir)) {
@@ -1563,6 +1718,7 @@ func NewMainView(cfg *config.Config, db *db.Database, window fyne.Window, mediaD
 		tagger:            tagger.NewFilenameTagger(db),
 		folderCache:       make(map[string]*FolderCache), // Initialize folder cache
 		loadingMessage:    "Scanning folders and loading media...",
+		downloadManager:   downloadManager,
 	}
 	// Initialize selectedTags map if nil
 	if mv.selectedTags == nil {

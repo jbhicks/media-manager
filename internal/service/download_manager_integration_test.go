@@ -65,13 +65,13 @@ func TestSearchAndDisplayResults(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fmt.Printf("\n=== Search Query: %s (category: %s) ===\n", tt.query, tt.category)
 
-		results, _, err := searcher.Search(tt.query, tt.category, 10, nil)
-		if err != nil {
-			t.Errorf("Search failed: %v", err)
-			return
-		}
+			results, _, err := searcher.Search(tt.query, tt.category, 10, nil)
+			if err != nil {
+				t.Errorf("Search failed: %v", err)
+				return
+			}
 
-		fmt.Printf("Found %d results:\n\n", len(results))
+			fmt.Printf("Found %d results:\n\n", len(results))
 
 			for i, result := range results {
 				fmt.Printf("[%d] %s\n", i+1, result.Title)

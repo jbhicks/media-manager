@@ -18,10 +18,10 @@ type SearchProvider interface {
 }
 
 type ProviderTiming struct {
-	Name       string  `json:"name"`
-	Duration   float64 `json:"duration_seconds"`
-	ResultCount int    `json:"result_count"`
-	Error      string  `json:"error,omitempty"`
+	Name        string  `json:"name"`
+	Duration    float64 `json:"duration_seconds"`
+	ResultCount int     `json:"result_count"`
+	Error       string  `json:"error,omitempty"`
 }
 
 type TorrentSearcher struct {
@@ -43,7 +43,7 @@ func (ts *TorrentSearcher) Search(query string, category string, maxResults int,
 	allResults := make([]models.SearchResult, 0)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	
+
 	timings := make([]ProviderTiming, 0)
 	var timingMu sync.Mutex
 
@@ -93,6 +93,10 @@ func (ts *TorrentSearcher) Search(query string, category string, maxResults int,
 	}
 
 	wg.Wait()
+
+	if maxResults > 0 && len(allResults) > maxResults {
+		allResults = allResults[:maxResults]
+	}
 
 	return allResults, timings, nil
 }

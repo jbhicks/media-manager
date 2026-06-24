@@ -30,7 +30,7 @@ func (t *FlareSolverrTransport) RoundTrip(req *http.Request) (*http.Response, er
 	if isCloudflareChallenge(resp) {
 		log.Printf("[FlareSolverr] Detected Cloudflare challenge for %s, using fallback", req.URL)
 		resp.Body.Close()
-		
+
 		if t.FlareSolverr == nil {
 			return nil, fmt.Errorf("cloudflare challenge detected but flaresolverr not configured")
 		}
@@ -64,19 +64,19 @@ func isCloudflareChallenge(resp *http.Response) bool {
 	if resp.StatusCode == 403 {
 		return true
 	}
-	
+
 	// Check for Cloudflare headers
 	if resp.Header.Get("CF-RAY") != "" {
 		return true
 	}
-	
+
 	// Check content type
 	contentType := resp.Header.Get("Content-Type")
 	if strings.Contains(contentType, "text/html") {
 		// Read a bit of the body to check for challenge
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		resp.Body = io.NopCloser(io.MultiReader(strings.NewReader(string(body)), resp.Body))
-		
+
 		bodyStr := string(body)
 		if strings.Contains(bodyStr, "cf-browser-verification") ||
 			strings.Contains(bodyStr, "challenge-platform") ||
@@ -84,14 +84,14 @@ func isCloudflareChallenge(resp *http.Response) bool {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
 // NewFlareSolverrHTTPClient creates an HTTP client with FlareSolverr fallback
 func NewFlareSolverrHTTPClient(flareSolverrURL string, timeout time.Duration) *http.Client {
 	baseTransport := http.DefaultTransport
-	
+
 	if flareSolverrURL == "" {
 		return &http.Client{
 			Transport: baseTransport,
@@ -100,7 +100,7 @@ func NewFlareSolverrHTTPClient(flareSolverrURL string, timeout time.Duration) *h
 	}
 
 	flareClient := flaresolverr.New(flareSolverrURL, timeout, nil)
-	
+
 	transport := &FlareSolverrTransport{
 		Base:         baseTransport,
 		FlareSolverr: flareClient,

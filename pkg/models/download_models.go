@@ -10,6 +10,8 @@ type DownloadSource struct {
 	Type        string    `json:"type"`
 	URL         string    `json:"url"`
 	APIKey      string    `json:"api_key,omitempty"`
+	Username    string    `json:"username,omitempty"`
+	Password    string    `json:"password,omitempty"`
 	Enabled     bool      `json:"enabled" gorm:"default:true"`
 	Priority    int       `json:"priority" gorm:"default:0"`
 	LastChecked time.Time `json:"last_checked"`
