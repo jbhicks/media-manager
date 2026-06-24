@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/fsnotify/fsnotify"
 
@@ -31,9 +32,16 @@ func NewMediaScanner(database *db.Database) (*MediaScanner, error) {
 	}, nil
 }
 
+// ScanDirectory walks a directory and persists media files to the database.
+// It does not block on ffprobe metadata; dimensions and duration are filled in
+// asynchronously after the initial record is created so the UI can render quickly.
 func (s *MediaScanner) ScanDirectory(dirPath string) error {
 	fmt.Printf("[DEBUG] Scanning directory: %s\n", dirPath)
-	return filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
+	var mu sync.Mutex
+	var firstErr error
+	var wg sync.WaitGroup
+
+	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Printf("[DEBUG] Error walking path %s: %v\n", path, err)
 			return err
@@ -50,7 +58,6 @@ func (s *MediaScanner) ScanDirectory(dirPath string) error {
 			return nil
 		}
 
-		width, height, duration, _ := preview.GetMetadata(path)
 		mediaFile := &models.MediaFile{
 			Path:     path,
 			Filename: info.Name(),
@@ -58,25 +65,46 @@ func (s *MediaScanner) ScanDirectory(dirPath string) error {
 			ModTime:  info.ModTime(),
 			FileType: s.getFileType(path),
 			MimeType: s.getMimeType(path),
-			Width:    width,
-			Height:   height,
-			Duration: duration,
 		}
 		fmt.Printf("[DEBUG] Saving media file to DB: %s\n", path)
 		err = s.database.CreateMediaFile(mediaFile)
 		if err != nil {
 			fmt.Printf("Error saving file %s: %v\n", path, err)
+			return nil
 		}
 
-		// (Removed) Save to database
-		// fmt.Printf("[DEBUG] Saving media file to DB: %s\n", path)
-		// err = s.database.CreateMediaFile(mediaFile)
-		// if err != nil {
-		// 	fmt.Printf("Error saving file %s: %v\n", path, err)
-		// }
+		// Backfill metadata asynchronously so ffprobe doesn't block the scan.
+		wg.Add(1)
+		go func(filePath string, mf *models.MediaFile) {
+			defer wg.Done()
+			width, height, duration, metaErr := preview.GetMetadata(filePath)
+			if metaErr != nil {
+				fmt.Printf("[DEBUG] Metadata extraction failed for %s: %v\n", filePath, metaErr)
+				return
+			}
+			updates := map[string]interface{}{
+				"width":    width,
+				"height":   height,
+				"duration": duration,
+			}
+			if updErr := s.database.UpdateMediaFileFields(filePath, updates); updErr != nil {
+				fmt.Printf("[WARN] Failed to update metadata for %s: %v\n", filePath, updErr)
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = updErr
+				}
+				mu.Unlock()
+			}
+		}(path, mediaFile)
 
 		return nil
 	})
+
+	wg.Wait()
+	if err != nil {
+		return err
+	}
+	return firstErr
 }
 
 func (s *MediaScanner) isMediaFile(filePath string) bool {

@@ -220,14 +220,22 @@ func (mc *MediaCard) loadPreview(mediaTypeStr string) {
 
 // updateStaticThumbnail updates the card with a static JPG thumbnail
 func (mc *MediaCard) updateStaticThumbnail(path string) {
-	fyne.Do(func() {
-		img := canvas.NewImageFromFile(path)
-		img.FillMode = canvas.ImageFillStretch // Full-bleed: image fills entire card area (16:9 card matches most video aspect ratios)
-		img.ScaleMode = canvas.ImageScaleFastest
-		mc.staticImage = img
-		mc.content = img
-		mc.Refresh()
-	})
+	// Load the image resource in the background to avoid blocking the UI thread.
+	go func() {
+		res, err := fyne.LoadResourceFromPath(path)
+		if err != nil {
+			fmt.Printf("[ERROR] Failed to load thumbnail resource %s: %v\n", path, err)
+			return
+		}
+		fyne.Do(func() {
+			img := canvas.NewImageFromResource(res)
+			img.FillMode = canvas.ImageFillStretch
+			img.ScaleMode = canvas.ImageScaleFastest
+			mc.staticImage = img
+			mc.content = img
+			mc.Refresh()
+		})
+	}()
 }
 
 // loadAnimatedPreview loads animation frames on hover (for videos)

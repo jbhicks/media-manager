@@ -20,6 +20,7 @@ import (
 
 	"github.com/user/media-manager/internal/config"
 	"github.com/user/media-manager/internal/db"
+	"github.com/user/media-manager/internal/preview"
 	"github.com/user/media-manager/internal/tagger"
 	"github.com/user/media-manager/internal/ui/components"
 	"github.com/user/media-manager/pkg/models"
@@ -903,7 +904,9 @@ func (v *MainView) showRecursiveLimitWarning() {
 	dialog.Show()
 }
 
-// loadMediaMetadataAsync loads all file metadata in background to avoid blocking UI
+// loadMediaMetadataAsync loads all file metadata in background to avoid blocking UI.
+// Files are shown as soon as filesystem info is available; ffprobe metadata is backfilled
+// asynchronously for files that don't already have it in the database.
 func (v *MainView) loadMediaMetadataAsync(mediaDir string, callback func([]SortableMediaFile)) {
 	go func() {
 		var sortableFiles []SortableMediaFile
@@ -946,7 +949,6 @@ func (v *MainView) loadMediaMetadataAsync(mediaDir string, callback func([]Sorta
 				// File doesn't exist in database, create it.
 				// Avoid eager ffprobe here to keep large directory loads responsive.
 				// Metadata can be filled in later by preview generation/background paths.
-				width, height, duration := 0, 0, 0
 				mediaType := components.GetMediaType(filePath)
 				fileTypeStr := "unknown"
 				switch mediaType {
@@ -961,10 +963,6 @@ func (v *MainView) loadMediaMetadataAsync(mediaDir string, callback func([]Sorta
 					Size:     info.Size(),
 					ModTime:  info.ModTime(),
 					FileType: fileTypeStr,
-					MimeType: "", // Will be set by preview.GetMetadata if needed
-					Width:    width,
-					Height:   height,
-					Duration: duration,
 				}
 				err := v.database.CreateMediaFile(newMediaFile)
 				if err != nil {
@@ -972,6 +970,12 @@ func (v *MainView) loadMediaMetadataAsync(mediaDir string, callback func([]Sorta
 					continue
 				}
 				mediaFile = newMediaFile
+			}
+
+			// Backfill metadata asynchronously if it's missing for a video/image.
+			if (mediaFile.Width == 0 && mediaFile.Height == 0 && mediaFile.Duration == 0) &&
+				(mediaFile.FileType == "video" || mediaFile.FileType == "image") {
+				go v.backfillMetadata(mediaFile)
 			}
 
 			// Tag the file if it doesn't have tags yet
@@ -994,6 +998,33 @@ func (v *MainView) loadMediaMetadataAsync(mediaDir string, callback func([]Sorta
 
 		callback(sortableFiles)
 	}()
+}
+
+// backfillMetadata extracts width/height/duration asynchronously and updates the DB.
+func (v *MainView) backfillMetadata(mediaFile *models.MediaFile) {
+	width, height, duration, err := preview.GetMetadata(mediaFile.Path)
+	if err != nil {
+		fmt.Printf("[DEBUG] Metadata backfill failed for %s: %v\n", mediaFile.Path, err)
+		return
+	}
+	updates := map[string]interface{}{
+		"width":    width,
+		"height":   height,
+		"duration": duration,
+	}
+	if err := v.database.UpdateMediaFileFields(mediaFile.Path, updates); err != nil {
+		fmt.Printf("[WARN] Failed to save backfilled metadata for %s: %v\n", mediaFile.Path, err)
+		return
+	}
+	// Update in-memory model so sorting/filtering can use it without reloading.
+	mediaFile.Width = width
+	mediaFile.Height = height
+	mediaFile.Duration = duration
+
+	// Refresh the grid so duration/dimensions badges update.
+	fyne.Do(func() {
+		v.RefreshMediaGrid()
+	})
 }
 
 // tagFilesAsync tags multiple files asynchronously without blocking UI
@@ -1147,6 +1178,8 @@ func (v *MainView) updateFolderCache(dir string, files []SortableMediaFile) {
 	}
 }
 
+// normalizeOpenBranches removes stale OpenBranches entries and normalizes slash
+// variants so reopening saved branches doesn't hit nonexistent paths.
 // setMediaDirectory changes directory and loads metadata async
 func (v *MainView) setMediaDirectory(dir string) {
 	v.setMediaDirectoryInternal(dir, false)

@@ -159,6 +159,10 @@ func (d *Database) UpdateMediaFilePreviewPath(path, previewPath string, previewM
 	return d.db.Model(&models.MediaFile{}).Where("path = ?", path).Updates(updates).Error
 }
 
+func (d *Database) UpdateMediaFileFields(path string, updates map[string]interface{}) error {
+	return d.db.Model(&models.MediaFile{}).Where("path = ?", path).Updates(updates).Error
+}
+
 func (d *Database) Close() error {
 	db, err := d.db.DB()
 	if err != nil {

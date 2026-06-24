@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/user/media-manager/internal/ffmpeg"
@@ -21,6 +22,14 @@ import (
 var (
 	poolOnce sync.Once
 	taskChan chan task
+	// queueFullRetries tracks how many tasks were dropped due to a full queue
+	// so callers/tests can observe backpressure.
+	queueFullRetries atomic.Int64
+)
+
+const (
+	// Larger buffer so bursts of thumbnail requests don't drop frames.
+	taskQueueSize = 1000
 )
 
 type task struct {
@@ -47,7 +56,10 @@ func initPool() {
 		if numWorkers > maxWorkers {
 			numWorkers = maxWorkers
 		}
-		taskChan = make(chan task, 100)
+		if numWorkers < 2 {
+			numWorkers = 2
+		}
+		taskChan = make(chan task, taskQueueSize)
 		for i := 0; i < numWorkers; i++ {
 			go worker()
 		}
@@ -92,17 +104,9 @@ func worker() {
 	}
 }
 
-func enqueueTask(t task, queuedMsg string) {
-	select {
-	case taskChan <- t:
-		fmt.Printf("[DEBUG] %s\n", queuedMsg)
-	default:
-		fmt.Printf("[WARN] Preview task queue full, deferring enqueue: %s\n", filepath.Base(t.srcPath))
-		go func() {
-			taskChan <- t
-			fmt.Printf("[DEBUG] %s\n", queuedMsg)
-		}()
-	}
+// QueueFullRetryCount returns the number of preview tasks dropped due to a full queue.
+func QueueFullRetryCount() int64 {
+	return queueFullRetries.Load()
 }
 
 // GenerateUniqueFilename creates a unique hex filename based on the source path
@@ -146,7 +150,14 @@ func GetPreviewWithForce(srcPath string, mediaType string, thumbDir string, forc
 		fmt.Printf("[DEBUG] Force regenerating preview: %s\n", srcPath)
 	}
 
-	enqueueTask(task{srcPath: srcPath, destPath: destPath, mediaType: mediaType, taskType: "thumbnail"}, fmt.Sprintf("Queued thumbnail generation for: %s", filepath.Base(srcPath)))
+	// Queue for generation; if the queue is full, retry briefly instead of dropping.
+	t := task{srcPath: srcPath, destPath: destPath, mediaType: mediaType, taskType: "thumbnail"}
+	if !enqueueWithRetry(t) {
+		queueFullRetries.Add(1)
+		fmt.Printf("[WARN] Preview task queue full for: %s\n", srcPath)
+	} else {
+		fmt.Printf("[DEBUG] Queued thumbnail generation for: %s\n", filepath.Base(srcPath))
+	}
 
 	return destPath, nil // Return the path even if it doesn't exist yet
 }
@@ -187,9 +198,34 @@ func GetPreviewWithCallback(srcPath string, mediaType string, thumbDir string, f
 		}
 	}
 
-	enqueueTask(task{srcPath: srcPath, destPath: destPath, mediaType: mediaType, taskType: "thumbnail", callback: wrappedCallback}, fmt.Sprintf("Queued thumbnail generation for: %s", filepath.Base(srcPath)))
+	// Queue for generation with callback; retry briefly if the queue is full.
+	t := task{srcPath: srcPath, destPath: destPath, mediaType: mediaType, taskType: "thumbnail", callback: wrappedCallback}
+	if !enqueueWithRetry(t) {
+		queueFullRetries.Add(1)
+		fmt.Printf("[WARN] Preview task queue full for: %s\n", srcPath)
+		if callback != nil {
+			go callback("", fmt.Errorf("preview task queue full"))
+		}
+	} else {
+		fmt.Printf("[DEBUG] Queued thumbnail generation for: %s\n", filepath.Base(srcPath))
+	}
 
 	return destPath, nil
+}
+
+// enqueueWithRetry attempts to enqueue a task, retrying with a short backoff
+// if the channel is full. This avoids dropping preview requests during bursts.
+func enqueueWithRetry(t task) bool {
+	const retries = 5
+	for i := 0; i < retries; i++ {
+		select {
+		case taskChan <- t:
+			return true
+		default:
+			time.Sleep(time.Duration(i*i) * 5 * time.Millisecond)
+		}
+	}
+	return false
 }
 
 // GetAnimatedPreviewWithCallback queues animation frame extraction
@@ -230,7 +266,17 @@ func GetAnimatedPreviewWithCallback(srcPath string, thumbDir string, forceRegene
 		}
 	}
 
-	enqueueTask(task{srcPath: srcPath, destPath: destPath, mediaType: "video", taskType: "animated", callback: wrappedCallback}, fmt.Sprintf("Queued animation frame extraction for: %s", filepath.Base(srcPath)))
+	// Queue for generation with callback; retry briefly if the queue is full.
+	t := task{srcPath: srcPath, destPath: destPath, mediaType: "video", taskType: "animated", callback: wrappedCallback}
+	if !enqueueWithRetry(t) {
+		queueFullRetries.Add(1)
+		fmt.Printf("[WARN] Preview task queue full for animated: %s\n", srcPath)
+		if callback != nil {
+			go callback(nil, fmt.Errorf("preview task queue full"))
+		}
+	} else {
+		fmt.Printf("[DEBUG] Queued animation frame extraction for: %s\n", filepath.Base(srcPath))
+	}
 
 	return destPath, nil
 }
@@ -1127,7 +1173,7 @@ func generateGIFWithCUDA(srcPath, gifPath string, timestamps []float64, opts Pre
 
 // generateGIFWithVAAPI uses Intel/AMD GPU acceleration
 func generateGIFWithVAAPI(srcPath, gifPath string, timestamps []float64, opts PreviewOptions) error {
-	fmt.Printf("[DEBUG] Generating GIF with VAAPI acceleration\n")
+	fmt.Printf("[DEBUG] GenerGenerating GIF with VAAPI acceleration\n")
 
 	cols := 4
 	rows := 2
@@ -1243,7 +1289,7 @@ func ExtractGifFrames(gifPath, outputDir string) ([]string, error) {
 			fmt.Printf("[DEBUG] Found frame: %s\n", framePath)
 		} else if os.IsNotExist(err) {
 			fmt.Printf("[DEBUG] Frame does not exist: %s\n", framePath)
-			// Don't break - try to find all available frames
+			// Don't break - try to find find all available frames
 		}
 	}
 
