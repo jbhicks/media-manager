@@ -5,13 +5,15 @@ import {
   Library, 
   Search, 
   Lightbulb, 
-  Settings 
+  Settings,
+  Compass
 } from 'lucide-react'
 import { useAppStore } from '@/store/appStore'
 import { cn } from '@/lib/utils'
 
 const navigation = [
   { name: 'Home', href: '/', icon: Home },
+  { name: 'Discover', href: '/discover', icon: Compass },
   { name: 'Downloads', href: '/downloads', icon: Download },
   { name: 'Library', href: '/library', icon: Library },
   { name: 'Search', href: '/search', icon: Search },

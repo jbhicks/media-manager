@@ -200,6 +200,14 @@ func (s *HTTPServer) Start() error {
 	mux.HandleFunc("/api/library/tag/assign", s.handleAssignTag)
 	mux.HandleFunc("/api/library/tag/remove", s.handleRemoveTag)
 
+	// Auth endpoints
+	authHandler := NewAuthHandler(s.db)
+	authHandler.RegisterRoutes(mux)
+
+	// Discover endpoints
+	discoverEndpoints := NewDiscoverEndpoints(s.tmdbService)
+	discoverEndpoints.RegisterRoutes(mux)
+
 	// Health check endpoint
 	mux.HandleFunc("/api/health", s.handleHealth)
 
