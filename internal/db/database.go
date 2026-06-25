@@ -35,6 +35,18 @@ func NewDatabase(dbPath string) (*Database, error) {
 		&models.DownloadHistory{},
 		&models.MovieMetadata{},
 		&models.RSSFeed{},
+		// New models for auth and TV shows
+		&models.User{},
+		&models.WatchHistory{},
+		&models.Watchlist{},
+		&models.UserPreference{},
+		&models.TVShow{},
+		&models.Season{},
+		&models.Episode{},
+		&models.CastMember{},
+		&models.CrewMember{},
+		&models.Genre{},
+		&models.Video{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
