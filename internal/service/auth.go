@@ -180,7 +180,7 @@ func (h *AuthHandler) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	// Check if username already exists
 	var existingUser models.User
-	if err := h.db.Where("username = ?", req.Username).First(&existingUser).Error; err == nil {
+	if err := h.db.GetDB().Where("username = ?", req.Username).First(&existingUser).Error; err == nil {
 		jsonError(w, "Username already exists", http.StatusConflict)
 		return
 	}
@@ -194,7 +194,7 @@ func (h *AuthHandler) handleRegister(w http.ResponseWriter, r *http.Request) {
 		IsActive:     true,
 	}
 
-	if err := h.db.Create(&user).Error; err != nil {
+	if err := h.db.GetDB().Create(&user).Error; err != nil {
 		jsonError(w, "Failed to create user", http.StatusInternalServerError)
 		return
 	}
@@ -238,7 +238,7 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Find user
 	var user models.User
-	if err := h.db.Where("username = ?", req.Username).First(&user).Error; err != nil {
+	if err := h.db.GetDB().Where("username = ?", req.Username).First(&user).Error; err != nil {
 		jsonError(w, "Invalid username or password", http.StatusUnauthorized)
 		return
 	}
@@ -258,7 +258,7 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// Update last login
 	now := time.Now()
 	user.LastLoginAt = &now
-	h.db.Save(&user)
+	h.db.GetDB().Save(&user)
 
 	// Generate token
 	token, err := GenerateToken(&user)
@@ -288,7 +288,7 @@ func (h *AuthHandler) handleMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var user models.User
-	if err := h.db.First(&user, userID).Error; err != nil {
+	if err := h.db.GetDB().First(&user, userID).Error; err != nil {
 		jsonError(w, "User not found", http.StatusNotFound)
 		return
 	}

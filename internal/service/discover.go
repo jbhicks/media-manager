@@ -82,7 +82,11 @@ func (d *DiscoverEndpoints) RegisterRoutes(mux *http.ServeMux) {
 
 // Helper to fetch from TMDB API
 func (d *DiscoverEndpoints) fetchTMDB(endpoint string) (*TMDbDiscoverResult, error) {
-	url := fmt.Sprintf("%s%s?api_key=%s&language=en-US", TMDbAPIBaseURL, endpoint, d.tmdbService.apiKey)
+	apiKey := d.tmdbService.apiKey
+	if apiKey == "" {
+		return nil, fmt.Errorf("TMDB_API_KEY not configured")
+	}
+	url := fmt.Sprintf("%s%s?api_key=%s&language=en-US", TMDbAPIBaseURL, endpoint, apiKey)
 	
 	resp, err := d.tmdbService.httpClient.Get(url)
 	if err != nil {
