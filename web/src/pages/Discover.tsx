@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Play, Star, TrendingUp, Calendar, Clock, ChevronRight, Film, Tv } from 'lucide-react'

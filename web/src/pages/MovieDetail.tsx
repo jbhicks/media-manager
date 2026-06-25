@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Star, Clock, Calendar, Play, ArrowLeft, Film, Heart, Share2, Download } from 'lucide-react'
+import { Star, Play, ArrowLeft, Film, Heart, Download } from 'lucide-react'
 
 interface CastMember {
   id: number

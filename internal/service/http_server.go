@@ -211,6 +211,15 @@ func (s *HTTPServer) Start() error {
 	// Health check endpoint
 	mux.HandleFunc("/api/health", s.handleHealth)
 
+	// Debug endpoint to check TMDB API key status
+	mux.HandleFunc("/api/debug/tmdb", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"tmdb_api_key_configured": s.tmdbService.apiKey != "",
+			"tmdb_api_key_length":     len(s.tmdbService.apiKey),
+		})
+	})
+
 	// Catch-all handler for React SPA routing
 	mux.HandleFunc("/", s.ServeReactSPA)
 
