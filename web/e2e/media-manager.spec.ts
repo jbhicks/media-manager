@@ -38,8 +38,8 @@ test.describe('Media Manager - Navigation', () => {
   test('should navigate to all main pages', async ({ page }) => {
     await page.goto(BASE_URL)
     
-    // Check sidebar navigation
-    const navItems = ['Home', 'Discover', 'Downloads', 'Library', 'Search', 'Suggestions', 'Settings']
+    // Check sidebar navigation - includes Watchlist now
+    const navItems = ['Home', 'Discover', 'Watchlist', 'Downloads', 'Library', 'Search', 'Suggestions', 'Settings']
     
     for (const item of navItems) {
       await page.click(`text=${item}`)
@@ -64,8 +64,8 @@ test.describe('Media Manager - Discover Page', () => {
     
     // Check tabs
     await expect(page.locator('button:has-text("All")')).toBeVisible()
-    await expect(page.locator('button:has-text("Movies")')).toBeVisible()
-    await expect(page.locator('button:has-text("TV Shows")')).toBeVisible()
+    await expect(page.locator('button:has-text("MOVIES")')).toBeVisible()
+    await expect(page.locator('button:has-text("TV SHOWS")')).toBeVisible()
     
     // Check content sections
     await expect(page.locator('text=Trending Movies')).toBeVisible()
@@ -78,7 +78,7 @@ test.describe('Media Manager - Discover Page', () => {
     await waitForAPIResponse(page, '/api/discover/movies/trending')
     
     // Click Movies tab
-    await page.click('button:has-text("Movies")')
+    await page.click('button:has-text("MOVIES")')
     
     await page.waitForTimeout(500)
     
@@ -97,7 +97,7 @@ test.describe('Media Manager - Discover Page', () => {
     await waitForAPIResponse(page, '/api/discover/movies/trending')
     
     // Click TV Shows tab
-    await page.click('button:has-text("TV Shows")')
+    await page.click('button:has-text("TV SHOWS")')
     
     await page.waitForTimeout(500)
     
@@ -169,7 +169,7 @@ test.describe('Media Manager - TV Detail', () => {
     await waitForAPIResponse(page, '/api/discover/tv/trending')
     
     // Click TV Shows tab first
-    await page.click('button:has-text("TV Shows")')
+    await page.click('button:has-text("TV SHOWS")')
     await page.waitForTimeout(500)
     
     // Click first TV card

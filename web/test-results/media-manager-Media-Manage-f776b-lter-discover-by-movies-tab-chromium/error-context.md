@@ -1,0 +1,774 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: media-manager.spec.ts >> Media Manager - Discover Page >> should filter discover by movies tab
+- Location: e2e/media-manager.spec.ts:75:3
+
+# Error details
+
+```
+Error: expect(locator).toBeVisible() failed
+
+Locator: locator('text=Trending Movies')
+Expected: visible
+Error: strict mode violation: locator('text=Trending Movies') resolved to 2 elements:
+    1) <p class="text-[#b3b3b3] text-lg">Explore trending movies and TV shows</p> aka getByText('Explore trending movies and')
+    2) <h2 class="text-xl font-bold text-white">Trending Movies</h2> aka getByRole('heading', { name: 'Trending Movies' })
+
+Call log:
+  - Expect "toBeVisible" with timeout 5000ms
+  - waiting for locator('text=Trending Movies')
+
+```
+
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - button [ref=e6] [cursor=pointer]:
+        - img [ref=e7]
+      - generic [ref=e9]: 📺 Media Manager
+      - generic [ref=e10]:
+        - generic "VPN is not active" [ref=e11]:
+          - img [ref=e12]
+          - generic [ref=e14]: VPN Disconnected
+        - button [ref=e15] [cursor=pointer]:
+          - img [ref=e16]
+        - button [ref=e22] [cursor=pointer]:
+          - img [ref=e23]
+  - generic [ref=e26]:
+    - navigation [ref=e27]:
+      - generic [ref=e28]:
+        - link "Home" [ref=e29] [cursor=pointer]:
+          - /url: /
+          - img [ref=e30]
+          - text: Home
+        - link "Discover" [ref=e33] [cursor=pointer]:
+          - /url: /discover
+          - img [ref=e34]
+          - text: Discover
+        - link "Watchlist" [ref=e37] [cursor=pointer]:
+          - /url: /watchlist
+          - img [ref=e38]
+          - text: Watchlist
+        - link "Downloads" [ref=e40] [cursor=pointer]:
+          - /url: /downloads
+          - img [ref=e41]
+          - text: Downloads
+        - link "Library" [ref=e44] [cursor=pointer]:
+          - /url: /library
+          - img [ref=e45]
+          - text: Library
+        - link "Search" [ref=e47] [cursor=pointer]:
+          - /url: /search
+          - img [ref=e48]
+          - text: Search
+        - link "Suggestions" [ref=e51] [cursor=pointer]:
+          - /url: /suggestions
+          - img [ref=e52]
+          - text: Suggestions
+        - link "Settings" [ref=e54] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e55]
+          - text: Settings
+    - main [ref=e58]:
+      - generic [ref=e59]:
+        - img [ref=e60]
+        - generic [ref=e62]:
+          - paragraph [ref=e63]: VPN Disconnected
+          - paragraph [ref=e64]: Downloads are disabled for your security. Please connect to your VPN to resume downloading.
+        - button "Dismiss warning" [ref=e65] [cursor=pointer]:
+          - img [ref=e66]
+      - generic [ref=e69]:
+        - generic [ref=e73]:
+          - heading "Discover" [level=1] [ref=e74]
+          - paragraph [ref=e75]: Explore trending movies and TV shows
+        - generic [ref=e77]:
+          - generic [ref=e78]:
+            - button "All" [ref=e79] [cursor=pointer]
+            - button "Movies" [active] [ref=e80] [cursor=pointer]
+            - button "TV Shows" [ref=e81] [cursor=pointer]
+          - button "Filters" [ref=e83] [cursor=pointer]:
+            - img [ref=e84]
+            - text: Filters
+        - generic [ref=e86]:
+          - generic [ref=e87]:
+            - generic [ref=e88]:
+              - img [ref=e90]
+              - heading "Trending Movies" [level=2] [ref=e93]
+              - img [ref=e94]
+            - generic [ref=e96]:
+              - link "Toy Story 5 7.4 Toy Story 5 2026" [ref=e97] [cursor=pointer]:
+                - /url: /movie/1084244
+                - generic [ref=e98]:
+                  - img "Toy Story 5" [ref=e99]
+                  - generic [ref=e102]:
+                    - img [ref=e103]
+                    - generic [ref=e105]: "7.4"
+                - heading "Toy Story 5" [level=3] [ref=e106]
+                - paragraph [ref=e107]: "2026"
+              - link "The Sheep Detectives 7.6 The Sheep Detectives 2026" [ref=e108] [cursor=pointer]:
+                - /url: /movie/1301421
+                - generic [ref=e109]:
+                  - img "The Sheep Detectives" [ref=e110]
+                  - generic [ref=e113]:
+                    - img [ref=e114]
+                    - generic [ref=e116]: "7.6"
+                - heading "The Sheep Detectives" [level=3] [ref=e117]
+                - paragraph [ref=e118]: "2026"
+              - link "Obsession 7.9 Obsession 2026" [ref=e119] [cursor=pointer]:
+                - /url: /movie/1339713
+                - generic [ref=e120]:
+                  - img "Obsession" [ref=e121]
+                  - generic [ref=e124]:
+                    - img [ref=e125]
+                    - generic [ref=e127]: "7.9"
+                - heading "Obsession" [level=3] [ref=e128]
+                - paragraph [ref=e129]: "2026"
+              - link "Backrooms 6.9 Backrooms 2026" [ref=e130] [cursor=pointer]:
+                - /url: /movie/1083381
+                - generic [ref=e131]:
+                  - img "Backrooms" [ref=e132]
+                  - generic [ref=e135]:
+                    - img [ref=e136]
+                    - generic [ref=e138]: "6.9"
+                - heading "Backrooms" [level=3] [ref=e139]
+                - paragraph [ref=e140]: "2026"
+              - link "Masters of the Universe 7.2 Masters of the Universe 2026" [ref=e141] [cursor=pointer]:
+                - /url: /movie/454639
+                - generic [ref=e142]:
+                  - img "Masters of the Universe" [ref=e143]
+                  - generic [ref=e146]:
+                    - img [ref=e147]
+                    - generic [ref=e149]: "7.2"
+                - heading "Masters of the Universe" [level=3] [ref=e150]
+                - paragraph [ref=e151]: "2026"
+              - link "Michael 8.7 Michael 2026" [ref=e152] [cursor=pointer]:
+                - /url: /movie/936075
+                - generic [ref=e153]:
+                  - img "Michael" [ref=e154]
+                  - generic [ref=e157]:
+                    - img [ref=e158]
+                    - generic [ref=e160]: "8.7"
+                - heading "Michael" [level=3] [ref=e161]
+                - paragraph [ref=e162]: "2026"
+              - link "Voicemails for Isabelle 8.2 Voicemails for Isabelle 2026" [ref=e163] [cursor=pointer]:
+                - /url: /movie/614945
+                - generic [ref=e164]:
+                  - img "Voicemails for Isabelle" [ref=e165]
+                  - generic [ref=e168]:
+                    - img [ref=e169]
+                    - generic [ref=e171]: "8.2"
+                - heading "Voicemails for Isabelle" [level=3] [ref=e172]
+                - paragraph [ref=e173]: "2026"
+              - link "Disclosure Day 6.7 Disclosure Day 2026" [ref=e174] [cursor=pointer]:
+                - /url: /movie/1275779
+                - generic [ref=e175]:
+                  - img "Disclosure Day" [ref=e176]
+                  - generic [ref=e179]:
+                    - img [ref=e180]
+                    - generic [ref=e182]: "6.7"
+                - heading "Disclosure Day" [level=3] [ref=e183]
+                - paragraph [ref=e184]: "2026"
+              - link "Supergirl 6.2 Supergirl 2026" [ref=e185] [cursor=pointer]:
+                - /url: /movie/1081003
+                - generic [ref=e186]:
+                  - img "Supergirl" [ref=e187]
+                  - generic [ref=e190]:
+                    - img [ref=e191]
+                    - generic [ref=e193]: "6.2"
+                - heading "Supergirl" [level=3] [ref=e194]
+                - paragraph [ref=e195]: "2026"
+              - link "Scary Movie 5.5 Scary Movie 2026" [ref=e196] [cursor=pointer]:
+                - /url: /movie/1273221
+                - generic [ref=e197]:
+                  - img "Scary Movie" [ref=e198]
+                  - generic [ref=e201]:
+                    - img [ref=e202]
+                    - generic [ref=e204]: "5.5"
+                - heading "Scary Movie" [level=3] [ref=e205]
+                - paragraph [ref=e206]: "2026"
+          - generic [ref=e207]:
+            - generic [ref=e208]:
+              - img [ref=e210]
+              - heading "Popular Movies" [level=2] [ref=e212]
+              - img [ref=e213]
+            - generic [ref=e215]:
+              - link "Cocktail 2 5.6 Cocktail 2 2026" [ref=e216] [cursor=pointer]:
+                - /url: /movie/1392469
+                - generic [ref=e217]:
+                  - img "Cocktail 2" [ref=e218]
+                  - generic [ref=e221]:
+                    - img [ref=e222]
+                    - generic [ref=e224]: "5.6"
+                - heading "Cocktail 2" [level=3] [ref=e225]
+                - paragraph [ref=e226]: "2026"
+              - link "Obsession 7.9 Obsession 2026" [ref=e227] [cursor=pointer]:
+                - /url: /movie/1339713
+                - generic [ref=e228]:
+                  - img "Obsession" [ref=e229]
+                  - generic [ref=e232]:
+                    - img [ref=e233]
+                    - generic [ref=e235]: "7.9"
+                - heading "Obsession" [level=3] [ref=e236]
+                - paragraph [ref=e237]: "2026"
+              - link "Madness 5.1 Madness 1980" [ref=e238] [cursor=pointer]:
+                - /url: /movie/28322
+                - generic [ref=e239]:
+                  - img "Madness" [ref=e240]
+                  - generic [ref=e243]:
+                    - img [ref=e244]
+                    - generic [ref=e246]: "5.1"
+                - heading "Madness" [level=3] [ref=e247]
+                - paragraph [ref=e248]: "1980"
+              - link "Michael 8.7 Michael 2026" [ref=e249] [cursor=pointer]:
+                - /url: /movie/936075
+                - generic [ref=e250]:
+                  - img "Michael" [ref=e251]
+                  - generic [ref=e254]:
+                    - img [ref=e255]
+                    - generic [ref=e257]: "8.7"
+                - heading "Michael" [level=3] [ref=e258]
+                - paragraph [ref=e259]: "2026"
+              - link "Mortal Kombat II 8.0 Mortal Kombat II 2026" [ref=e260] [cursor=pointer]:
+                - /url: /movie/931285
+                - generic [ref=e261]:
+                  - img "Mortal Kombat II" [ref=e262]
+                  - generic [ref=e265]:
+                    - img [ref=e266]
+                    - generic [ref=e268]: "8.0"
+                - heading "Mortal Kombat II" [level=3] [ref=e269]
+                - paragraph [ref=e270]: "2026"
+              - link "Toy Story 5 7.4 Toy Story 5 2026" [ref=e271] [cursor=pointer]:
+                - /url: /movie/1084244
+                - generic [ref=e272]:
+                  - img "Toy Story 5" [ref=e273]
+                  - generic [ref=e276]:
+                    - img [ref=e277]
+                    - generic [ref=e279]: "7.4"
+                - heading "Toy Story 5" [level=3] [ref=e280]
+                - paragraph [ref=e281]: "2026"
+              - link "Bhooth Bangla 5.6 Bhooth Bangla 2026" [ref=e282] [cursor=pointer]:
+                - /url: /movie/1239134
+                - generic [ref=e283]:
+                  - img "Bhooth Bangla" [ref=e284]
+                  - generic [ref=e287]:
+                    - img [ref=e288]
+                    - generic [ref=e290]: "5.6"
+                - heading "Bhooth Bangla" [level=3] [ref=e291]
+                - paragraph [ref=e292]: "2026"
+              - link "Your Heart Will Be Broken 7.0 Your Heart Will Be Broken 2026" [ref=e293] [cursor=pointer]:
+                - /url: /movie/1523145
+                - generic [ref=e294]:
+                  - img "Your Heart Will Be Broken" [ref=e295]
+                  - generic [ref=e298]:
+                    - img [ref=e299]
+                    - generic [ref=e301]: "7.0"
+                - heading "Your Heart Will Be Broken" [level=3] [ref=e302]
+                - paragraph [ref=e303]: "2026"
+              - link "Deep Water 6.1 Deep Water 2026" [ref=e304] [cursor=pointer]:
+                - /url: /movie/1127384
+                - generic [ref=e305]:
+                  - img "Deep Water" [ref=e306]
+                  - generic [ref=e309]:
+                    - img [ref=e310]
+                    - generic [ref=e312]: "6.1"
+                - heading "Deep Water" [level=3] [ref=e313]
+                - paragraph [ref=e314]: "2026"
+              - link "Damage 6.6 Damage 1992" [ref=e315] [cursor=pointer]:
+                - /url: /movie/11012
+                - generic [ref=e316]:
+                  - img "Damage" [ref=e317]
+                  - generic [ref=e320]:
+                    - img [ref=e321]
+                    - generic [ref=e323]: "6.6"
+                - heading "Damage" [level=3] [ref=e324]
+                - paragraph [ref=e325]: "1992"
+          - generic [ref=e326]:
+            - generic [ref=e327]:
+              - img [ref=e329]
+              - heading "Now Playing" [level=2] [ref=e331]
+              - img [ref=e332]
+            - generic [ref=e334]:
+              - link "Cocktail 2 5.6 Cocktail 2 2026" [ref=e335] [cursor=pointer]:
+                - /url: /movie/1392469
+                - generic [ref=e336]:
+                  - img "Cocktail 2" [ref=e337]
+                  - generic [ref=e340]:
+                    - img [ref=e341]
+                    - generic [ref=e343]: "5.6"
+                - heading "Cocktail 2" [level=3] [ref=e344]
+                - paragraph [ref=e345]: "2026"
+              - link "Obsession 7.9 Obsession 2026" [ref=e346] [cursor=pointer]:
+                - /url: /movie/1339713
+                - generic [ref=e347]:
+                  - img "Obsession" [ref=e348]
+                  - generic [ref=e351]:
+                    - img [ref=e352]
+                    - generic [ref=e354]: "7.9"
+                - heading "Obsession" [level=3] [ref=e355]
+                - paragraph [ref=e356]: "2026"
+              - link "Michael 8.7 Michael 2026" [ref=e357] [cursor=pointer]:
+                - /url: /movie/936075
+                - generic [ref=e358]:
+                  - img "Michael" [ref=e359]
+                  - generic [ref=e362]:
+                    - img [ref=e363]
+                    - generic [ref=e365]: "8.7"
+                - heading "Michael" [level=3] [ref=e366]
+                - paragraph [ref=e367]: "2026"
+              - link "Mortal Kombat II 8.0 Mortal Kombat II 2026" [ref=e368] [cursor=pointer]:
+                - /url: /movie/931285
+                - generic [ref=e369]:
+                  - img "Mortal Kombat II" [ref=e370]
+                  - generic [ref=e373]:
+                    - img [ref=e374]
+                    - generic [ref=e376]: "8.0"
+                - heading "Mortal Kombat II" [level=3] [ref=e377]
+                - paragraph [ref=e378]: "2026"
+              - link "Toy Story 5 7.4 Toy Story 5 2026" [ref=e379] [cursor=pointer]:
+                - /url: /movie/1084244
+                - generic [ref=e380]:
+                  - img "Toy Story 5" [ref=e381]
+                  - generic [ref=e384]:
+                    - img [ref=e385]
+                    - generic [ref=e387]: "7.4"
+                - heading "Toy Story 5" [level=3] [ref=e388]
+                - paragraph [ref=e389]: "2026"
+              - link "Bhooth Bangla 5.6 Bhooth Bangla 2026" [ref=e390] [cursor=pointer]:
+                - /url: /movie/1239134
+                - generic [ref=e391]:
+                  - img "Bhooth Bangla" [ref=e392]
+                  - generic [ref=e395]:
+                    - img [ref=e396]
+                    - generic [ref=e398]: "5.6"
+                - heading "Bhooth Bangla" [level=3] [ref=e399]
+                - paragraph [ref=e400]: "2026"
+              - link "Deep Water 6.1 Deep Water 2026" [ref=e401] [cursor=pointer]:
+                - /url: /movie/1127384
+                - generic [ref=e402]:
+                  - img "Deep Water" [ref=e403]
+                  - generic [ref=e406]:
+                    - img [ref=e407]
+                    - generic [ref=e409]: "6.1"
+                - heading "Deep Water" [level=3] [ref=e410]
+                - paragraph [ref=e411]: "2026"
+              - link "The Mandalorian and Grogu 6.7 The Mandalorian and Grogu 2026" [ref=e412] [cursor=pointer]:
+                - /url: /movie/1228710
+                - generic [ref=e413]:
+                  - img "The Mandalorian and Grogu" [ref=e414]
+                  - generic [ref=e417]:
+                    - img [ref=e418]
+                    - generic [ref=e420]: "6.7"
+                - heading "The Mandalorian and Grogu" [level=3] [ref=e421]
+                - paragraph [ref=e422]: "2026"
+              - 'link "Your Fault: London 7.5 Your Fault: London 2026" [ref=e423] [cursor=pointer]':
+                - /url: /movie/1477317
+                - generic [ref=e424]:
+                  - 'img "Your Fault: London" [ref=e425]'
+                  - generic [ref=e428]:
+                    - img [ref=e429]
+                    - generic [ref=e431]: "7.5"
+                - 'heading "Your Fault: London" [level=3] [ref=e432]'
+                - paragraph [ref=e433]: "2026"
+              - link "Disclosure Day 6.7 Disclosure Day 2026" [ref=e434] [cursor=pointer]:
+                - /url: /movie/1275779
+                - generic [ref=e435]:
+                  - img "Disclosure Day" [ref=e436]
+                  - generic [ref=e439]:
+                    - img [ref=e440]
+                    - generic [ref=e442]: "6.7"
+                - heading "Disclosure Day" [level=3] [ref=e443]
+                - paragraph [ref=e444]: "2026"
+          - generic [ref=e445]:
+            - generic [ref=e446]:
+              - img [ref=e448]
+              - heading "Upcoming Movies" [level=2] [ref=e450]
+              - img [ref=e451]
+            - generic [ref=e453]:
+              - link "Obsession 7.9 Obsession 2026" [ref=e454] [cursor=pointer]:
+                - /url: /movie/1339713
+                - generic [ref=e455]:
+                  - img "Obsession" [ref=e456]
+                  - generic [ref=e459]:
+                    - img [ref=e460]
+                    - generic [ref=e462]: "7.9"
+                - heading "Obsession" [level=3] [ref=e463]
+                - paragraph [ref=e464]: "2026"
+              - link "Toy Story 5 7.4 Toy Story 5 2026" [ref=e465] [cursor=pointer]:
+                - /url: /movie/1084244
+                - generic [ref=e466]:
+                  - img "Toy Story 5" [ref=e467]
+                  - generic [ref=e470]:
+                    - img [ref=e471]
+                    - generic [ref=e473]: "7.4"
+                - heading "Toy Story 5" [level=3] [ref=e474]
+                - paragraph [ref=e475]: "2026"
+              - link "Deep Water 6.1 Deep Water 2026" [ref=e476] [cursor=pointer]:
+                - /url: /movie/1127384
+                - generic [ref=e477]:
+                  - img "Deep Water" [ref=e478]
+                  - generic [ref=e481]:
+                    - img [ref=e482]
+                    - generic [ref=e484]: "6.1"
+                - heading "Deep Water" [level=3] [ref=e485]
+                - paragraph [ref=e486]: "2026"
+              - link "The Furious 7.7 The Furious 2026" [ref=e487] [cursor=pointer]:
+                - /url: /movie/1280738
+                - generic [ref=e488]:
+                  - img "The Furious" [ref=e489]
+                  - generic [ref=e492]:
+                    - img [ref=e493]
+                    - generic [ref=e495]: "7.7"
+                - heading "The Furious" [level=3] [ref=e496]
+                - paragraph [ref=e497]: "2026"
+              - link "Supergirl 6.2 Supergirl 2026" [ref=e498] [cursor=pointer]:
+                - /url: /movie/1081003
+                - generic [ref=e499]:
+                  - img "Supergirl" [ref=e500]
+                  - generic [ref=e503]:
+                    - img [ref=e504]
+                    - generic [ref=e506]: "6.2"
+                - heading "Supergirl" [level=3] [ref=e507]
+                - paragraph [ref=e508]: "2026"
+              - 'link "Dhurandhar: The Revenge 7.3 Dhurandhar: The Revenge 2026" [ref=e509] [cursor=pointer]':
+                - /url: /movie/1582770
+                - generic [ref=e510]:
+                  - 'img "Dhurandhar: The Revenge" [ref=e511]'
+                  - generic [ref=e514]:
+                    - img [ref=e515]
+                    - generic [ref=e517]: "7.3"
+                - 'heading "Dhurandhar: The Revenge" [level=3] [ref=e518]'
+                - paragraph [ref=e519]: "2026"
+              - link "Hokum 6.9 Hokum 2026" [ref=e520] [cursor=pointer]:
+                - /url: /movie/1430077
+                - generic [ref=e521]:
+                  - img "Hokum" [ref=e522]
+                  - generic [ref=e525]:
+                    - img [ref=e526]
+                    - generic [ref=e528]: "6.9"
+                - heading "Hokum" [level=3] [ref=e529]
+                - paragraph [ref=e530]: "2026"
+              - link "Tuner 7.2 Tuner 2026" [ref=e531] [cursor=pointer]:
+                - /url: /movie/1340206
+                - generic [ref=e532]:
+                  - img "Tuner" [ref=e533]
+                  - generic [ref=e536]:
+                    - img [ref=e537]
+                    - generic [ref=e539]: "7.2"
+                - heading "Tuner" [level=3] [ref=e540]
+                - paragraph [ref=e541]: "2026"
+              - link "Scary Movie 5.5 Scary Movie 2026" [ref=e542] [cursor=pointer]:
+                - /url: /movie/1273221
+                - generic [ref=e543]:
+                  - img "Scary Movie" [ref=e544]
+                  - generic [ref=e547]:
+                    - img [ref=e548]
+                    - generic [ref=e550]: "5.5"
+                - heading "Scary Movie" [level=3] [ref=e551]
+                - paragraph [ref=e552]: "2026"
+              - 'link "Greenland 2: Migration 6.4 Greenland 2: Migration 2026" [ref=e553] [cursor=pointer]':
+                - /url: /movie/840464
+                - generic [ref=e554]:
+                  - 'img "Greenland 2: Migration" [ref=e555]'
+                  - generic [ref=e558]:
+                    - img [ref=e559]
+                    - generic [ref=e561]: "6.4"
+                - 'heading "Greenland 2: Migration" [level=3] [ref=e562]'
+                - paragraph [ref=e563]: "2026"
+          - generic [ref=e564]:
+            - generic [ref=e565]:
+              - img [ref=e567]
+              - heading "Top Rated Movies" [level=2] [ref=e569]
+              - img [ref=e570]
+            - generic [ref=e572]:
+              - link "Swapped 9.0 Swapped 2026" [ref=e573] [cursor=pointer]:
+                - /url: /movie/1007757
+                - generic [ref=e574]:
+                  - img "Swapped" [ref=e575]
+                  - generic [ref=e578]:
+                    - img [ref=e579]
+                    - generic [ref=e581]: "9.0"
+                - heading "Swapped" [level=3] [ref=e582]
+                - paragraph [ref=e583]: "2026"
+              - link "The Shawshank Redemption 8.7 The Shawshank Redemption 1994" [ref=e584] [cursor=pointer]:
+                - /url: /movie/278
+                - generic [ref=e585]:
+                  - img "The Shawshank Redemption" [ref=e586]
+                  - generic [ref=e589]:
+                    - img [ref=e590]
+                    - generic [ref=e592]: "8.7"
+                - heading "The Shawshank Redemption" [level=3] [ref=e593]
+                - paragraph [ref=e594]: "1994"
+              - link "Project Hail Mary 8.7 Project Hail Mary 2026" [ref=e595] [cursor=pointer]:
+                - /url: /movie/687163
+                - generic [ref=e596]:
+                  - img "Project Hail Mary" [ref=e597]
+                  - generic [ref=e600]:
+                    - img [ref=e601]
+                    - generic [ref=e603]: "8.7"
+                - heading "Project Hail Mary" [level=3] [ref=e604]
+                - paragraph [ref=e605]: "2026"
+              - link "Michael 8.7 Michael 2026" [ref=e606] [cursor=pointer]:
+                - /url: /movie/936075
+                - generic [ref=e607]:
+                  - img "Michael" [ref=e608]
+                  - generic [ref=e611]:
+                    - img [ref=e612]
+                    - generic [ref=e614]: "8.7"
+                - heading "Michael" [level=3] [ref=e615]
+                - paragraph [ref=e616]: "2026"
+              - link "The Godfather 8.7 The Godfather 1972" [ref=e617] [cursor=pointer]:
+                - /url: /movie/238
+                - generic [ref=e618]:
+                  - img "The Godfather" [ref=e619]
+                  - generic [ref=e622]:
+                    - img [ref=e623]
+                    - generic [ref=e625]: "8.7"
+                - heading "The Godfather" [level=3] [ref=e626]
+                - paragraph [ref=e627]: "1972"
+              - link "Remarkably Bright Creatures 8.6 Remarkably Bright Creatures 2026" [ref=e628] [cursor=pointer]:
+                - /url: /movie/1330021
+                - generic [ref=e629]:
+                  - img "Remarkably Bright Creatures" [ref=e630]
+                  - generic [ref=e633]:
+                    - img [ref=e634]
+                    - generic [ref=e636]: "8.6"
+                - heading "Remarkably Bright Creatures" [level=3] [ref=e637]
+                - paragraph [ref=e638]: "2026"
+              - link "The Godfather Part II 8.6 The Godfather Part II 1974" [ref=e639] [cursor=pointer]:
+                - /url: /movie/240
+                - generic [ref=e640]:
+                  - img "The Godfather Part II" [ref=e641]
+                  - generic [ref=e644]:
+                    - img [ref=e645]
+                    - generic [ref=e647]: "8.6"
+                - heading "The Godfather Part II" [level=3] [ref=e648]
+                - paragraph [ref=e649]: "1974"
+              - link "Schindler's List 8.6 Schindler's List 1993" [ref=e650] [cursor=pointer]:
+                - /url: /movie/424
+                - generic [ref=e651]:
+                  - img "Schindler's List" [ref=e652]
+                  - generic [ref=e655]:
+                    - img [ref=e656]
+                    - generic [ref=e658]: "8.6"
+                - heading "Schindler's List" [level=3] [ref=e659]
+                - paragraph [ref=e660]: "1993"
+              - link "12 Angry Men 8.6 12 Angry Men 1957" [ref=e661] [cursor=pointer]:
+                - /url: /movie/389
+                - generic [ref=e662]:
+                  - img "12 Angry Men" [ref=e663]
+                  - generic [ref=e666]:
+                    - img [ref=e667]
+                    - generic [ref=e669]: "8.6"
+                - heading "12 Angry Men" [level=3] [ref=e670]
+                - paragraph [ref=e671]: "1957"
+              - link "Spirited Away 8.5 Spirited Away 2001" [ref=e672] [cursor=pointer]:
+                - /url: /movie/129
+                - generic [ref=e673]:
+                  - img "Spirited Away" [ref=e674]
+                  - generic [ref=e677]:
+                    - img [ref=e678]
+                    - generic [ref=e680]: "8.5"
+                - heading "Spirited Away" [level=3] [ref=e681]
+                - paragraph [ref=e682]: "2001"
+```
+
+# Test source
+
+```ts
+  1   | import { test, expect } from '@playwright/test'
+  2   | 
+  3   | const BASE_URL = process.env.BASE_URL || 'http://localhost:5178'
+  4   | 
+  5   | // Helper to wait for API response
+  6   | async function waitForAPIResponse(page: import('@playwright/test').Page, urlPattern: string) {
+  7   |   return page.waitForResponse(response => response.url().includes(urlPattern))
+  8   | }
+  9   | 
+  10  | test.describe('Media Manager - Auth', () => {
+  11  |   test('should show login page', async ({ page }) => {
+  12  |     await page.goto(`${BASE_URL}/login`)
+  13  |     
+  14  |     // Check login form elements
+  15  |     await expect(page.locator('h1:has-text("Media Manager")')).toBeVisible()
+  16  |     await expect(page.locator('input[placeholder="Enter your username"]')).toBeVisible()
+  17  |     await expect(page.locator('input[placeholder="Enter your password"]')).toBeVisible()
+  18  |     await expect(page.locator('button:has-text("Sign In")')).toBeVisible()
+  19  |   })
+  20  | 
+  21  |   test('should toggle between login and register', async ({ page }) => {
+  22  |     await page.goto(`${BASE_URL}/login`)
+  23  |     
+  24  |     // Click to register
+  25  |     await page.click('text=Don\'t have an account? Create one')
+  26  |     
+  27  |     await expect(page.locator('h2:has-text("Create Account")')).toBeVisible()
+  28  |     await expect(page.locator('button:has-text("Create Account")')).toBeVisible()
+  29  |     
+  30  |     // Click back to login
+  31  |     await page.click('text=Already have an account? Sign in')
+  32  |     
+  33  |     await expect(page.locator('h2:has-text("Sign In")')).toBeVisible()
+  34  |   })
+  35  | })
+  36  | 
+  37  | test.describe('Media Manager - Navigation', () => {
+  38  |   test('should navigate to all main pages', async ({ page }) => {
+  39  |     await page.goto(BASE_URL)
+  40  |     
+  41  |     // Check sidebar navigation - includes Watchlist now
+  42  |     const navItems = ['Home', 'Discover', 'Watchlist', 'Downloads', 'Library', 'Search', 'Suggestions', 'Settings']
+  43  |     
+  44  |     for (const item of navItems) {
+  45  |       await page.click(`text=${item}`)
+  46  |       await page.waitForLoadState('networkidle')
+  47  |       
+  48  |       // Verify we're on the right page by checking URL
+  49  |       const url = page.url()
+  50  |       expect(url).toContain(item.toLowerCase())
+  51  |     }
+  52  |   })
+  53  | })
+  54  | 
+  55  | test.describe('Media Manager - Discover Page', () => {
+  56  |   test('should load discover page with content', async ({ page }) => {
+  57  |     await page.goto(`${BASE_URL}/discover`)
+  58  |     
+  59  |     // Wait for API responses
+  60  |     await waitForAPIResponse(page, '/api/discover/movies/trending')
+  61  |     
+  62  |     // Check page title
+  63  |     await expect(page.locator('h1:has-text("Discover")')).toBeVisible()
+  64  |     
+  65  |     // Check tabs
+  66  |     await expect(page.locator('button:has-text("All")')).toBeVisible()
+  67  |     await expect(page.locator('button:has-text("MOVIES")')).toBeVisible()
+  68  |     await expect(page.locator('button:has-text("TV SHOWS")')).toBeVisible()
+  69  |     
+  70  |     // Check content sections
+  71  |     await expect(page.locator('text=Trending Movies')).toBeVisible()
+  72  |     await expect(page.locator('text=Popular Movies')).toBeVisible()
+  73  |   })
+  74  | 
+  75  |   test('should filter discover by movies tab', async ({ page }) => {
+  76  |     await page.goto(`${BASE_URL}/discover`)
+  77  |     
+  78  |     await waitForAPIResponse(page, '/api/discover/movies/trending')
+  79  |     
+  80  |     // Click Movies tab
+  81  |     await page.click('button:has-text("MOVIES")')
+  82  |     
+  83  |     await page.waitForTimeout(500)
+  84  |     
+  85  |     // Should show movie sections only
+> 86  |     await expect(page.locator('text=Trending Movies')).toBeVisible()
+      |                                                        ^ Error: expect(locator).toBeVisible() failed
+  87  |     await expect(page.locator('text=Popular Movies')).toBeVisible()
+  88  |     
+  89  |     // Should NOT show TV sections
+  90  |     const tvContent = await page.locator('text=Trending TV Shows').count()
+  91  |     expect(tvContent).toBe(0)
+  92  |   })
+  93  | 
+  94  |   test('should filter discover by TV tab', async ({ page }) => {
+  95  |     await page.goto(`${BASE_URL}/discover`)
+  96  |     
+  97  |     await waitForAPIResponse(page, '/api/discover/movies/trending')
+  98  |     
+  99  |     // Click TV Shows tab
+  100 |     await page.click('button:has-text("TV SHOWS")')
+  101 |     
+  102 |     await page.waitForTimeout(500)
+  103 |     
+  104 |     // Should show TV sections
+  105 |     await expect(page.locator('text=Trending TV Shows')).toBeVisible()
+  106 |     await expect(page.locator('text=Popular TV Shows')).toBeVisible()
+  107 |   })
+  108 | 
+  109 |   test('should show movie cards with ratings', async ({ page }) => {
+  110 |     await page.goto(`${BASE_URL}/discover`)
+  111 |     
+  112 |     await waitForAPIResponse(page, '/api/discover/movies/trending')
+  113 |     
+  114 |     // Check for movie cards with star ratings
+  115 |     const starRatings = page.locator('.text-yellow-400')
+  116 |     await expect(starRatings.first()).toBeVisible()
+  117 |     
+  118 |     // Check for movie titles
+  119 |     const movieTitles = page.locator('h3.text-white')
+  120 |     await expect(movieTitles.first()).toBeVisible()
+  121 |   })
+  122 | })
+  123 | 
+  124 | test.describe('Media Manager - Movie Detail', () => {
+  125 |   test('should navigate to movie detail page', async ({ page }) => {
+  126 |     await page.goto(`${BASE_URL}/discover`)
+  127 |     
+  128 |     await waitForAPIResponse(page, '/api/discover/movies/trending')
+  129 |     
+  130 |     // Click first movie card
+  131 |     await page.click('a[href^="/movie/"]')
+  132 |     
+  133 |     // Wait for movie detail API
+  134 |     await waitForAPIResponse(page, '/api/discover/movie/')
+  135 |     
+  136 |     // Check movie detail elements
+  137 |     await expect(page.locator('h1')).toBeVisible()
+  138 |     await expect(page.locator('text=Overview')).toBeVisible()
+  139 |     await expect(page.locator('text=Cast')).toBeVisible()
+  140 |   })
+  141 | 
+  142 |   test('should show movie info sidebar', async ({ page }) => {
+  143 |     await page.goto(`${BASE_URL}/movie/550`) // Fight Club as example
+  144 |     
+  145 |     await waitForAPIResponse(page, '/api/discover/movie/')
+  146 |     
+  147 |     // Check info sidebar
+  148 |     await expect(page.locator('h3:has-text("Movie Info")')).toBeVisible()
+  149 |     await expect(page.locator('text=Release Date')).toBeVisible()
+  150 |     await expect(page.locator('text=Runtime')).toBeVisible()
+  151 |     await expect(page.locator('text=Budget')).toBeVisible()
+  152 |     await expect(page.locator('text=Revenue')).toBeVisible()
+  153 |   })
+  154 | 
+  155 |   test('should show similar movies', async ({ page }) => {
+  156 |     await page.goto(`${BASE_URL}/movie/550`)
+  157 |     
+  158 |     await waitForAPIResponse(page, '/api/discover/movie/')
+  159 |     
+  160 |     // Check similar movies section
+  161 |     await expect(page.locator('h2:has-text("Similar Movies")')).toBeVisible()
+  162 |   })
+  163 | })
+  164 | 
+  165 | test.describe('Media Manager - TV Detail', () => {
+  166 |   test('should navigate to TV detail page', async ({ page }) => {
+  167 |     await page.goto(`${BASE_URL}/discover`)
+  168 |     
+  169 |     await waitForAPIResponse(page, '/api/discover/tv/trending')
+  170 |     
+  171 |     // Click TV Shows tab first
+  172 |     await page.click('button:has-text("TV SHOWS")')
+  173 |     await page.waitForTimeout(500)
+  174 |     
+  175 |     // Click first TV card
+  176 |     await page.click('a[href^="/tv/"]')
+  177 |     
+  178 |     // Wait for TV detail API
+  179 |     await waitForAPIResponse(page, '/api/discover/tv/')
+  180 |     
+  181 |     // Check TV detail elements
+  182 |     await expect(page.locator('h1')).toBeVisible()
+  183 |     await expect(page.locator('text=Overview')).toBeVisible()
+  184 |     await expect(page.locator('text=Episodes')).toBeVisible()
+  185 |   })
+  186 | 
+```
