@@ -87,11 +87,41 @@ export function TVDetail() {
   const [selectedSeason, setSelectedSeason] = useState(1)
   const [episodes, setEpisodes] = useState<Episode[]>([])
   const [showTrailer, setShowTrailer] = useState(false)
-  const [showPlayer, setShowPlayer] = useState(false)
   const [localFile, setLocalFile] = useState<string | null>(null)
   const [downloadStatus, setDownloadStatus] = useState('')
   const { addToWatchlist, removeFromWatchlist, isInWatchlist, watchlist } = useWatchlist()
   const [isWatchlistLoading, setIsWatchlistLoading] = useState(false)
+
+  const handleDownload = async () => {
+    if (!show) return
+    setDownloadStatus('searching')
+    try {
+      const response = await fetch('/api/downloads/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: show.name,
+          year: show.first_air_date?.substring(0, 4),
+          media_type: 'tv',
+          tmdb_id: show.id
+        })
+      })
+      if (response.ok) {
+        setDownloadStatus('queued')
+      } else {
+        setDownloadStatus('failed')
+      }
+    } catch (error) {
+      console.error('Download error:', error)
+      setDownloadStatus('failed')
+    }
+  }
+
+  const handleStream = () => {
+    if (localFile) {
+      window.open(`/api/stream/direct?path=${encodeURIComponent(localFile)}`, '_blank')
+    }
+  }
 
   useEffect(() => {
     const fetchTV = async () => {
@@ -125,37 +155,6 @@ export function TVDetail() {
 
     fetchTV()
   }, [id])
-
-  const handleDownload = async () => {
-    if (!show) return
-    setDownloadStatus('searching')
-    try {
-      const response = await fetch('/api/downloads/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: show.name,
-          year: show.first_air_date?.substring(0, 4),
-          media_type: 'tv',
-          tmdb_id: show.id
-        })
-      })
-      if (response.ok) {
-        setDownloadStatus('queued')
-      } else {
-        setDownloadStatus('failed')
-      }
-    } catch (error) {
-      console.error('Download error:', error)
-      setDownloadStatus('failed')
-    }
-  }
-
-  const handleStream = () => {
-    if (localFile) {
-      setShowPlayer(true)
-    }
-  }
 
   const fetchEpisodes = async (seasonNumber: number) => {
     try {
@@ -302,10 +301,24 @@ export function TVDetail() {
                 <Heart className={`w-5 h-5 ${inWatchlist ? 'fill-current' : ''}`} />
                 {isWatchlistLoading ? 'Loading...' : inWatchlist ? 'In Watchlist' : 'Add to Watchlist'}
               </button>
-              <button className="flex items-center gap-2 px-6 py-3 bg-[#1f1f1f] text-white rounded-full font-semibold hover:bg-[#2a2a2a] transition-colors">
-                <Download className="w-5 h-5" />
-                Download
-              </button>
+              {localFile ? (
+                <button
+                  onClick={handleStream}
+                  className="flex items-center gap-2 px-6 py-3 bg-[#1ed760] text-black rounded-full font-semibold hover:bg-[#1ed760]/90 transition-colors"
+                >
+                  <Play className="w-5 h-5" />
+                  Stream Now
+                </button>
+              ) : (
+                <button
+                  onClick={handleDownload}
+                  disabled={downloadStatus === 'searching' || downloadStatus === 'queued'}
+                  className="flex items-center gap-2 px-6 py-3 bg-[#1f1f1f] text-white rounded-full font-semibold hover:bg-[#2a2a2a] transition-colors disabled:opacity-50"
+                >
+                  <Download className="w-5 h-5" />
+                  {downloadStatus === 'searching' ? 'Searching...' : downloadStatus === 'queued' ? 'Queued' : downloadStatus === 'failed' ? 'Failed' : 'Download'}
+                </button>
+              )}
             </div>
           </motion.div>
         </div>
