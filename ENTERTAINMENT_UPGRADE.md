@@ -263,7 +263,7 @@ This upgrade transforms the media-manager from a torrent download tool into a fu
 ### Pending Phase 2: Streaming
 - [x] Video streaming endpoint (HLS with FFmpeg)
 - [x] Video player component with controls
-- [ ] Subtitle support
+- [x] Subtitle support
 
 ### Pending Phase 3: Enhanced Discovery
 - [x] Search filters (year, rating, genre)
