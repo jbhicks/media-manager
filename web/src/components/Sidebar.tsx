@@ -6,7 +6,8 @@ import {
   Search, 
   Lightbulb, 
   Settings,
-  Compass
+  Compass,
+  Heart
 } from 'lucide-react'
 import { useAppStore } from '@/store/appStore'
 import { cn } from '@/lib/utils'
@@ -14,6 +15,7 @@ import { cn } from '@/lib/utils'
 const navigation = [
   { name: 'Home', href: '/', icon: Home },
   { name: 'Discover', href: '/discover', icon: Compass },
+  { name: 'Watchlist', href: '/watchlist', icon: Heart },
   { name: 'Downloads', href: '/downloads', icon: Download },
   { name: 'Library', href: '/library', icon: Library },
   { name: 'Search', href: '/search', icon: Search },
