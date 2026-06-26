@@ -57,6 +57,7 @@ type HTTPServer struct {
 	sseClientsMutex     sync.RWMutex
 	searchActivities    []SearchActivity
 	searchActivityMutex sync.RWMutex
+	streamHandler       *StreamHandler
 }
 
 func NewHTTPServer(addr string, db *db.Database, dm *DownloadManager) *HTTPServer {
@@ -68,6 +69,7 @@ func NewHTTPServer(addr string, db *db.Database, dm *DownloadManager) *HTTPServe
 		suggestionService: NewSuggestionService(db, dm, tmdbService),
 		tmdbService:       tmdbService,
 		sseClients:        make(map[chan string]bool),
+		streamHandler:     NewStreamHandler("/mnt/media"),
 	}
 
 	dm.SetUpdateCallback(func() {
@@ -211,6 +213,14 @@ func (s *HTTPServer) Start() error {
 	// Watchlist endpoints
 	watchlistEndpoints := NewWatchlistEndpoints(s.db)
 	watchlistEndpoints.RegisterRoutes(mux)
+
+	// Streaming endpoints
+	mux.HandleFunc("/api/stream/init", s.streamHandler.HandleStreamInit)
+	mux.HandleFunc("/api/stream/playlist", s.streamHandler.HandleStreamPlaylist)
+	mux.HandleFunc("/api/stream/segment", s.streamHandler.HandleStreamSegment)
+	mux.HandleFunc("/api/stream/status", s.streamHandler.HandleStreamStatus)
+	mux.HandleFunc("/api/stream/stop", s.streamHandler.HandleStreamStop)
+	mux.HandleFunc("/api/stream/direct", s.streamHandler.HandleDirectStream)
 
 	// Health check endpoint
 	mux.HandleFunc("/api/health", s.handleHealth)

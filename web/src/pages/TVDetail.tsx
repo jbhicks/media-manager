@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Star, Play, ArrowLeft, Tv, Heart, Download, ChevronDown } from 'lucide-react'
+import { useWatchlist } from '@/contexts/WatchlistContext'
 
 interface CastMember {
   id: number
@@ -86,6 +87,8 @@ export function TVDetail() {
   const [selectedSeason, setSelectedSeason] = useState(1)
   const [episodes, setEpisodes] = useState<Episode[]>([])
   const [showTrailer, setShowTrailer] = useState(false)
+  const { addToWatchlist, removeFromWatchlist, isInWatchlist, watchlist } = useWatchlist()
+  const [isWatchlistLoading, setIsWatchlistLoading] = useState(false)
 
   useEffect(() => {
     const fetchTV = async () => {
@@ -148,6 +151,29 @@ export function TVDetail() {
   const avgRuntime = show.episode_run_time?.length > 0 
     ? Math.round(show.episode_run_time.reduce((a, b) => a + b, 0) / show.episode_run_time.length)
     : 0
+  const inWatchlist = isInWatchlist('tv_show', show.id)
+  const watchlistItem = watchlist.find(item => item.media_type === 'tv_show' && item.tmdb_id === show.id)
+
+  const handleWatchlistToggle = async () => {
+    if (isWatchlistLoading) return
+    setIsWatchlistLoading(true)
+    try {
+      if (inWatchlist && watchlistItem) {
+        await removeFromWatchlist(watchlistItem.id)
+      } else {
+        await addToWatchlist({
+          media_type: 'tv_show',
+          tmdb_id: show.id,
+          title: show.name,
+          poster_url: show.poster_path
+        })
+      }
+    } catch (error) {
+      console.error('Watchlist error:', error)
+    } finally {
+      setIsWatchlistLoading(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-[#121212]">
@@ -221,9 +247,17 @@ export function TVDetail() {
                   Watch Trailer
                 </button>
               )}
-              <button className="flex items-center gap-2 px-6 py-3 bg-[#1f1f1f] text-white rounded-full font-semibold hover:bg-[#2a2a2a] transition-colors">
-                <Heart className="w-5 h-5" />
-                Add to Watchlist
+              <button 
+                onClick={handleWatchlistToggle}
+                disabled={isWatchlistLoading}
+                className={`flex items-center gap-2 px-6 py-3 rounded-full font-semibold transition-colors ${
+                  inWatchlist 
+                    ? 'bg-[#1ed760] text-black hover:bg-[#1ed760]/90' 
+                    : 'bg-[#1f1f1f] text-white hover:bg-[#2a2a2a]'
+                }`}
+              >
+                <Heart className={`w-5 h-5 ${inWatchlist ? 'fill-current' : ''}`} />
+                {isWatchlistLoading ? 'Loading...' : inWatchlist ? 'In Watchlist' : 'Add to Watchlist'}
               </button>
               <button className="flex items-center gap-2 px-6 py-3 bg-[#1f1f1f] text-white rounded-full font-semibold hover:bg-[#2a2a2a] transition-colors">
                 <Download className="w-5 h-5" />
