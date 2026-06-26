@@ -208,6 +208,10 @@ func (s *HTTPServer) Start() error {
 	discoverEndpoints := NewDiscoverEndpoints(s.tmdbService)
 	discoverEndpoints.RegisterRoutes(mux)
 
+	// Watchlist endpoints
+	watchlistEndpoints := NewWatchlistEndpoints(s.db)
+	watchlistEndpoints.RegisterRoutes(mux)
+
 	// Health check endpoint
 	mux.HandleFunc("/api/health", s.handleHealth)
 
