@@ -214,6 +214,10 @@ func (s *HTTPServer) Start() error {
 	watchlistEndpoints := NewWatchlistEndpoints(s.db)
 	watchlistEndpoints.RegisterRoutes(mux)
 
+	// Watch history endpoints
+	historyEndpoints := NewWatchHistoryEndpoints(s.db)
+	historyEndpoints.RegisterRoutes(mux)
+
 	// Streaming endpoints
 	mux.HandleFunc("/api/stream/init", s.streamHandler.HandleStreamInit)
 	mux.HandleFunc("/api/stream/playlist", s.streamHandler.HandleStreamPlaylist)

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Play, Pause, Volume2, VolumeX, Maximize, SkipBack, SkipForward, Settings } from 'lucide-react'
+import { useWatchHistory } from '@/contexts/WatchHistoryContext'
 
 interface VideoPlayerProps {
   src: string
@@ -7,10 +8,13 @@ interface VideoPlayerProps {
   title?: string
   onClose?: () => void
   autoPlay?: boolean
+  mediaType?: string
+  mediaId?: number
 }
 
-export function VideoPlayer({ src, poster, title, onClose, autoPlay = false }: VideoPlayerProps) {
+export function VideoPlayer({ src, poster, title, onClose, autoPlay = false, mediaType, mediaId }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const { updateProgress, markComplete } = useWatchHistory()
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -20,6 +24,7 @@ export function VideoPlayer({ src, poster, title, onClose, autoPlay = false }: V
   const [showControls, setShowControls] = useState(true)
   const [buffered, setBuffered] = useState(0)
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval>>()
 
   useEffect(() => {
     const video = videoRef.current
@@ -32,18 +37,72 @@ export function VideoPlayer({ src, poster, title, onClose, autoPlay = false }: V
         setBuffered(video.buffered.end(video.buffered.length - 1))
       }
     }
+    const handleEnded = () => {
+      setIsPlaying(false)
+      // Mark as complete when video ends
+      if (mediaType && mediaId) {
+        markComplete(mediaType, mediaId)
+      }
+    }
 
     video.addEventListener('timeupdate', updateTime)
     video.addEventListener('loadedmetadata', updateDuration)
     video.addEventListener('progress', updateBuffered)
-    video.addEventListener('ended', () => setIsPlaying(false))
+    video.addEventListener('ended', handleEnded)
 
     return () => {
       video.removeEventListener('timeupdate', updateTime)
       video.removeEventListener('loadedmetadata', updateDuration)
       video.removeEventListener('progress', updateBuffered)
+      video.removeEventListener('ended', handleEnded)
     }
-  }, [])
+  }, [mediaType, mediaId, markComplete])
+
+  // Track progress periodically
+  useEffect(() => {
+    if (!isPlaying || !mediaType || !mediaId) return
+
+    progressIntervalRef.current = setInterval(() => {
+      const video = videoRef.current
+      if (!video) return
+
+      const progress = video.duration > 0 ? video.currentTime / video.duration : 0
+      updateProgress({
+        media_type: mediaType,
+        media_id: mediaId,
+        position: Math.floor(video.currentTime),
+        duration: Math.floor(video.duration),
+        progress: Math.min(progress, 1),
+      })
+    }, 10000) // Save progress every 10 seconds
+
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current)
+      }
+    }
+  }, [isPlaying, mediaType, mediaId, updateProgress])
+
+  // Save progress on unmount
+  useEffect(() => {
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current)
+      }
+      // Save final progress
+      const video = videoRef.current
+      if (video && mediaType && mediaId && video.duration > 0) {
+        const progress = video.currentTime / video.duration
+        updateProgress({
+          media_type: mediaType,
+          media_id: mediaId,
+          position: Math.floor(video.currentTime),
+          duration: Math.floor(video.duration),
+          progress: Math.min(progress, 1),
+        })
+      }
+    }
+  }, [mediaType, mediaId, updateProgress])
 
   useEffect(() => {
     if (autoPlay && videoRef.current) {
