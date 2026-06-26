@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Star, Play, ArrowLeft, Film, Heart, Download } from 'lucide-react'
 import { useWatchlist } from '@/contexts/WatchlistContext'
+import { VideoPlayer } from '@/components/VideoPlayer'
 
 interface CastMember {
   id: number
@@ -65,6 +66,9 @@ export function MovieDetail() {
   const [movie, setMovie] = useState<MovieDetails | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [showTrailer, setShowTrailer] = useState(false)
+  const [showPlayer, setShowPlayer] = useState(false)
+  const [localFile, setLocalFile] = useState<string | null>(null)
+  const [downloadStatus, setDownloadStatus] = useState<string>('')
   const { addToWatchlist, removeFromWatchlist, isInWatchlist, watchlist } = useWatchlist()
   const [isWatchlistLoading, setIsWatchlistLoading] = useState(false)
 
@@ -75,6 +79,15 @@ export function MovieDetail() {
         if (!response.ok) throw new Error('Failed to fetch movie')
         const data = await response.json()
         setMovie(data)
+
+        // Check if movie has a local file
+        const fileResponse = await fetch(`/api/library/movie/${id}/file`)
+        if (fileResponse.ok) {
+          const fileData = await fileResponse.json()
+          if (fileData.file_path) {
+            setLocalFile(fileData.file_path)
+          }
+        }
       } catch (error) {
         console.error('Error fetching movie:', error)
       } finally {
@@ -84,6 +97,37 @@ export function MovieDetail() {
 
     fetchMovie()
   }, [id])
+
+  const handleDownload = async () => {
+    if (!movie) return
+    setDownloadStatus('searching')
+    try {
+      const response = await fetch('/api/downloads/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: movie.title,
+          year: movie.release_date?.substring(0, 4),
+          media_type: 'movie',
+          tmdb_id: movie.id
+        })
+      })
+      if (response.ok) {
+        setDownloadStatus('queued')
+      } else {
+        setDownloadStatus('failed')
+      }
+    } catch (error) {
+      console.error('Download error:', error)
+      setDownloadStatus('failed')
+    }
+  }
+
+  const handleStream = () => {
+    if (localFile) {
+      setShowPlayer(true)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -185,10 +229,31 @@ export function MovieDetail() {
             </div>
 
             <div className="flex gap-3">
+              {localFile ? (
+                <button
+                  onClick={handleStream}
+                  className="flex items-center gap-2 px-6 py-3 bg-[#1ed760] text-black rounded-full font-semibold hover:bg-[#1ed760]/90 transition-colors"
+                >
+                  <Play className="w-5 h-5" />
+                  Stream Now
+                </button>
+              ) : (
+                <button
+                  onClick={handleDownload}
+                  disabled={downloadStatus === 'searching' || downloadStatus === 'queued'}
+                  className="flex items-center gap-2 px-6 py-3 bg-[#1ed760] text-black rounded-full font-semibold hover:bg-[#1ed760]/90 transition-colors disabled:opacity-50"
+                >
+                  <Download className="w-5 h-5" />
+                  {downloadStatus === 'searching' ? 'Searching...' :
+                   downloadStatus === 'queued' ? 'Queued' :
+                   downloadStatus === 'failed' ? 'Try Again' :
+                   'Download'}
+                </button>
+              )}
               {trailer && (
                 <button
                   onClick={() => setShowTrailer(true)}
-                  className="flex items-center gap-2 px-6 py-3 bg-[#1ed760] text-black rounded-full font-semibold hover:bg-[#1ed760]/90 transition-colors"
+                  className="flex items-center gap-2 px-6 py-3 bg-[#1f1f1f] text-white rounded-full font-semibold hover:bg-[#2a2a2a] transition-colors"
                 >
                   <Play className="w-5 h-5" />
                   Watch Trailer
@@ -205,10 +270,6 @@ export function MovieDetail() {
               >
                 <Heart className={`w-5 h-5 ${inWatchlist ? 'fill-current' : ''}`} />
                 {isWatchlistLoading ? 'Loading...' : inWatchlist ? 'In Watchlist' : 'Add to Watchlist'}
-              </button>
-              <button className="flex items-center gap-2 px-6 py-3 bg-[#1f1f1f] text-white rounded-full font-semibold hover:bg-[#2a2a2a] transition-colors">
-                <Download className="w-5 h-5" />
-                Download
               </button>
             </div>
           </motion.div>
@@ -382,6 +443,22 @@ export function MovieDetail() {
               allow="autoplay; encrypted-media"
             />
           </div>
+        </div>
+      )}
+
+      {/* Video Player Modal */}
+      {showPlayer && localFile && (
+        <div className="fixed inset-0 z-50 bg-black">
+          <VideoPlayer
+            src={`/api/stream/direct?path=${encodeURIComponent(localFile)}`}
+            poster={movie.backdrop_path ? `https://image.tmdb.org/t/p/original${movie.backdrop_path}` : undefined}
+            title={movie.title}
+            onClose={() => setShowPlayer(false)}
+            autoPlay
+            mediaType="movie"
+            mediaId={movie.id}
+            subtitlePath={localFile}
+          />
         </div>
       )}
     </div>

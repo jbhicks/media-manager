@@ -1,64 +1,43 @@
 #!/bin/bash
+# Jellyfin Quick Setup Script for Josh's Media Center
+# Run this after Jellyfin first starts
 
-# Jellyfin Setup Script for Media Manager
-
-set -e
-
-echo "==================================="
-echo " Jellyfin Setup for Media Manager"
-echo "==================================="
+echo "🎬 Jellyfin Setup for Media Center"
+echo "===================================="
 echo ""
-
-# Check if Jellyfin is running
-if ! docker ps | grep -q jellyfin; then
-    echo "❌ Jellyfin container is not running!"
-    echo ""
-    echo "Starting Jellyfin..."
-    cd /home/josh/media-manager
-    UID=$(id -u) GID=$(id -g) docker-compose -f docker-compose-jellyfin.yml up -d
-    sleep 5
-fi
-
-echo "✅ Jellyfin is running!"
+echo "Jellyfin is running at: http://192.168.1.49:8096"
 echo ""
-echo "📍 Access Jellyfin at: http://localhost:8096"
+echo "FIRST TIME SETUP STEPS:"
 echo ""
-echo "==================================="
-echo " Initial Setup Instructions"
-echo "==================================="
+echo "1. Open http://192.168.1.49:8096 in your browser"
+echo "2. Follow the startup wizard:"
+echo "   - Create admin user (use same credentials as media-manager)"
+echo "   - Add Media Libraries:"
+echo "     • Movies: /mnt/media/Movies"
+echo "     • TV Shows: /mnt/media/Series"
+echo "   - Set language: English"
+echo "   • Enable subtitle downloading (OpenSubtitles)"
 echo ""
-echo "1. Open http://localhost:8096 in your browser"
-echo "2. Follow the setup wizard:"
-echo "   - Create an admin account"
-echo "   - Add a Movies library pointing to: /media/movies"
-echo "   - Skip other optional steps"
+echo "3. IMPORTANT SETTINGS:"
+echo "   Dashboard → Playback → Transcoding:"
+echo "   • Enable hardware acceleration: AMD AMF"
+echo "   • Enable all codecs (H264, HEVC, VP9, AV1)"
 echo ""
-echo "3. After setup, create an API key:"
-echo "   - Go to Dashboard → API Keys"
-echo "   - Click 'New API Key'"
-echo "   - Name it 'Media Manager'"
-echo "   - Copy the API key"
+echo "4. NVIDIA SHIELD SETUP:"
+echo "   • Install 'Jellyfin for Android TV' from Play Store"
+echo "   • Enter server: http://192.168.1.49:8096"
+echo "   • Login with your credentials"
 echo ""
-echo "4. Update the database:"
-echo "   sqlite3 ~/.media-manager/media.db"
-echo "   UPDATE service_configs SET jellyfin_url='http://localhost:8096', jellyfin_api_key='YOUR_API_KEY';"
-echo "   .quit"
+echo "5. REMOTE ACCESS (Phase 2):"
+echo "   • Configure Cloudflare tunnel"
+echo "   • Set up reverse proxy"
+echo "   • Create friend accounts"
 echo ""
-echo "5. Restart the media manager service"
+echo "📱 CLIENT APPS FOR FRIENDS:"
+echo "   • Android TV: Jellyfin (Play Store)"
+echo "   • Roku: Jellyfin Channel"
+echo "   • Apple TV: Jellyfin (App Store)"
+echo "   • iPhone/iPad: Jellyfin (App Store)"
+echo "   • Web: media.yourdomain.com"
 echo ""
-echo "==================================="
-echo ""
-
-# Check Jellyfin health
-echo "Checking Jellyfin status..."
-sleep 2
-
-if curl -s http://localhost:8096/health > /dev/null 2>&1; then
-    echo "✅ Jellyfin is healthy and ready!"
-else
-    echo "⏳ Jellyfin is starting up... (this may take 30-60 seconds)"
-    echo "   Visit http://localhost:8096 when ready"
-fi
-
-echo ""
-echo "Done! Follow the instructions above to complete setup."
+echo "🦞 Why not Zoidberg? HOORAY!"

@@ -87,6 +87,9 @@ export function TVDetail() {
   const [selectedSeason, setSelectedSeason] = useState(1)
   const [episodes, setEpisodes] = useState<Episode[]>([])
   const [showTrailer, setShowTrailer] = useState(false)
+  const [showPlayer, setShowPlayer] = useState(false)
+  const [localFile, setLocalFile] = useState<string | null>(null)
+  const [downloadStatus, setDownloadStatus] = useState('')
   const { addToWatchlist, removeFromWatchlist, isInWatchlist, watchlist } = useWatchlist()
   const [isWatchlistLoading, setIsWatchlistLoading] = useState(false)
 
@@ -104,6 +107,15 @@ export function TVDetail() {
           setSelectedSeason(seasonNum)
           fetchEpisodes(seasonNum)
         }
+
+        // Check if show has a local file
+        const fileResponse = await fetch(`/api/library/tv/${id}/file`)
+        if (fileResponse.ok) {
+          const fileData = await fileResponse.json()
+          if (fileData.file_path) {
+            setLocalFile(fileData.file_path)
+          }
+        }
       } catch (error) {
         console.error('Error fetching TV show:', error)
       } finally {
@@ -113,6 +125,37 @@ export function TVDetail() {
 
     fetchTV()
   }, [id])
+
+  const handleDownload = async () => {
+    if (!show) return
+    setDownloadStatus('searching')
+    try {
+      const response = await fetch('/api/downloads/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: show.name,
+          year: show.first_air_date?.substring(0, 4),
+          media_type: 'tv',
+          tmdb_id: show.id
+        })
+      })
+      if (response.ok) {
+        setDownloadStatus('queued')
+      } else {
+        setDownloadStatus('failed')
+      }
+    } catch (error) {
+      console.error('Download error:', error)
+      setDownloadStatus('failed')
+    }
+  }
+
+  const handleStream = () => {
+    if (localFile) {
+      setShowPlayer(true)
+    }
+  }
 
   const fetchEpisodes = async (seasonNumber: number) => {
     try {

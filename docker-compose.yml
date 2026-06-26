@@ -64,3 +64,18 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # Jellyfin Media Server
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./jellyfin/config:/config
+      - ./jellyfin/cache:/cache
+      - /mnt/media:/media:ro
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - LIBVA_DRIVER_NAME=radeonsi
