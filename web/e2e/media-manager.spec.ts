@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-const BASE_URL = process.env.BASE_URL || 'http://localhost:5174'
+const BASE_URL = process.env.BASE_URL || 'http://localhost:5178'
 
 // Helper to wait for API response
 async function waitForAPIResponse(page: import('@playwright/test').Page, urlPattern: string) {

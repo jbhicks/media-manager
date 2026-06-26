@@ -3,6 +3,8 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -86,7 +88,13 @@ func (d *DiscoverEndpoints) fetchTMDB(endpoint string) (*TMDbDiscoverResult, err
 	if apiKey == "" {
 		return nil, fmt.Errorf("TMDB_API_KEY not configured")
 	}
-	url := fmt.Sprintf("%s%s?api_key=%s&language=en-US", TMDbAPIBaseURL, endpoint, apiKey)
+	// Check if endpoint already has query params
+	separator := "?"
+	if strings.Contains(endpoint, "?") {
+		separator = "&"
+	}
+	url := fmt.Sprintf("%s%s%sapi_key=%s&language=en-US", TMDbAPIBaseURL, endpoint, separator, apiKey)
+	log.Printf("[DEBUG] TMDB URL: %s (key length: %d)", url, len(apiKey))
 	
 	resp, err := d.tmdbService.httpClient.Get(url)
 	if err != nil {
@@ -95,6 +103,8 @@ func (d *DiscoverEndpoints) fetchTMDB(endpoint string) (*TMDbDiscoverResult, err
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[DEBUG] TMDB error response: %s", string(body))
 		return nil, fmt.Errorf("TMDB API returned status %d", resp.StatusCode)
 	}
 
