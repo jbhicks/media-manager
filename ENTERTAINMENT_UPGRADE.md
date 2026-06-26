@@ -110,9 +110,31 @@ This upgrade transforms the media-manager from a torrent download tool into a fu
   - Error messages
   - JWT token storage in localStorage
 
+#### 9. Watchlist Page
+- **File**: `web/src/pages/Watchlist.tsx`
+- **Features**:
+  - Beautiful header with item count
+  - Empty state with "Discover Content" button
+  - Grid layout with movie/TV cards
+  - Poster images, titles, and add dates
+  - Remove button (trash icon) on hover
+  - Media type badges (Film/TV icons)
+  - Links to movie/TV detail pages
+
+#### 10. TV Interface (10-foot UI)
+- **File**: `web/src/pages/TVInterface.tsx`
+- **Features**:
+  - Large text and high contrast for TV viewing
+  - D-pad navigation (arrow keys) support
+  - Sidebar navigation with focus indicators
+  - Auto-hide navigation after inactivity
+  - Green ring highlighting for focused items
+  - Row/column navigation system
+  - Optimized for Nvidia Shield/Android TV
+
 ### Phase 3: UI/UX
 
-#### 9. Auth Context
+#### 11. Auth Context
 - **File**: `web/src/contexts/AuthContext.tsx`
 - **Features**:
   - React context for auth state
@@ -120,23 +142,65 @@ This upgrade transforms the media-manager from a torrent download tool into a fu
   - Token persistence in localStorage
   - User info storage
 
-#### 10. Navigation Updates
+#### 12. Watchlist Context
+- **File**: `web/src/contexts/WatchlistContext.tsx`
+- **Features**:
+  - Add/remove items from watchlist
+  - Check if item is in watchlist
+  - Refresh watchlist from API
+  - JWT token authentication
+
+#### 13. Watch History Context
+- **File**: `web/src/contexts/WatchHistoryContext.tsx`
+- **Features**:
+  - Track watch progress every 10 seconds
+  - Resume points for unfinished content
+  - Mark content as complete
+  - Fetch resume points from API
+
+#### 14. Navigation Updates
 - **File**: `web/src/components/Sidebar.tsx`
 - **Changes**:
   - Added "Discover" link to sidebar
+  - Added "Watchlist" link to sidebar
   - Compass icon for discovery
+  - Heart icon for watchlist
 
-#### 11. Routing
+#### 15. Routing
 - **File**: `web/src/App.tsx`
 - **Routes**:
   - `/login` - Login page
   - `/discover` - Discover page
   - `/movie/:id` - Movie detail
   - `/tv/:id` - TV show detail
+  - `/watchlist` - Watchlist page
+  - `/tv` - TV interface (10-foot UI)
 
-### Phase 4: Testing
+### Phase 4: Backend Features
 
-#### 12. Playwright Test Suite
+#### 16. Video Streaming
+- **File**: `internal/service/streaming.go`
+- **Features**:
+  - HLS transcoding via FFmpeg
+  - `/api/stream/init` - Initialize stream
+  - `/api/stream/playlist` - Serve HLS playlist
+  - `/api/stream/segment` - Serve HLS segments
+  - `/api/stream/status` - Check stream status
+  - `/api/stream/direct` - Direct video streaming with range requests
+  - Security: Path validation within media directory
+
+#### 17. Watch History API
+- **File**: `internal/service/history.go`
+- **Endpoints**:
+  - `GET /api/history` - List watch history
+  - `POST /api/history/progress` - Update progress
+  - `POST /api/history/complete` - Mark as complete
+  - `GET /api/history/resume` - Get resume points
+  - `GET /api/history/stats` - Watch statistics
+
+### Phase 5: Testing
+
+#### 18. Playwright Test Suite
 - **File**: `web/e2e/media-manager.spec.ts`
 - **Tests**:
   - Auth: Login page visibility, toggle register
@@ -197,19 +261,19 @@ This upgrade transforms the media-manager from a torrent download tool into a fu
 ## 🚀 Next Steps (Remaining Features)
 
 ### Pending Phase 2: Streaming
-- [ ] Video streaming endpoint (HLS with FFmpeg)
-- [ ] Video player component with controls
+- [x] Video streaming endpoint (HLS with FFmpeg)
+- [x] Video player component with controls
 - [ ] Subtitle support
 
 ### Pending Phase 3: Enhanced Discovery
-- [ ] Search filters (year, rating, genre)
-- [ ] Watch history tracking
-- [ ] Resume points
-- [ ] Watchlist functionality
+- [x] Search filters (year, rating, genre)
+- [x] Watch history tracking
+- [x] Resume points
+- [x] Watchlist functionality
 
 ### Pending Phase 4: TV Optimization
-- [ ] 10-foot UI for Nvidia Shield
-- [ ] D-pad navigation support
+- [x] 10-foot UI for Nvidia Shield
+- [x] D-pad navigation support
 - [ ] Android TV launcher integration
 - [ ] Voice search
 
