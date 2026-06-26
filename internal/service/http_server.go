@@ -225,6 +225,8 @@ func (s *HTTPServer) Start() error {
 	mux.HandleFunc("/api/stream/status", s.streamHandler.HandleStreamStatus)
 	mux.HandleFunc("/api/stream/stop", s.streamHandler.HandleStreamStop)
 	mux.HandleFunc("/api/stream/direct", s.streamHandler.HandleDirectStream)
+	mux.HandleFunc("/api/stream/subtitles", s.streamHandler.HandleSubtitles)
+	mux.HandleFunc("/api/stream/subtitle-file", s.streamHandler.HandleSubtitleFile)
 
 	// Health check endpoint
 	mux.HandleFunc("/api/health", s.handleHealth)

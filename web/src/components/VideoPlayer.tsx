@@ -1,6 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
-import { Play, Pause, Volume2, VolumeX, Maximize, SkipBack, SkipForward, Settings } from 'lucide-react'
+import { Play, Pause, Volume2, VolumeX, Maximize, SkipBack, SkipForward, Settings, Subtitles } from 'lucide-react'
 import { useWatchHistory } from '@/contexts/WatchHistoryContext'
+
+interface SubtitleTrack {
+  label: string
+  src: string
+  lang: string
+}
 
 interface VideoPlayerProps {
   src: string
@@ -10,9 +16,10 @@ interface VideoPlayerProps {
   autoPlay?: boolean
   mediaType?: string
   mediaId?: number
+  subtitlePath?: string
 }
 
-export function VideoPlayer({ src, poster, title, onClose, autoPlay = false, mediaType, mediaId }: VideoPlayerProps) {
+export function VideoPlayer({ src, poster, title, onClose, autoPlay = false, mediaType, mediaId, subtitlePath }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const { updateProgress, markComplete } = useWatchHistory()
   const [isPlaying, setIsPlaying] = useState(false)
@@ -23,8 +30,51 @@ export function VideoPlayer({ src, poster, title, onClose, autoPlay = false, med
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [showControls, setShowControls] = useState(true)
   const [buffered, setBuffered] = useState(0)
+  const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([])
+  const [showSubtitleMenu, setShowSubtitleMenu] = useState(false)
+  const [activeSubtitle, setActiveSubtitle] = useState<string | null>(null)
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
   const progressIntervalRef = useRef<ReturnType<typeof setInterval>>()
+
+  // Fetch subtitles
+  useEffect(() => {
+    if (!subtitlePath) return
+
+    const fetchSubtitles = async () => {
+      try {
+        const response = await fetch(`/api/stream/subtitles?path=${encodeURIComponent(subtitlePath)}`)
+        if (response.ok) {
+          const data = await response.json()
+          setSubtitles(data.subtitles || [])
+        }
+      } catch (error) {
+        console.error('Error fetching subtitles:', error)
+      }
+    }
+
+    fetchSubtitles()
+  }, [subtitlePath])
+
+  // Toggle subtitle track
+  const toggleSubtitle = (src: string | null) => {
+    const video = videoRef.current
+    if (!video) return
+
+    // Remove existing subtitle tracks
+    const existingTracks = video.querySelectorAll('track')
+    existingTracks.forEach(track => track.remove())
+
+    if (src) {
+      const track = document.createElement('track')
+      track.kind = 'subtitles'
+      track.src = src
+      track.default = true
+      video.appendChild(track)
+      setActiveSubtitle(src)
+    } else {
+      setActiveSubtitle(null)
+    }
+  }
 
   useEffect(() => {
     const video = videoRef.current
@@ -324,6 +374,43 @@ export function VideoPlayer({ src, poster, title, onClose, autoPlay = false, med
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Subtitles */}
+              {subtitles.length > 0 && (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowSubtitleMenu(!showSubtitleMenu)}
+                    className={`transition-colors ${
+                      activeSubtitle ? 'text-[#1ed760]' : 'text-white/70 hover:text-white'
+                    }`}
+                  >
+                    <Subtitles className="w-5 h-5" />
+                  </button>
+                  {showSubtitleMenu && (
+                    <div className="absolute bottom-full right-0 mb-2 bg-[#1f1f1f] rounded-lg border border-[#2a2a2a] py-2 min-w-[150px]">
+                      <button
+                        onClick={() => { toggleSubtitle(null); setShowSubtitleMenu(false) }}
+                        className={`w-full text-left px-4 py-2 text-sm hover:bg-[#2a2a2a] transition-colors ${
+                          !activeSubtitle ? 'text-[#1ed760]' : 'text-white'
+                        }`}
+                      >
+                        Off
+                      </button>
+                      {subtitles.map((sub) => (
+                        <button
+                          key={sub.src}
+                          onClick={() => { toggleSubtitle(sub.src); setShowSubtitleMenu(false) }}
+                          className={`w-full text-left px-4 py-2 text-sm hover:bg-[#2a2a2a] transition-colors ${
+                            activeSubtitle === sub.src ? 'text-[#1ed760]' : 'text-white'
+                          }`}
+                        >
+                          {sub.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Settings */}
               <button className="text-white/70 hover:text-white transition-colors">
                 <Settings className="w-5 h-5" />

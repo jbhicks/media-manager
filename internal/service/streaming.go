@@ -1,11 +1,13 @@
 package service
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -353,6 +355,203 @@ func (sh *StreamHandler) HandleStreamStatus(w http.ResponseWriter, r *http.Reque
 		"progress": job.Progress,
 		"video_path": job.VideoPath,
 	})
+}
+
+// HandleSubtitles serves subtitle files for a video
+func (sh *StreamHandler) HandleSubtitles(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		http.Error(w, "Missing path parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Security: verify path is within media directory
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return
+	}
+	absMedia, _ := filepath.Abs(sh.mediaDir)
+	if !strings.HasPrefix(absPath, absMedia) {
+		http.Error(w, "Path outside media directory", http.StatusForbidden)
+		return
+	}
+
+	// Find the video file to get the base name
+	videoPath, err := sh.findVideoFile(path)
+	if err != nil {
+		http.Error(w, "Video not found", http.StatusNotFound)
+		return
+	}
+
+	// Look for subtitle files
+	baseName := strings.TrimSuffix(videoPath, filepath.Ext(videoPath))
+	subtitleExts := []string{".srt", ".vtt", ".sub", ".idx", ".ssa", ".ass"}
+
+	type SubtitleInfo struct {
+		Label string `json:"label"`
+		Src   string `json:"src"`
+		Lang  string `json:"lang"`
+	}
+
+	var subtitles []SubtitleInfo
+
+	for _, ext := range subtitleExts {
+		subFile := baseName + ext
+		if _, err := os.Stat(subFile); err == nil {
+			// Extract language from filename if present (e.g., movie.en.srt)
+			lang := "unknown"
+			label := "Unknown"
+
+			// Try to detect language from filename
+			fileBase := filepath.Base(subFile)
+			fileBase = strings.TrimSuffix(fileBase, ext)
+
+			// Check for common language codes in filename
+			langPatterns := map[string]string{
+				".en.": "English", ".eng.": "English",
+				".es.": "Spanish", ".spa.": "Spanish",
+				".fr.": "French", ".fre.": "French",
+				".de.": "German", ".ger.": "German",
+				".it.": "Italian", ".ita.": "Italian",
+				".pt.": "Portuguese", ".por.": "Portuguese",
+				".ru.": "Russian", ".rus.": "Russian",
+				".ja.": "Japanese", ".jpn.": "Japanese",
+				".ko.": "Korean", ".kor.": "Korean",
+				".zh.": "Chinese", ".chi.": "Chinese",
+				".ar.": "Arabic", ".ara.": "Arabic",
+				".hi.": "Hindi", ".hin.": "Hindi",
+				".pl.": "Polish", ".pol.": "Polish",
+				".nl.": "Dutch", ".dut.": "Dutch",
+				".tr.": "Turkish", ".tur.": "Turkish",
+			}
+
+			for pattern, langName := range langPatterns {
+				if strings.Contains(strings.ToLower(fileBase), pattern) {
+					lang = strings.Trim(pattern, ".")
+					label = langName
+					break
+				}
+			}
+
+			// If no language detected, use default
+			if lang == "unknown" {
+				lang = "en"
+				label = "English"
+			}
+
+			// Convert SRT to VTT if needed (browsers prefer WebVTT)
+			if ext == ".srt" {
+				vttFile := subFile + ".vtt"
+				if _, err := os.Stat(vttFile); os.IsNotExist(err) {
+					if err := convertSRTtoVTT(subFile, vttFile); err != nil {
+						log.Printf("[STREAM] Failed to convert SRT to VTT: %v", err)
+						continue
+					}
+				}
+				subFile = vttFile
+				ext = ".vtt"
+			}
+
+			// Create a relative URL for the subtitle
+			subURL := "/api/stream/subtitle-file?file=" + url.QueryEscape(subFile)
+
+			subtitles = append(subtitles, SubtitleInfo{
+				Label: label,
+				Src:   subURL,
+				Lang:  lang,
+			})
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"subtitles": subtitles,
+		"count":     len(subtitles),
+	})
+}
+
+// HandleSubtitleFile serves a specific subtitle file
+func (sh *StreamHandler) HandleSubtitleFile(w http.ResponseWriter, r *http.Request) {
+	file := r.URL.Query().Get("file")
+	if file == "" {
+		http.Error(w, "Missing file parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Security: verify path is within media directory
+	absPath, err := filepath.Abs(file)
+	if err != nil {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return
+	}
+	absMedia, _ := filepath.Abs(sh.mediaDir)
+	if !strings.HasPrefix(absPath, absMedia) {
+		http.Error(w, "Path outside media directory", http.StatusForbidden)
+		return
+	}
+
+	// Check if file exists
+	if _, err := os.Stat(file); os.IsNotExist(err) {
+		http.Error(w, "Subtitle file not found", http.StatusNotFound)
+		return
+	}
+
+	// Set appropriate content type
+	ext := strings.ToLower(filepath.Ext(file))
+	contentType := "text/plain"
+	switch ext {
+	case ".vtt":
+		contentType = "text/vtt"
+	case ".srt":
+		contentType = "text/srt"
+	case ".ass", ".ssa":
+		contentType = "text/x-ssa"
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	http.ServeFile(w, r, file)
+}
+
+// convertSRTtoVTT converts SRT subtitle format to WebVTT
+func convertSRTtoVTT(srtPath, vttPath string) error {
+	input, err := os.Open(srtPath)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+
+	output, err := os.Create(vttPath)
+	if err != nil {
+		return err
+	}
+	defer output.Close()
+
+	// Write WebVTT header
+	fmt.Fprintln(output, "WEBVTT")
+	fmt.Fprintln(output, "")
+
+	scanner := bufio.NewScanner(input)
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Skip subtitle index numbers
+		if _, err := strconv.Atoi(line); err == nil {
+			continue
+		}
+
+		// Convert SRT time format to VTT time format
+		// SRT: 00:00:01,000 --> 00:00:04,000
+		// VTT: 00:00:01.000 --> 00:00:04.000
+		if strings.Contains(line, "-->") {
+			line = strings.ReplaceAll(line, ",", ".")
+		}
+
+		fmt.Fprintln(output, line)
+	}
+
+	return scanner.Err()
 }
 
 // HandleDirectStream serves a video file directly (no transcoding)
