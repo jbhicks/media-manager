@@ -12,6 +12,9 @@
     <MediaPathInfo>
       <Path>/media/Movies</Path>
     </MediaPathInfo>
+    <MediaPathInfo>
+      <Path>/media/Movies</Path>
+    </MediaPathInfo>
   </PathInfos>
   <SaveLocalMetadata>false</SaveLocalMetadata>
   <EnableAutomaticSeriesGrouping>false</EnableAutomaticSeriesGrouping>
