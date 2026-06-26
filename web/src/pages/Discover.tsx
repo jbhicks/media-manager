@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Star, TrendingUp, Calendar, Clock, ChevronRight, Film, Tv } from 'lucide-react'
+import { Play, Star, TrendingUp, Calendar, Clock, ChevronRight, Film, Tv, X, SlidersHorizontal } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 interface DiscoverItem {
@@ -16,6 +16,7 @@ interface DiscoverItem {
   vote_average: number
   vote_count: number
   media_type: string
+  genre_ids?: number[]
 }
 
 interface DiscoverSection {
@@ -36,15 +37,64 @@ const sections: DiscoverSection[] = [
   { title: 'Top Rated TV', endpoint: '/api/discover/tv/top_rated', icon: <Star className="w-5 h-5" /> },
 ]
 
-function DiscoverRow({ section }: { section: DiscoverSection }) {
+// Genre definitions
+const movieGenres = [
+  { id: 28, name: 'Action' },
+  { id: 12, name: 'Adventure' },
+  { id: 16, name: 'Animation' },
+  { id: 35, name: 'Comedy' },
+  { id: 80, name: 'Crime' },
+  { id: 99, name: 'Documentary' },
+  { id: 18, name: 'Drama' },
+  { id: 10751, name: 'Family' },
+  { id: 14, name: 'Fantasy' },
+  { id: 36, name: 'History' },
+  { id: 27, name: 'Horror' },
+  { id: 10402, name: 'Music' },
+  { id: 9648, name: 'Mystery' },
+  { id: 10749, name: 'Romance' },
+  { id: 878, name: 'Science Fiction' },
+  { id: 10770, name: 'TV Movie' },
+  { id: 53, name: 'Thriller' },
+  { id: 10752, name: 'War' },
+  { id: 37, name: 'Western' },
+]
+
+const tvGenres = [
+  { id: 10759, name: 'Action & Adventure' },
+  { id: 16, name: 'Animation' },
+  { id: 35, name: 'Comedy' },
+  { id: 80, name: 'Crime' },
+  { id: 99, name: 'Documentary' },
+  { id: 18, name: 'Drama' },
+  { id: 10751, name: 'Family' },
+  { id: 10762, name: 'Kids' },
+  { id: 9648, name: 'Mystery' },
+  { id: 10763, name: 'News' },
+  { id: 10764, name: 'Reality' },
+  { id: 10765, name: 'Sci-Fi & Fantasy' },
+  { id: 10766, name: 'Soap' },
+  { id: 10767, name: 'Talk' },
+  { id: 10768, name: 'War & Politics' },
+  { id: 37, name: 'Western' },
+]
+
+interface Filters {
+  genre: number | null
+  minYear: number | null
+  maxYear: number | null
+  minRating: number | null
+}
+
+function DiscoverRow({ section, filters }: { section: DiscoverSection; filters: Filters }) {
   const { data, isLoading } = useQuery({
-    queryKey: ['discover', section.endpoint],
+    queryKey: ['discover', section.endpoint, filters],
     queryFn: async () => {
       const response = await fetch(section.endpoint)
       if (!response.ok) throw new Error('Failed to fetch')
       return response.json()
     },
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 60 * 5,
   })
 
   if (isLoading) {
@@ -66,7 +116,39 @@ function DiscoverRow({ section }: { section: DiscoverSection }) {
     )
   }
 
-  const items: DiscoverItem[] = data?.results?.slice(0, 10) || []
+  let items: DiscoverItem[] = data?.results?.slice(0, 10) || []
+
+  // Apply filters
+  if (filters.genre) {
+    items = items.filter(item => item.genre_ids?.includes(filters.genre!))
+  }
+  if (filters.minYear) {
+    items = items.filter(item => {
+      const year = parseInt((item.release_date || item.first_air_date || '').substring(0, 4))
+      return !isNaN(year) && year >= filters.minYear!
+    })
+  }
+  if (filters.maxYear) {
+    items = items.filter(item => {
+      const year = parseInt((item.release_date || item.first_air_date || '').substring(0, 4))
+      return !isNaN(year) && year <= filters.maxYear!
+    })
+  }
+  if (filters.minRating) {
+    items = items.filter(item => item.vote_average >= filters.minRating!)
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="mb-8">
+        <div className="flex items-center gap-2 mb-4 px-4">
+          <span className="text-[#1ed760]">{section.icon}</span>
+          <h2 className="text-xl font-bold text-white">{section.title}</h2>
+        </div>
+        <p className="text-[#b3b3b3] px-4">No items match the current filters</p>
+      </div>
+    )
+  }
 
   return (
     <div className="mb-8">
@@ -120,6 +202,19 @@ function DiscoverRow({ section }: { section: DiscoverSection }) {
 
 export function Discover() {
   const [activeTab, setActiveTab] = useState<'all' | 'movies' | 'tv'>('all')
+  const [showFilters, setShowFilters] = useState(false)
+  const [filters, setFilters] = useState<Filters>({
+    genre: null,
+    minYear: null,
+    maxYear: null,
+    minRating: null,
+  })
+
+  const currentYear = new Date().getFullYear()
+  const years = Array.from({ length: 50 }, (_, i) => currentYear - i)
+  const ratings = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+  const activeGenres = activeTab === 'tv' ? tvGenres : activeTab === 'movies' ? movieGenres : [...movieGenres, ...tvGenres]
 
   const filteredSections = sections.filter(section => {
     if (activeTab === 'all') return true
@@ -127,6 +222,12 @@ export function Discover() {
     if (activeTab === 'tv') return section.endpoint.includes('/tv/')
     return true
   })
+
+  const hasActiveFilters = filters.genre || filters.minYear || filters.maxYear || filters.minRating
+
+  const clearFilters = () => {
+    setFilters({ genre: null, minYear: null, maxYear: null, minRating: null })
+  }
 
   return (
     <div className="min-h-screen bg-[#121212]">
@@ -153,37 +254,141 @@ export function Discover() {
         </div>
       </div>
 
-      {/* Tab Navigation */}
+      {/* Tab Navigation + Filters */}
       <div className="sticky top-0 z-40 bg-[#121212]/95 backdrop-blur-md border-b border-[#1f1f1f] px-4 py-3">
-        <div className="flex gap-2">
-          {(['all', 'movies', 'tv'] as const).map((tab) => (
+        <div className="flex items-center justify-between">
+          <div className="flex gap-2">
+            {(['all', 'movies', 'tv'] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-6 py-2 rounded-full text-sm font-semibold uppercase tracking-wider transition-all duration-300 ${
+                  activeTab === tab
+                    ? 'bg-white text-black'
+                    : 'bg-[#1f1f1f] text-white hover:bg-[#2a2a2a]'
+                }`}
+              >
+                {tab === 'all' ? 'All' : tab === 'movies' ? 'Movies' : 'TV Shows'}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            {hasActiveFilters && (
+              <button
+                onClick={clearFilters}
+                className="flex items-center gap-1 px-3 py-2 bg-red-500/20 text-red-400 rounded-full text-sm hover:bg-red-500/30 transition-colors"
+              >
+                <X className="w-4 h-4" />
+                Clear
+              </button>
+            )}
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-6 py-2 rounded-full text-sm font-semibold uppercase tracking-wider transition-all duration-300 ${
-                activeTab === tab
-                  ? 'bg-white text-black'
+              onClick={() => setShowFilters(!showFilters)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-colors ${
+                showFilters || hasActiveFilters
+                  ? 'bg-[#1ed760] text-black'
                   : 'bg-[#1f1f1f] text-white hover:bg-[#2a2a2a]'
               }`}
             >
-              {tab === 'all' ? 'All' : tab === 'movies' ? 'Movies' : 'TV Shows'}
+              <SlidersHorizontal className="w-4 h-4" />
+              Filters
+              {hasActiveFilters && (
+                <span className="w-5 h-5 bg-black text-[#1ed760] rounded-full text-xs flex items-center justify-center font-bold">
+                  {[filters.genre, filters.minYear, filters.maxYear, filters.minRating].filter(Boolean).length}
+                </span>
+              )}
             </button>
-          ))}
+          </div>
         </div>
+
+        {/* Filter Panel */}
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <div className="pt-4 pb-2 grid grid-cols-1 md:grid-cols-4 gap-4">
+                {/* Genre Filter */}
+                <div>
+                  <label className="text-[#b3b3b3] text-sm mb-2 block">Genre</label>
+                  <select
+                    value={filters.genre || ''}
+                    onChange={(e) => setFilters({ ...filters, genre: e.target.value ? parseInt(e.target.value) : null })}
+                    className="w-full bg-[#1f1f1f] text-white rounded-lg px-3 py-2 border border-[#2a2a2a] focus:border-[#1ed760] focus:outline-none"
+                  >
+                    <option value="">All Genres</option>
+                    {activeGenres.map(genre => (
+                      <option key={genre.id} value={genre.id}>{genre.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Min Year */}
+                <div>
+                  <label className="text-[#b3b3b3] text-sm mb-2 block">From Year</label>
+                  <select
+                    value={filters.minYear || ''}
+                    onChange={(e) => setFilters({ ...filters, minYear: e.target.value ? parseInt(e.target.value) : null })}
+                    className="w-full bg-[#1f1f1f] text-white rounded-lg px-3 py-2 border border-[#2a2a2a] focus:border-[#1ed760] focus:outline-none"
+                  >
+                    <option value="">Any</option>
+                    {years.map(year => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Max Year */}
+                <div>
+                  <label className="text-[#b3b3b3] text-sm mb-2 block">To Year</label>
+                  <select
+                    value={filters.maxYear || ''}
+                    onChange={(e) => setFilters({ ...filters, maxYear: e.target.value ? parseInt(e.target.value) : null })}
+                    className="w-full bg-[#1f1f1f] text-white rounded-lg px-3 py-2 border border-[#2a2a2a] focus:border-[#1ed760] focus:outline-none"
+                  >
+                    <option value="">Any</option>
+                    {years.map(year => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Min Rating */}
+                <div>
+                  <label className="text-[#b3b3b3] text-sm mb-2 block">Min Rating</label>
+                  <select
+                    value={filters.minRating || ''}
+                    onChange={(e) => setFilters({ ...filters, minRating: e.target.value ? parseInt(e.target.value) : null })}
+                    className="w-full bg-[#1f1f1f] text-white rounded-lg px-3 py-2 border border-[#2a2a2a] focus:border-[#1ed760] focus:outline-none"
+                  >
+                    <option value="">Any</option>
+                    {ratings.map(rating => (
+                      <option key={rating} value={rating}>{rating}+ Stars</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Content Sections */}
       <div className="py-6">
         <AnimatePresence mode="wait">
           <motion.div
-            key={activeTab}
+            key={activeTab + JSON.stringify(filters)}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
           >
             {filteredSections.map((section) => (
-              <DiscoverRow key={section.endpoint} section={section} />
+              <DiscoverRow key={section.endpoint} section={section} filters={filters} />
             ))}
           </motion.div>
         </AnimatePresence>
