@@ -1,8 +1,8 @@
 #!/bin/bash
-# NordVPN wrapper - checks status from inside the media-manager container
-# Place this in your PATH and the backend will use it to check VPN status
+# NordVPN wrapper - reports status from the containerized VPN sidecar
+# Place in ~/.local/bin/nordvpn (login shells prepend ~/.local/bin to PATH)
 
-CONTAINER_ID=$(docker ps -q -f name=media-manager)
+CONTAINER_ID=$(docker ps -q -f name=^nordvpn$ 2>/dev/null)
 
 if [ -z "$CONTAINER_ID" ]; then
     echo "Status: Disconnected"
@@ -10,5 +10,4 @@ if [ -z "$CONTAINER_ID" ]; then
     exit 1
 fi
 
-# Run nordvpn command inside the container
 docker exec "$CONTAINER_ID" nordvpn "$@" 2>/dev/null

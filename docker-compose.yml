@@ -1,6 +1,32 @@
-version: '3.8'
-
 services:
+  nordvpn:
+    image: ghcr.io/bubuntux/nordvpn
+    container_name: nordvpn
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - TOKEN=${NORDVPN_TOKEN}
+      - CONNECT=${NORDVPN_SERVER:-United_States}
+      - TECHNOLOGY=NordLynx
+      - NETWORK=192.168.1.0/24
+      - TZ=America/Denver
+      - PUID=1000
+      - PGID=1000
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    ports:
+      # Proxy listens here and forwards to media-manager
+      - "127.0.0.1:8080:8080"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   media-manager:
     build:
       context: .
@@ -8,57 +34,48 @@ services:
     image: media-manager:latest
     container_name: media-manager
     restart: unless-stopped
-    
+    network_mode: service:nordvpn
+    depends_on:
+      - nordvpn
     env_file:
       - .env
-    
     environment:
-      - PORT=8080
-      - NORDVPN_TOKEN=${NORDVPN_TOKEN}
-      - NORDVPN_SERVER=${NORDVPN_SERVER:-}
-      - VPN_PROTOCOL=${VPN_PROTOCOL:-nordlynx}
-      - PIHOLE_IP=${PIHOLE_IP:-}
-      - VPN_WHITELIST_SUBNETS=${VPN_WHITELIST_SUBNETS:-192.168.1.0/24,10.0.0.0/8,172.16.0.0/12}
+      - PORT=8081
+      - WEB_ROOT=/home/josh/media-manager/web/dist
       - DB_PATH=/data/media.db
       - DOWNLOAD_PATH=/mnt/media/Downloads
       - LIBRARY_PATH=/mnt/media/Movies
-      - TORRENT_CLIENT_TYPE=${TORRENT_CLIENT_TYPE:-native}
-      - MAX_CONCURRENT_DOWNLOADS=${MAX_CONCURRENT_DOWNLOADS:-5}
       - JACKETT_URL=http://192.168.1.49:9117
-      - JACKETT_API_KEY=xzvzhznfjsnit25fpa8mloxh66h40svz
-    
+      - JACKETT_API_KEY=${JACKETT_API_KEY}
+      - TMDB_API_KEY=${TMDB_API_KEY}
+      - TMDB_READ_ACCESS_TOKEN=${TMDB_READ_ACCESS_TOKEN}
+      - MAX_CONCURRENT_DOWNLOADS=${MAX_CONCURRENT_DOWNLOADS:-5}
     volumes:
       - ./data:/data
       - /mnt/media:/mnt/media
       - ./config:/config:ro
-    
-    ports:
-      - "0.0.0.0:8080:8080"
-    
-    privileged: true
-    
-    cap_add:
-      - NET_ADMIN
-      - SYS_MODULE
-      - SYS_ADMIN
-    
-    security_opt:
-      - seccomp:unconfined
-    
-    sysctls:
-      - net.ipv4.conf.all.src_valid_mark=1
-      - net.ipv6.conf.all.disable_ipv6=1
-    
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    
+      - ./web/dist:/home/josh/media-manager/web/dist:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/stats"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
-    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  proxy:
+    image: caddy:2-alpine
+    container_name: media-manager-proxy
+    restart: unless-stopped
+    network_mode: service:nordvpn
+    depends_on:
+      - media-manager
+    volumes:
+      - ./Caddyfile.proxy:/etc/caddy/Caddyfile:ro
     logging:
       driver: "json-file"
       options:
@@ -71,6 +88,9 @@ services:
     container_name: jellyfin
     restart: unless-stopped
     network_mode: host
+    devices:
+      - /dev/dri/card1:/dev/dri/card1
+      - /dev/dri/renderD128:/dev/dri/renderD128
     volumes:
       - ./jellyfin/config:/config
       - ./jellyfin/cache:/cache
@@ -79,3 +99,8 @@ services:
       - PUID=1000
       - PGID=1000
       - LIBVA_DRIVER_NAME=radeonsi
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

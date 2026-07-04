@@ -134,6 +134,22 @@ func (vd *VPNDetector) cacheResult(active bool, provider *VPNProvider) {
 	vd.cachedProvider = provider
 }
 
+// Connect attempts to connect the VPN. Currently supports NordVPN.
+func (vd *VPNDetector) Connect() (string, error) {
+	if _, err := exec.LookPath("nordvpn"); err != nil {
+		return "", fmt.Errorf("nordvpn CLI not found")
+	}
+
+	exec.Command("/etc/init.d/nordvpn", "start").Start()
+	time.Sleep(2 * time.Second)
+
+	output, err := exec.Command("nordvpn", "connect").CombinedOutput()
+	if err != nil {
+		return string(output), fmt.Errorf("nordvpn connect failed: %w", err)
+	}
+	return string(output), nil
+}
+
 // checkNordVPN specifically checks for NordVPN connection
 func (vd *VPNDetector) checkNordVPN(provider *VPNProvider) bool {
 	// Check if nordvpn CLI exists
@@ -373,6 +389,17 @@ func (vd *VPNDetector) checkVPNProcesses(provider *VPNProvider) bool {
 
 // verifyVPNTraffic verifies that traffic is actually going through VPN
 func (vd *VPNDetector) verifyVPNTraffic() bool {
+	// Container VPN sidecars often keep eth0 as default route while routing
+	// egress through nordlynx via policy routing.
+	if interfaces, err := net.Interfaces(); err == nil {
+		for _, iface := range interfaces {
+			if vd.isVPNInterface(iface.Name) && iface.Flags&net.FlagUp != 0 {
+				log.Printf("[VPN] Active VPN interface confirms traffic protection: %s", iface.Name)
+				return true
+			}
+		}
+	}
+
 	// Check default route
 	cmd := exec.Command("ip", "route", "show", "default")
 	output, err := cmd.Output()
