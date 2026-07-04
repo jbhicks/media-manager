@@ -55,6 +55,7 @@ services:
       - /mnt/media:/mnt/media
       - ./config:/config:ro
       - ./web/dist:/home/josh/media-manager/web/dist:ro
+      - /home/josh/.config/Jackett/Indexers:/root/.config/Jackett/Indexers:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/stats"]
       interval: 30s
