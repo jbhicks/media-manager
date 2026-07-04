@@ -20,7 +20,7 @@ services:
       - net.ipv4.conf.all.src_valid_mark=1
     ports:
       # Proxy listens here and forwards to media-manager
-      - "127.0.0.1:8080:8080"
+      - "0.0.0.0:8080:8080"
     logging:
       driver: "json-file"
       options:
