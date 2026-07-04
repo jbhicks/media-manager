@@ -1,9 +1,14 @@
 package torrent
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/SkYNewZ/go-flaresolverr"
@@ -114,10 +119,42 @@ func (f *FlareSolverrClient) HealthCheck() error {
 		return fmt.Errorf("flaresolverr not configured")
 	}
 
-	// Try to list sessions (lightweight operation)
-	_, err := f.client.ListSessions(context.Background())
+	// go-flaresolverr can fail against newer FlareSolverr versions; use the HTTP API directly.
+	body, err := json.Marshal(map[string]string{"cmd": "sessions.list"})
 	if err != nil {
 		return fmt.Errorf("flaresolverr health check failed: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(
+		context.Background(),
+		http.MethodPost,
+		strings.TrimSuffix(f.baseURL, "/")+"/v1",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return fmt.Errorf("flaresolverr health check failed: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("flaresolverr health check failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("flaresolverr health check failed: %w", err)
+	}
+
+	var health struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(respBody, &health); err != nil {
+		return fmt.Errorf("flaresolverr health check failed: %w", err)
+	}
+	if health.Status != "ok" {
+		return fmt.Errorf("flaresolverr health check failed: status %q", health.Status)
 	}
 
 	return nil
