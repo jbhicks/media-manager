@@ -58,6 +58,7 @@ type HTTPServer struct {
 	searchActivities    []SearchActivity
 	searchActivityMutex sync.RWMutex
 	streamHandler       *StreamHandler
+	channelHandler      *ChannelHandler
 }
 
 func NewHTTPServer(addr string, db *db.Database, dm *DownloadManager) *HTTPServer {
@@ -71,6 +72,9 @@ func NewHTTPServer(addr string, db *db.Database, dm *DownloadManager) *HTTPServe
 		sseClients:        make(map[chan string]bool),
 		streamHandler:     NewStreamHandler("/mnt/media"),
 	}
+
+	server.channelHandler = NewChannelHandler(db, tmdbService, server.streamHandler, nil)
+	// Discover endpoints are created later in Start(), wire it after that happens
 
 	dm.SetUpdateCallback(func() {
 		server.broadcastTaskUpdate()
@@ -157,6 +161,9 @@ func (s *HTTPServer) Start() error {
 	mux.HandleFunc("/api/suggestions/refresh-posters", s.handleRefreshSearchPosters)
 	mux.HandleFunc("/api/movie/details", s.handleMovieDetails)
 
+	// Direct download endpoint from movie/TV detail pages
+	mux.HandleFunc("/api/downloads/search", s.handleDownloadSearch)
+
 	// Sources, Rules, Tasks, Stats API endpoints
 	mux.HandleFunc("/api/sources", s.handleSources)
 	mux.HandleFunc("/api/sources/jackett-indexers", s.handleAllJackettIndexers)
@@ -210,6 +217,9 @@ func (s *HTTPServer) Start() error {
 	discoverEndpoints := NewDiscoverEndpoints(s.tmdbService)
 	discoverEndpoints.RegisterRoutes(mux)
 
+	// Wire discover endpoints into channel handler (needed for auto-channel TMDB queries)
+	s.channelHandler.discover = discoverEndpoints
+
 	// Watchlist endpoints
 	watchlistEndpoints := NewWatchlistEndpoints(s.db)
 	watchlistEndpoints.RegisterRoutes(mux)
@@ -228,6 +238,9 @@ func (s *HTTPServer) Start() error {
 	mux.HandleFunc("/api/stream/subtitles", s.streamHandler.HandleSubtitles)
 	mux.HandleFunc("/api/stream/subtitle-file", s.streamHandler.HandleSubtitleFile)
 
+	// Channel / TV Guide endpoints
+	s.channelHandler.RegisterRoutes(mux)
+
 	// Health check endpoint
 	mux.HandleFunc("/api/health", s.handleHealth)
 
@@ -245,12 +258,16 @@ func (s *HTTPServer) Start() error {
 
 	s.server = &http.Server{
 		Addr:         s.addr,
-		Handler:      s.recoveryMiddleware(s.corsMiddleware(mux)),
+		Handler:      s.recoveryMiddleware(s.corsMiddleware(APIAuthMiddleware(mux))),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 120 * time.Second,
 	}
 
 	log.Printf("[HTTP] Starting HTTP server on %s", s.addr)
+
+	// Seed default TV channels after server is ready
+	s.channelHandler.SeedDefaultChannels()
+
 	go func() {
 		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Printf("[HTTP] Server error: %v", err)
@@ -922,6 +939,95 @@ func (s *HTTPServer) handleRefreshSearchPosters(w http.ResponseWriter, r *http.R
 		"failed":  failedCount,
 		"total":   totalCount,
 		"message": fmt.Sprintf("Updated %d posters (%d failed)", successCount, failedCount),
+	})
+}
+
+// handleDownloadSearch searches for a single title and queues the best result as a task.
+func (s *HTTPServer) handleDownloadSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Query     string `json:"query"`
+		Year      string `json:"year"`
+		MediaType string `json:"media_type"`
+		TMDbID    int    `json:"tmdb_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Query == "" || req.MediaType == "" {
+		jsonError(w, "query and media_type are required", http.StatusBadRequest)
+		return
+	}
+	if s.downloadManager == nil {
+		jsonError(w, "Download manager unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	searchQuery := req.Query
+	if req.Year != "" {
+		searchQuery = fmt.Sprintf("%s %s", req.Query, req.Year)
+	}
+
+	rule := &models.DownloadRule{
+		Name:               "Direct: " + req.Query,
+		SearchQuery:        searchQuery,
+		MediaType:          req.MediaType,
+		Enabled:            true,
+		MaxResults:         1,
+		MaxResultsPerTitle: 1,
+	}
+
+	searchResult, err := s.downloadManager.SearchWithoutDownload(rule)
+	if err != nil {
+		log.Printf("[DOWNLOAD SEARCH] Failed: %v", err)
+		jsonError(w, fmt.Sprintf("Search failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if len(searchResult.Results) == 0 {
+		jsonError(w, "No torrents found", http.StatusNotFound)
+		return
+	}
+
+	best := &searchResult.Results[0]
+	for i := range searchResult.Results {
+		if searchResult.Results[i].Seeders > best.Seeders {
+			best = &searchResult.Results[i]
+		}
+	}
+
+	task := &models.DownloadTask{
+		SourceID:   best.SourceID,
+		Title:      best.Title,
+		InfoHash:   best.InfoHash,
+		MagnetLink: best.MagnetLink,
+		TorrentURL: best.TorrentURL,
+		Size:       best.Size,
+		Seeders:    best.Seeders,
+		Leechers:   best.Leechers,
+		Status:     "pending",
+		TMDbID:     req.TMDbID,
+	}
+	if err := s.db.GetDB().Create(task).Error; err != nil {
+		log.Printf("[DOWNLOAD SEARCH] Failed to create task: %v", err)
+		jsonError(w, "Failed to queue download", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("[DOWNLOAD SEARCH] Queued task %d for '%s' (%s)", task.ID, best.Title, req.MediaType)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":  true,
+		"task_id":  task.ID,
+		"title":    best.Title,
+		"status":   task.Status,
+		"seeders":  best.Seeders,
+		"size":     best.Size,
 	})
 }
 
@@ -1617,33 +1723,63 @@ func (s *HTTPServer) handleAllJackettIndexers(w http.ResponseWriter, r *http.Req
 			continue
 		}
 
-		// Read configured indexers from Jackett's Indexers directory
+		// Try to read configured indexers from Jackett's local Indexers directory first (fast)
 		// The indexer ID is the filename without .json extension
+		indexers := make([]IndexerInfo, 0)
 		indexersDir := filepath.Join(os.Getenv("HOME"), ".config", "Jackett", "Indexers")
 		entries, err := os.ReadDir(indexersDir)
-		if err != nil {
-			log.Printf("[HTTP] Failed to read Jackett indexers directory: %v", err)
-			continue
+		if err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+					continue
+				}
+				// Skip backup files
+				if strings.HasSuffix(entry.Name(), ".json.bak") {
+					continue
+				}
+				id := strings.TrimSuffix(entry.Name(), ".json")
+				// Convert kebab-case to readable name
+				name := strings.ReplaceAll(id, "-", " ")
+				name = strings.Title(name)
+				indexers = append(indexers, IndexerInfo{
+					ID:     id,
+					Name:   name,
+					Status: "enabled",
+				})
+			}
 		}
 
-		indexers := make([]IndexerInfo, 0)
-		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-				continue
+		// If no local indexers found (e.g. running in Docker, Jackett remote), fetch from Jackett API
+		if len(indexers) == 0 {
+			log.Printf("[HTTP] No local Jackett indexers found, querying remote API at %s", source.URL)
+			apiURL := strings.TrimSuffix(source.URL, "/") + "/api/v2.0/indexers?apikey=" + url.QueryEscape(source.APIKey)
+			resp, err := http.Get(apiURL)
+			if err != nil {
+				log.Printf("[HTTP] Failed to query Jackett indexers API: %v", err)
+			} else {
+				defer resp.Body.Close()
+				var remoteIndexers []struct {
+					ID          string `json:"id"`
+					Name        string `json:"name"`
+					Configured  bool   `json:"configured"`
+					Capabilities struct {
+						Categories []struct {
+							Name string `json:"name"`
+						} `json:"categories"`
+					} `json:"capabilities"`
+				}
+				if err := json.NewDecoder(resp.Body).Decode(&remoteIndexers); err == nil {
+					for _, ri := range remoteIndexers {
+						if ri.Configured {
+							indexers = append(indexers, IndexerInfo{
+								ID:     ri.ID,
+								Name:   ri.Name,
+								Status: "enabled",
+							})
+						}
+					}
+				}
 			}
-			// Skip backup files
-			if strings.HasSuffix(entry.Name(), ".json.bak") {
-				continue
-			}
-			id := strings.TrimSuffix(entry.Name(), ".json")
-			// Convert kebab-case to readable name
-			name := strings.ReplaceAll(id, "-", " ")
-			name = strings.Title(name)
-			indexers = append(indexers, IndexerInfo{
-				ID:     id,
-				Name:   name,
-				Status: "enabled",
-			})
 		}
 
 		allSources = append(allSources, SourceIndexers{
@@ -2091,25 +2227,21 @@ func (s *HTTPServer) handleVPNConnect(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("[VPN] Connect requested via API")
 
-	if _, err := exec.LookPath("nordvpn"); err != nil {
-		http.Error(w, "NordVPN not installed", http.StatusServiceUnavailable)
+	if s.downloadManager == nil {
+		http.Error(w, "Download manager not available", http.StatusServiceUnavailable)
 		return
 	}
 
-	exec.Command("/etc/init.d/nordvpn", "start").Start()
-	time.Sleep(2 * time.Second)
-
-	cmd := exec.Command("nordvpn", "connect")
-	output, err := cmd.CombinedOutput()
+	output, err := s.downloadManager.ConnectVPN()
 	if err != nil {
-		log.Printf("[VPN] Connect failed: %v, output: %s", err, string(output))
-		http.Error(w, fmt.Sprintf("Failed to connect: %s", string(output)), http.StatusInternalServerError)
+		log.Printf("[VPN] Connect failed: %v, output: %s", err, output)
+		http.Error(w, fmt.Sprintf("Failed to connect: %s", output), http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("[VPN] Connect output: %s", string(output))
+	log.Printf("[VPN] Connect output: %s", output)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "connecting", "message": string(output)})
+	json.NewEncoder(w).Encode(map[string]string{"status": "connecting", "message": output})
 }
 
 // handleVPNDisconnect disconnects the VPN

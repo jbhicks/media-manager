@@ -1,17 +1,18 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { Film, LogIn, UserPlus } from 'lucide-react'
+import { Film, LogIn, Loader2, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import { Card } from '@/components/ui/Card'
+import { Input } from '@/components/ui/Input'
+import { Button } from '@/components/ui/Button'
 
 export function Login() {
-  const [isRegistering, setIsRegistering] = useState(false)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [email, setEmail] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const { login, register } = useAuth()
+  const { login } = useAuth()
   const navigate = useNavigate()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -20,19 +21,13 @@ export function Login() {
     setIsLoading(true)
 
     try {
-      let success
-      if (isRegistering) {
-        success = await register(username, password, email)
-      } else {
-        success = await login(username, password)
-      }
-
+      const success = await login(username, password)
       if (success) {
         navigate('/')
       } else {
-        setError(isRegistering ? 'Registration failed' : 'Invalid username or password')
+        setError('Invalid username or password')
       }
-    } catch (err) {
+    } catch {
       setError('An error occurred. Please try again.')
     } finally {
       setIsLoading(false)
@@ -40,113 +35,77 @@ export function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-[#121212] flex items-center justify-center p-4">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md"
-      >
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-[#1ed760] rounded-full mb-4">
-            <Film className="w-8 h-8 text-black" />
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="w-full max-w-md" role="main" aria-labelledby="login-title">
+        <div className="text-center mb-8" role="img" aria-label="Media Manager">
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-primary text-primary-foreground rounded">
+              <Film className="w-8 h-8" />
+            </div>
           </div>
-          <h1 className="text-3xl font-bold text-white">Media Manager</h1>
-          <p className="text-[#b3b3b3] mt-2">Your personal entertainment center</p>
+          <h1 id="login-title" className="text-3xl font-bold text-foreground">Media Manager</h1>
+          <p className="text-muted-foreground mt-2">Sign in to continue</p>
         </div>
 
-        {/* Form */}
-        <div className="bg-[#1f1f1f] rounded-lg p-8">
-          <h2 className="text-2xl font-bold text-white mb-6">
-            {isRegistering ? 'Create Account' : 'Sign In'}
-          </h2>
+        <Card className="p-8">
+          <h2 className="text-2xl font-bold text-foreground mb-6">Sign In</h2>
 
           {error && (
-            <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400 text-sm">
+            <div id="login-error" role="alert" className="mb-4 p-3 bg-destructive/10 border border-destructive/50 rounded-lg text-destructive text-sm">
               {error}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-[#b3b3b3] mb-1">
+              <label htmlFor="username" className="block text-sm font-medium text-muted-foreground mb-1">
                 Username
               </label>
-              <input
+              <Input
+                id="username"
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-4 py-3 bg-[#121212] border border-[#4d4d4d] rounded-lg text-white placeholder-[#666] focus:outline-none focus:border-[#1ed760] transition-colors"
+                className="h-12 px-4 py-3"
                 placeholder="Enter your username"
                 required
+                autoComplete="username"
               />
             </div>
-
-            {isRegistering && (
-              <div>
-                <label className="block text-sm font-medium text-[#b3b3b3] mb-1">
-                  Email (optional)
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-3 bg-[#121212] border border-[#4d4d4d] rounded-lg text-white placeholder-[#666] focus:outline-none focus:border-[#1ed760] transition-colors"
-                  placeholder="Enter your email"
-                />
-              </div>
-            )}
 
             <div>
-              <label className="block text-sm font-medium text-[#b3b3b3] mb-1">
+              <label htmlFor="password" className="block text-sm font-medium text-muted-foreground mb-1">
                 Password
               </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 bg-[#121212] border border-[#4d4d4d] rounded-lg text-white placeholder-[#666] focus:outline-none focus:border-[#1ed760] transition-colors"
-                placeholder="Enter your password"
-                required
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="h-12 px-4 py-3 pr-12"
+                  placeholder="Enter your password"
+                  required
+                  autoComplete="current-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-[#1ed760] text-black rounded-full font-semibold hover:bg-[#1ed760]/90 transition-colors disabled:opacity-50"
-            >
-              {isLoading ? (
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-black" />
-              ) : isRegistering ? (
-                <>
-                  <UserPlus className="w-5 h-5" />
-                  Create Account
-                </>
-              ) : (
-                <>
-                  <LogIn className="w-5 h-5" />
-                  Sign In
-                </>
-              )}
-            </button>
+            <Button type="submit" disabled={isLoading} className="w-full flex items-center justify-center gap-2 rounded-full py-3">
+              {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <LogIn className="w-5 h-5" />}
+              Sign In
+            </Button>
           </form>
-
-          <div className="mt-6 text-center">
-            <button
-              onClick={() => {
-                setIsRegistering(!isRegistering)
-                setError('')
-              }}
-              className="text-[#1ed760] hover:underline text-sm"
-            >
-              {isRegistering
-                ? 'Already have an account? Sign in'
-                : "Don't have an account? Create one"}
-            </button>
-          </div>
-        </div>
-      </motion.div>
+        </Card>
+      </div>
     </div>
   )
 }

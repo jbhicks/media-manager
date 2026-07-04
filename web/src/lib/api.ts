@@ -6,7 +6,7 @@ import {
   DownloadSuggestion,
   SuggestionGroup,
   SuggestionStats,
-  DownloadStats,
+  ServerStats,
   MediaItem,
   PaginatedResponse,
   SearchParams,
@@ -17,6 +17,14 @@ const api: AxiosInstance = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+});
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('media_manager_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
 // Extract error message from various response formats
@@ -42,6 +50,18 @@ api.interceptors.response.use(
   (error: AxiosError<any>) => {
     const message = extractErrorMessage(error);
     console.error('[API Error]', message, error.response?.status, error.config?.url);
+
+    if (
+      error.response?.status === 401 &&
+      !error.config?.url?.includes('/auth/login')
+    ) {
+      localStorage.removeItem('media_manager_token');
+      localStorage.removeItem('media_manager_user');
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.href = '/login';
+      }
+    }
+
     // Attach extracted message to error for easy access
     (error as any).userMessage = message;
     return Promise.reject(error);
@@ -345,7 +365,7 @@ export const rulesApi = {
 
 // Stats API
 export const statsApi = {
-  getStats: async (): Promise<DownloadStats> => {
+  getStats: async (): Promise<ServerStats> => {
     const response = await api.get('/stats');
     return response.data;
   },
