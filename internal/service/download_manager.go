@@ -1778,6 +1778,14 @@ func (dm *DownloadManager) GetJellyfinClient() *jellyfin.Client {
 	return dm.jellyfinClient
 }
 
+// ConnectVPN attempts to connect the VPN via the configured detector.
+func (dm *DownloadManager) ConnectVPN() (string, error) {
+	if dm.vpnDetector == nil {
+		dm.vpnDetector = NewVPNDetector()
+	}
+	return dm.vpnDetector.Connect()
+}
+
 // GetVPNStatus returns the current VPN status
 func (dm *DownloadManager) GetVPNStatus() map[string]interface{} {
 	if dm.vpnDetector == nil {
