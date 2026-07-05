@@ -5,8 +5,40 @@ import (
 	"testing"
 	"time"
 
+	"github.com/user/media-manager/internal/torrent"
 	"github.com/user/media-manager/pkg/models"
 )
+
+func TestTorrentIDForTask(t *testing.T) {
+	dm := &DownloadManager{}
+
+	task := models.DownloadTask{
+		InfoHash: "08ada5a7a6193aae36ec839d9eaa8132e13e7286",
+	}
+	expected := torrent.TorrentIDFromInfoHash(task.InfoHash)
+	if dm.torrentIDForTask(&task) != expected {
+		t.Fatalf("expected torrent ID from info hash")
+	}
+
+	task.TorrentID = 12345
+	if dm.torrentIDForTask(&task) != 12345 {
+		t.Fatal("stored torrent ID should take precedence")
+	}
+}
+
+func TestMagnetForTask(t *testing.T) {
+	dm := &DownloadManager{}
+
+	task := models.DownloadTask{MagnetLink: "magnet:one"}
+	if dm.magnetForTask(&task) != "magnet:one" {
+		t.Fatal("expected magnet link")
+	}
+
+	task = models.DownloadTask{TorrentURL: "magnet:two"}
+	if dm.magnetForTask(&task) != "magnet:two" {
+		t.Fatal("expected torrent URL fallback")
+	}
+}
 
 func TestFilterResults(t *testing.T) {
 	dm := &DownloadManager{}

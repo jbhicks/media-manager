@@ -54,7 +54,10 @@ func NewDownloadManager(database *db.Database, cfg *models.ServiceConfig) (*Down
 		}
 		torrentClient = client
 	case "native", "":
-		downloadDir := "/mnt/media/Downloads"
+		downloadDir := cfg.DownloadPath
+		if downloadDir == "" {
+			downloadDir = "/mnt/media/Downloads"
+		}
 		client, err := torrent.NewNativeClient(downloadDir)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create native torrent client: %w", err)
@@ -119,65 +122,156 @@ func NewDownloadManager(database *db.Database, cfg *models.ServiceConfig) (*Down
 		vpnDetector:     NewVPNDetector(),
 	}
 
-	// Recover orphaned downloads on startup
-	dm.recoverOrphanedDownloads()
+	// Re-attach active downloads after restart so partial files can resume.
+	dm.resumeDownloadsOnStartup()
 
 	return dm, nil
 }
 
-// recoverOrphanedDownloads resets downloads that were marked as "downloading" but have no active torrent
-// This happens when the service restarts since the native torrent client keeps state in memory only
-func (dm *DownloadManager) recoverOrphanedDownloads() {
+func (dm *DownloadManager) defaultDownloadDir() string {
+	if dm.serviceConfig != nil && dm.serviceConfig.DownloadPath != "" {
+		return dm.serviceConfig.DownloadPath
+	}
+	return "/mnt/media/Downloads"
+}
+
+func (dm *DownloadManager) magnetForTask(task *models.DownloadTask) string {
+	if task.MagnetLink != "" {
+		return task.MagnetLink
+	}
+	return task.TorrentURL
+}
+
+func (dm *DownloadManager) torrentIDForTask(task *models.DownloadTask) int {
+	if task.TorrentID > 0 {
+		return task.TorrentID
+	}
+	if task.InfoHash != "" {
+		return torrent.TorrentIDFromInfoHash(task.InfoHash)
+	}
+	return 0
+}
+
+func (dm *DownloadManager) syncTaskTorrentID(task *models.DownloadTask) bool {
+	expectedID := dm.torrentIDForTask(task)
+	if expectedID == 0 || task.TorrentID == expectedID {
+		return false
+	}
+	task.TorrentID = expectedID
+	return true
+}
+
+func (dm *DownloadManager) updateTaskProgressFromClient(task *models.DownloadTask) bool {
+	torrentID := dm.torrentIDForTask(task)
+	if torrentID == 0 {
+		return false
+	}
+
+	status, err := dm.torrentClient.GetTorrentStatus(torrentID)
+	if err != nil {
+		return false
+	}
+
+	percentDone, ok := status["percentDone"].(float64)
+	if !ok {
+		return false
+	}
+
+	task.TorrentID = torrentID
+	task.Progress = percentDone * 100
+	return true
+}
+
+func (dm *DownloadManager) reattachTorrent(task *models.DownloadTask) (int, error) {
+	magnet := dm.magnetForTask(task)
+	if magnet == "" {
+		return 0, fmt.Errorf("task has no magnet link")
+	}
+
+	downloadDir := dm.defaultDownloadDir()
+	if task.DownloadPath != "" {
+		downloadDir = filepath.Dir(task.DownloadPath)
+		if downloadDir == "." || downloadDir == "/" {
+			downloadDir = dm.defaultDownloadDir()
+		}
+	}
+
+	return dm.torrentClient.AddTorrent(magnet, downloadDir)
+}
+
+// resumeDownloadsOnStartup re-attaches magnets for in-progress tasks after a service restart.
+// Partial files and anacrolix piece state in .torrent.db allow downloads to continue.
+func (dm *DownloadManager) resumeDownloadsOnStartup() {
 	var tasks []models.DownloadTask
 	if err := dm.db.GetDB().Where("status = ?", "downloading").Find(&tasks).Error; err != nil {
-		log.Printf("[RECOVERY] Failed to query downloading tasks: %v", err)
+		log.Printf("[RESUME] Failed to query downloading tasks: %v", err)
 		return
 	}
 
 	if len(tasks) == 0 {
-		log.Println("[RECOVERY] No orphaned downloads to recover")
+		log.Println("[RESUME] No active downloads to resume")
 		return
 	}
 
-	log.Printf("[RECOVERY] Found %d downloads marked as 'downloading', checking for orphaned torrents", len(tasks))
+	log.Printf("[RESUME] Found %d active downloads, re-attaching torrents", len(tasks))
 
-	orphanedCount := 0
-	for _, task := range tasks {
-		// Try to get torrent status from client
-		if task.TorrentID > 0 {
-			_, err := dm.torrentClient.GetTorrentStatus(task.TorrentID)
-			if err != nil {
-				// Torrent doesn't exist in client - reset to pending
-				log.Printf("[RECOVERY] Torrent not found for task %d (%s), resetting to pending", task.ID, task.Title)
-				task.Status = "pending"
-				task.Progress = 0.0
-				task.TorrentID = 0
-				task.StartedAt = nil
-				if err := dm.db.GetDB().Save(&task).Error; err != nil {
-					log.Printf("[RECOVERY] Failed to reset task %d: %v", task.ID, err)
-				} else {
-					orphanedCount++
-				}
-			} else {
-				log.Printf("[RECOVERY] Task %d (%s) has active torrent, keeping status", task.ID, task.Title)
+	magnets := make([]string, 0, len(tasks))
+	seenHashes := make(map[string]struct{})
+
+	for i := range tasks {
+		task := &tasks[i]
+		if dm.syncTaskTorrentID(task) {
+			if err := dm.db.GetDB().Save(task).Error; err != nil {
+				log.Printf("[RESUME] Failed to update torrent ID for task %d: %v", task.ID, err)
 			}
-		} else {
-			// No torrent ID means it's definitely orphaned
-			log.Printf("[RECOVERY] Task %d (%s) has no torrent ID, resetting to pending", task.ID, task.Title)
-			task.Status = "pending"
-			task.Progress = 0.0
-			if err := dm.db.GetDB().Save(&task).Error; err != nil {
-				log.Printf("[RECOVERY] Failed to reset task %d: %v", task.ID, err)
-			} else {
-				orphanedCount++
+		}
+
+		magnet := dm.magnetForTask(task)
+		if magnet == "" {
+			log.Printf("[RESUME] Task %d (%s) has no magnet link, skipping", task.ID, task.Title)
+			continue
+		}
+
+		hash := strings.ToLower(strings.TrimSpace(task.InfoHash))
+		if hash == "" {
+			magnets = append(magnets, magnet)
+			continue
+		}
+		if _, ok := seenHashes[hash]; ok {
+			continue
+		}
+		seenHashes[hash] = struct{}{}
+		magnets = append(magnets, magnet)
+	}
+
+	if nativeClient, ok := dm.torrentClient.(*torrent.NativeClient); ok {
+		resumed := nativeClient.ResumeAll(magnets, dm.defaultDownloadDir())
+		log.Printf("[RESUME] Re-attached %d torrent(s) in native client", resumed)
+	} else {
+		for i := range tasks {
+			task := &tasks[i]
+			if _, err := dm.reattachTorrent(task); err != nil {
+				log.Printf("[RESUME] Failed to re-attach task %d (%s): %v", task.ID, task.Title, err)
 			}
 		}
 	}
 
-	if orphanedCount > 0 {
-		log.Printf("[RECOVERY] Reset %d orphaned downloads to pending status", orphanedCount)
-	} else {
-		log.Println("[RECOVERY] All downloads have active torrents, no recovery needed")
+	updated := 0
+	for i := range tasks {
+		task := &tasks[i]
+		if !dm.updateTaskProgressFromClient(task) {
+			continue
+		}
+		if err := dm.db.GetDB().Save(task).Error; err != nil {
+			log.Printf("[RESUME] Failed to update progress for task %d: %v", task.ID, err)
+			continue
+		}
+		log.Printf("[RESUME] Task %d (%s) resumed at %.2f%%", task.ID, task.Title, task.Progress)
+		updated++
+	}
+
+	if updated > 0 {
+		dm.notifyUpdate()
 	}
 }
 
@@ -478,6 +572,7 @@ func (dm *DownloadManager) startDownload(rule *models.DownloadRule, result *mode
 		InfoHash:     result.InfoHash,
 		MagnetLink:   result.MagnetLink,
 		TorrentURL:   result.TorrentURL,
+		TorrentID:    torrentID,
 		Size:         result.Size,
 		Seeders:      result.Seeders,
 		Leechers:     result.Leechers,
@@ -535,6 +630,7 @@ func (dm *DownloadManager) AddSearchResult(result *models.SearchResult) (*models
 		InfoHash:     result.InfoHash,
 		MagnetLink:   result.MagnetLink,
 		TorrentURL:   result.TorrentURL,
+		TorrentID:    torrentID,
 		Size:         result.Size,
 		Seeders:      result.Seeders,
 		Leechers:     result.Leechers,
@@ -689,9 +785,9 @@ func (dm *DownloadManager) CancelTask(taskID uint) error {
 		return fmt.Errorf("task already cancelled")
 	}
 
-	if task.TorrentID > 0 && dm.torrentClient != nil {
-		log.Printf("[DOWNLOAD] Removing torrent from client: %s (ID: %d)", task.Title, task.TorrentID)
-		if err := dm.torrentClient.RemoveTorrent(task.TorrentID, false); err != nil {
+	if torrentID := dm.torrentIDForTask(&task); torrentID > 0 && dm.torrentClient != nil {
+		log.Printf("[DOWNLOAD] Removing torrent from client: %s (ID: %d)", task.Title, torrentID)
+		if err := dm.torrentClient.RemoveTorrent(torrentID, false); err != nil {
 			log.Printf("[WARN] Failed to remove torrent from client: %v", err)
 		}
 	}
@@ -722,9 +818,9 @@ func (dm *DownloadManager) RestartTask(taskID uint) error {
 	}
 
 	// If there's an active torrent, remove it first
-	if task.TorrentID > 0 && dm.torrentClient != nil {
-		log.Printf("[DOWNLOAD] Removing torrent from client before restart: %s (ID: %d)", task.Title, task.TorrentID)
-		if err := dm.torrentClient.RemoveTorrent(task.TorrentID, false); err != nil {
+	if torrentID := dm.torrentIDForTask(&task); torrentID > 0 && dm.torrentClient != nil {
+		log.Printf("[DOWNLOAD] Removing torrent from client before restart: %s (ID: %d)", task.Title, torrentID)
+		if err := dm.torrentClient.RemoveTorrent(torrentID, false); err != nil {
 			log.Printf("[WARN] Failed to remove torrent from client: %v", err)
 		}
 	}
@@ -790,7 +886,7 @@ func (dm *DownloadManager) StartTask(taskID uint) error {
 
 	log.Printf("[DOWNLOAD] Starting task %d: %s", task.ID, task.Title)
 
-	torrentID, err := dm.torrentClient.AddTorrent(task.MagnetLink, task.DownloadPath)
+	torrentID, err := dm.reattachTorrent(&task)
 	if err != nil {
 		return fmt.Errorf("failed to add torrent: %w", err)
 	}
@@ -806,7 +902,7 @@ func (dm *DownloadManager) StartTask(taskID uint) error {
 
 	dm.notifyUpdate()
 
-	log.Printf("[DOWNLOAD] Task %d started (Transmission ID: %d)", task.ID, torrentID)
+	log.Printf("[DOWNLOAD] Task %d started (Torrent ID: %d)", task.ID, torrentID)
 	return nil
 }
 
@@ -1017,21 +1113,26 @@ func (dm *DownloadManager) UpdateAllProgress() {
 	hasUpdates := false
 
 	for _, task := range tasks {
-		status, err := dm.torrentClient.GetTorrentStatus(task.TorrentID)
+		torrentID := dm.torrentIDForTask(&task)
+		status, err := dm.torrentClient.GetTorrentStatus(torrentID)
 		if err != nil {
-			// If torrent not found, it's orphaned (service restart, manual removal, etc.)
-			// Reset to pending so it will be restarted automatically
-			log.Printf("[MONITOR] Torrent not found for task %d (%s), resetting to pending: %v", task.ID, task.Title, err)
-			task.Status = "pending"
-			task.Progress = 0.0
-			task.TorrentID = 0
-			task.StartedAt = nil
-			if err := dm.db.GetDB().Save(&task).Error; err != nil {
-				log.Printf("[MONITOR] Failed to reset orphaned task %d: %v", task.ID, err)
-			} else {
-				hasUpdates = true
+			log.Printf("[MONITOR] Torrent not active for task %d (%s), re-attaching: %v", task.ID, task.Title, err)
+			newID, attachErr := dm.reattachTorrent(&task)
+			if attachErr != nil {
+				log.Printf("[MONITOR] Re-attach failed for task %d, will retry: %v", task.ID, attachErr)
+				continue
 			}
-			continue
+			task.TorrentID = newID
+			status, err = dm.torrentClient.GetTorrentStatus(newID)
+			if err != nil {
+				log.Printf("[MONITOR] Status unavailable after re-attach for task %d: %v", task.ID, err)
+				if saveErr := dm.db.GetDB().Save(&task).Error; saveErr != nil {
+					log.Printf("[MONITOR] Failed to save task %d after re-attach: %v", task.ID, saveErr)
+				} else {
+					hasUpdates = true
+				}
+				continue
+			}
 		}
 
 		percentDone := status["percentDone"].(float64) * 100
@@ -1115,7 +1216,7 @@ func (dm *DownloadManager) ProcessPendingDownloads() {
 		log.Printf("[DOWNLOAD] Starting pending download: %s", task.Title)
 
 		// Add torrent to client
-		torrentID, err := dm.torrentClient.AddTorrent(task.MagnetLink, dm.serviceConfig.DownloadPath)
+		torrentID, err := dm.reattachTorrent(&task)
 		if err != nil {
 			log.Printf("[DOWNLOAD] Failed to add torrent for task %d: %v", task.ID, err)
 			// Mark as failed
@@ -1493,10 +1594,12 @@ func (dm *DownloadManager) DeleteTask(taskID uint) error {
 	}
 
 	// If the task is currently downloading, try to cancel it first
-	if task.Status == "downloading" && task.TorrentID > 0 && dm.torrentClient != nil {
-		log.Printf("[DM] Removing active torrent for task %d before deletion", taskID)
-		if err := dm.torrentClient.RemoveTorrent(task.TorrentID, false); err != nil {
-			log.Printf("[DM] Warning: Failed to remove torrent: %v", err)
+	if task.Status == "downloading" {
+		if torrentID := dm.torrentIDForTask(&task); torrentID > 0 && dm.torrentClient != nil {
+			log.Printf("[DM] Removing active torrent for task %d before deletion", taskID)
+			if err := dm.torrentClient.RemoveTorrent(torrentID, false); err != nil {
+				log.Printf("[DM] Warning: Failed to remove torrent: %v", err)
+			}
 		}
 	}
 

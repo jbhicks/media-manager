@@ -2,10 +2,12 @@ package torrent
 
 import (
 	"fmt"
+	"hash/crc32"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/anacrolix/torrent"
@@ -15,6 +17,24 @@ import (
 type NativeClient struct {
 	client      *torrent.Client
 	downloadDir string
+	mu          sync.RWMutex
+}
+
+// TorrentIDFromInfoHash returns a stable client ID for a torrent info hash.
+func TorrentIDFromInfoHash(hash string) int {
+	hash = strings.ToLower(strings.TrimSpace(hash))
+	if hash == "" {
+		return 0
+	}
+	return int(crc32.ChecksumIEEE([]byte(hash)))
+}
+
+func parseInfoHashFromMagnet(magnetLink string) (string, error) {
+	m, err := metainfo.ParseMagnetUri(magnetLink)
+	if err != nil {
+		return "", err
+	}
+	return strings.ToLower(m.InfoHash.String()), nil
 }
 
 func NewNativeClient(downloadDir string) (*NativeClient, error) {
@@ -23,11 +43,14 @@ func NewNativeClient(downloadDir string) (*NativeClient, error) {
 		downloadDir = filepath.Join(homeDir, "Downloads")
 	}
 
-	os.MkdirAll(downloadDir, 0755)
+	if err := os.MkdirAll(downloadDir, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create download dir: %w", err)
+	}
 
 	cfg := torrent.NewDefaultClientConfig()
+	// Persist piece progress in the download dir (.torrent.db) so restarts can resume.
 	cfg.DataDir = downloadDir
-	cfg.ListenPort = 0 // Let system auto-assign available port
+	cfg.ListenPort = 0
 	cfg.Seed = true
 	cfg.Debug = false
 
@@ -44,9 +67,60 @@ func NewNativeClient(downloadDir string) (*NativeClient, error) {
 	}, nil
 }
 
+func (n *NativeClient) findTorrentByHash(hash string) *torrent.Torrent {
+	hash = strings.ToLower(strings.TrimSpace(hash))
+	for _, t := range n.client.Torrents() {
+		if strings.EqualFold(t.InfoHash().String(), hash) || strings.EqualFold(t.InfoHash().HexString(), hash) {
+			return t
+		}
+	}
+	return nil
+}
+
+func (n *NativeClient) findTorrentByID(torrentID int) *torrent.Torrent {
+	for _, t := range n.client.Torrents() {
+		if TorrentIDFromInfoHash(t.InfoHash().String()) == torrentID {
+			return t
+		}
+	}
+	return nil
+}
+
+func (n *NativeClient) ensureDownloading(t *torrent.Torrent) {
+	if t.Info() != nil {
+		t.DownloadAll()
+		return
+	}
+	go func() {
+		select {
+		case <-t.GotInfo():
+			log.Printf("[TORRENT] Got info for: %s", t.Name())
+			t.DownloadAll()
+		case <-time.After(5 * time.Minute):
+			log.Printf("[TORRENT] Timeout waiting for torrent metadata: %s", t.Name())
+		}
+	}()
+}
+
 func (n *NativeClient) AddTorrent(magnetLink string, downloadDir string) (int, error) {
 	if downloadDir != "" {
 		n.downloadDir = downloadDir
+	}
+
+	hash, err := parseInfoHashFromMagnet(magnetLink)
+	if err != nil {
+		return 0, fmt.Errorf("invalid magnet link: %w", err)
+	}
+
+	id := TorrentIDFromInfoHash(hash)
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if existing := n.findTorrentByHash(hash); existing != nil {
+		log.Printf("[TORRENT] Torrent already active, resuming: %s", existing.Name())
+		n.ensureDownloading(existing)
+		return id, nil
 	}
 
 	t, err := n.client.AddMagnet(magnetLink)
@@ -54,53 +128,83 @@ func (n *NativeClient) AddTorrent(magnetLink string, downloadDir string) (int, e
 		return 0, fmt.Errorf("failed to add magnet: %w", err)
 	}
 
-	log.Printf("[TORRENT] Added torrent: %s", t.Name())
+	log.Printf("[TORRENT] Added torrent: %s (hash: %s)", t.Name(), hash[:min(8, len(hash))])
+	n.ensureDownloading(t)
+	return id, nil
+}
 
-	go func() {
-		<-t.GotInfo()
-		log.Printf("[TORRENT] Got info for: %s", t.Name())
-		t.DownloadAll()
-	}()
+func (n *NativeClient) statusFromTorrent(t *torrent.Torrent, torrentID int) map[string]interface{} {
+	percentDone := 0.0
+	length := t.Length()
+	if length > 0 {
+		percentDone = float64(t.BytesCompleted()) / float64(length)
+	}
 
-	return int(t.InfoHash().HexString()[0]), nil
+	return map[string]interface{}{
+		"id":             torrentID,
+		"name":           t.Name(),
+		"percentDone":    percentDone,
+		"totalSize":      length,
+		"downloadDir":    n.downloadDir,
+		"peersConnected": t.Stats().ActivePeers,
+		"infoHash":       t.InfoHash().String(),
+	}
 }
 
 func (n *NativeClient) GetTorrentStatus(torrentID int) (map[string]interface{}, error) {
-	torrents := n.client.Torrents()
-	if len(torrents) == 0 {
-		return nil, fmt.Errorf("no torrents found")
-	}
+	n.mu.RLock()
+	defer n.mu.RUnlock()
 
-	for _, t := range torrents {
-		info := t.Info()
-		if info == nil {
-			continue
-		}
-
-		status := map[string]interface{}{
-			"id":             torrentID,
-			"name":           t.Name(),
-			"percentDone":    float64(t.BytesCompleted()) / float64(t.Length()),
-			"totalSize":      t.Length(),
-			"downloadDir":    n.downloadDir,
-			"peersConnected": t.Stats().ActivePeers,
-		}
-
-		return status, nil
+	if t := n.findTorrentByID(torrentID); t != nil {
+		return n.statusFromTorrent(t, torrentID), nil
 	}
 
 	return nil, fmt.Errorf("torrent not found")
 }
 
 func (n *NativeClient) RemoveTorrent(torrentID int, deleteData bool) error {
-	torrents := n.client.Torrents()
-	for _, t := range torrents {
-		t.Drop()
-		if deleteData {
-			log.Printf("[TORRENT] Removing torrent data (not implemented)")
-		}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	t := n.findTorrentByID(torrentID)
+	if t == nil {
+		return fmt.Errorf("torrent not found")
 	}
+
+	t.Drop()
+	log.Printf("[TORRENT] Removed torrent: %s (deleteData=%v)", t.Name(), deleteData)
 	return nil
+}
+
+// ResumeAll re-attaches magnets after a service restart so partial files can continue.
+func (n *NativeClient) ResumeAll(magnets []string, downloadDir string) int {
+	resumed := 0
+	seen := make(map[string]struct{})
+
+	for _, magnet := range magnets {
+		magnet = strings.TrimSpace(magnet)
+		if magnet == "" {
+			continue
+		}
+
+		hash, err := parseInfoHashFromMagnet(magnet)
+		if err != nil {
+			log.Printf("[TORRENT] Skipping invalid magnet during resume: %v", err)
+			continue
+		}
+		if _, ok := seen[hash]; ok {
+			continue
+		}
+		seen[hash] = struct{}{}
+
+		if _, err := n.AddTorrent(magnet, downloadDir); err != nil {
+			log.Printf("[TORRENT] Failed to resume torrent %s: %v", hash[:min(8, len(hash))], err)
+			continue
+		}
+		resumed++
+	}
+
+	return resumed
 }
 
 func (n *NativeClient) Close() {
@@ -125,13 +229,7 @@ func (n *NativeClient) AddTorrentFromFile(torrentFile string, downloadDir string
 	}
 
 	log.Printf("[TORRENT] Added torrent from file: %s", t.Name())
-
-	go func() {
-		<-t.GotInfo()
-		log.Printf("[TORRENT] Got info for: %s", t.Name())
-		t.DownloadAll()
-	}()
-
+	n.ensureDownloading(t)
 	return nil
 }
 
@@ -144,7 +242,6 @@ func (n *NativeClient) ExtractImagesFromTorrent(magnetLink string, timeout time.
 
 	log.Printf("[TORRENT] Inspecting torrent for images: %s", t.Name())
 
-	// Wait for metadata with timeout
 	select {
 	case <-t.GotInfo():
 		log.Printf("[TORRENT] Got metadata for: %s", t.Name())
@@ -153,7 +250,6 @@ func (n *NativeClient) ExtractImagesFromTorrent(magnetLink string, timeout time.
 		return nil, fmt.Errorf("timeout waiting for torrent metadata")
 	}
 
-	// Find image files
 	info := t.Info()
 	if info == nil {
 		t.Drop()
@@ -169,7 +265,6 @@ func (n *NativeClient) ExtractImagesFromTorrent(magnetLink string, timeout time.
 			strings.HasSuffix(name, ".webp") {
 			log.Printf("[TORRENT] Found image file: %s", pathStr)
 			imageFiles = append(imageFiles, pathStr)
-			// Download only this file
 			t.Files()[i].Download()
 		}
 	}
@@ -180,7 +275,6 @@ func (n *NativeClient) ExtractImagesFromTorrent(magnetLink string, timeout time.
 		return nil, nil
 	}
 
-	// Wait for images to download
 	log.Printf("[TORRENT] Downloading %d image files...", len(imageFiles))
 	deadline := time.Now().Add(timeout)
 	for {
@@ -207,7 +301,6 @@ func (n *NativeClient) ExtractImagesFromTorrent(magnetLink string, timeout time.
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	// Build full paths
 	var imagePaths []string
 	for _, imgPath := range imageFiles {
 		fullPath := filepath.Join(n.downloadDir, imgPath)
@@ -217,10 +310,7 @@ func (n *NativeClient) ExtractImagesFromTorrent(magnetLink string, timeout time.
 	}
 
 	log.Printf("[TORRENT] Extracted %d images from torrent", len(imagePaths))
-
-	// Drop the torrent so we don't seed the full content
 	t.Drop()
-
 	return imagePaths, nil
 }
 
@@ -253,4 +343,11 @@ func (n *NativeClient) WaitForCompletion(timeout time.Duration) {
 			}
 		}
 	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
