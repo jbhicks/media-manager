@@ -42,7 +42,7 @@ type Watchlist struct {
 	UserID    uint      `json:"user_id" gorm:"index;not null"`
 	User      *User     `json:"user,omitempty" gorm:"foreignKey:UserID"`
 	MediaType string    `json:"media_type" gorm:"not null"` // movie, tv_show
-	TMDbID    int       `json:"tmdb_id" gorm:"not null"`
+	TMDbID    int       `json:"tmdb_id" gorm:"column:tmdb_id;default:0"`
 	Title     string    `json:"title"`
 	PosterURL string    `json:"poster_url,omitempty"`
 	AddedAt   time.Time `json:"added_at" gorm:"index"`
