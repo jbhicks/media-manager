@@ -184,9 +184,8 @@ func (dm *DownloadManager) updateTaskProgressFromClient(task *models.DownloadTas
 	}
 
 	newProgress := percentDone * 100
-	totalSize, _ := status["totalSize"].(int64)
-	// Keep saved progress until metadata loads; a zero-length torrent is still warming up.
-	if newProgress > 0 || totalSize > 0 || task.Progress == 0 {
+	// Never regress progress — metadata reload after restart can briefly report 0%.
+	if newProgress > task.Progress || (task.Progress == 0 && newProgress > 0) {
 		if task.Progress != newProgress {
 			task.Progress = newProgress
 			updated = true
@@ -1150,9 +1149,8 @@ func (dm *DownloadManager) UpdateAllProgress() {
 		}
 
 		percentDone := status["percentDone"].(float64) * 100
-		totalSize, _ := status["totalSize"].(int64)
 
-		if percentDone > 0 || totalSize > 0 || task.Progress == 0 {
+		if percentDone > task.Progress || (task.Progress == 0 && percentDone > 0) {
 			task.Progress = percentDone
 		}
 		if percentDone >= 100 {
