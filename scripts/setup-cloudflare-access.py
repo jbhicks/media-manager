@@ -5,6 +5,21 @@ import os
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
+
+
+def load_env_file(path: Path) -> None:
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+load_env_file(Path.home() / "media-manager" / ".env")
 
 ACCOUNT_ID = os.environ.get("CF_ACCOUNT_ID", "5143b30f7d4d4f228f713f7b56f2fc96")
 API_TOKEN = os.environ.get("CF_API_TOKEN", "")
