@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Star, Play, ArrowLeft, Tv, Heart, Download, ChevronDown } from 'lucide-react'
+import { Star, Play, ArrowLeft, Heart, Download, ChevronDown } from 'lucide-react'
 import { useWatchlist } from '@/contexts/WatchlistContext'
+import { useAppStore } from '@/store/appStore'
+import { PosterImage } from '@/components/PosterImage'
 
 interface CastMember {
   id: number
@@ -86,11 +88,16 @@ export function TVDetail() {
   const [isLoading, setIsLoading] = useState(true)
   const [selectedSeason, setSelectedSeason] = useState(1)
   const [episodes, setEpisodes] = useState<Episode[]>([])
+  const [episodesLoading, setEpisodesLoading] = useState(false)
+  const [visibleEpisodeCount, setVisibleEpisodeCount] = useState(12)
   const [showTrailer, setShowTrailer] = useState(false)
   const [localFile, setLocalFile] = useState<string | null>(null)
   const [downloadStatus, setDownloadStatus] = useState('')
+  const [selectedQuality, setSelectedQuality] = useState('1080p')
   const { addToWatchlist, removeFromWatchlist, isInWatchlist, watchlist } = useWatchlist()
+  const { addToast } = useAppStore()
   const [isWatchlistLoading, setIsWatchlistLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleDownload = async () => {
     if (!show) return
@@ -103,17 +110,22 @@ export function TVDetail() {
           query: show.name,
           year: show.first_air_date?.substring(0, 4),
           media_type: 'tv',
-          tmdb_id: show.id
+          tmdb_id: show.id,
+          resolution: selectedQuality
         })
       })
+      const data = await response.json().catch(() => ({ error: 'Unknown error' }))
       if (response.ok) {
         setDownloadStatus('queued')
+        addToast(`Queued ${selectedQuality}: ${data.title || show.name}`, 'success')
       } else {
         setDownloadStatus('failed')
+        addToast(data.message || data.error || 'Download failed', 'error')
       }
     } catch (error) {
       console.error('Download error:', error)
       setDownloadStatus('failed')
+      addToast('Download failed', 'error')
     }
   }
 
@@ -125,6 +137,7 @@ export function TVDetail() {
 
   useEffect(() => {
     const fetchTV = async () => {
+      setError(null)
       try {
         const response = await fetch(`/api/discover/tv/${id}`)
         if (!response.ok) throw new Error('Failed to fetch TV show')
@@ -148,6 +161,7 @@ export function TVDetail() {
         }
       } catch (error) {
         console.error('Error fetching TV show:', error)
+        setError('Failed to load TV show details')
       } finally {
         setIsLoading(false)
       }
@@ -157,6 +171,7 @@ export function TVDetail() {
   }, [id])
 
   const fetchEpisodes = async (seasonNumber: number) => {
+    setEpisodesLoading(true)
     try {
       const response = await fetch(`/api/discover/tv/${id}/season/${seasonNumber}`)
       if (!response.ok) throw new Error('Failed to fetch episodes')
@@ -165,26 +180,109 @@ export function TVDetail() {
     } catch (error) {
       console.error('Error fetching episodes:', error)
       setEpisodes([])
+    } finally {
+      setEpisodesLoading(false)
     }
   }
 
   const handleSeasonChange = (seasonNumber: number) => {
     setSelectedSeason(seasonNumber)
+    setVisibleEpisodeCount(12)
     fetchEpisodes(seasonNumber)
   }
 
   if (isLoading) {
+    // Skeleton for hero, episodes, cast etc to ensure visible loading (no blanks)
     return (
-      <div className="min-h-screen bg-[#121212] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#1ed760]" />
+      <div>
+        {/* Hero skeleton */}
+        <div className="relative h-[60vh] -mx-6 -mt-6 bg-[#1a1a2e]">
+          <div className="absolute inset-0 bg-gradient-to-t from-[#121212] via-[#121212]/50 to-transparent" />
+          <div className="absolute bottom-0 left-0 right-0 p-8">
+            <div className="h-14 w-3/4 bg-white/10 rounded mb-2 animate-pulse" />
+            <div className="h-7 w-1/2 bg-white/10 rounded mb-4 animate-pulse" />
+            <div className="flex items-center gap-4 mb-4">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="h-5 w-16 bg-white/10 rounded animate-pulse" />
+              ))}
+            </div>
+            <div className="flex gap-2 mb-4">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-7 w-20 bg-[#1f1f1f] rounded-full animate-pulse" />
+              ))}
+            </div>
+            <div className="flex gap-3">
+              <div className="h-12 w-36 bg-[#1ed760]/40 rounded-full animate-pulse" />
+              <div className="h-12 w-36 bg-[#1f1f1f] rounded-full animate-pulse" />
+            </div>
+          </div>
+        </div>
+        <div className="px-8 py-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2">
+              <div className="h-8 w-32 bg-white/10 rounded mb-4 animate-pulse" />
+              <div className="h-4 w-full bg-white/10 rounded mb-2 animate-pulse" />
+              {/* Episodes skeleton */}
+              <div className="mt-8">
+                <div className="flex justify-between mb-4">
+                  <div className="h-8 w-28 bg-white/10 rounded animate-pulse" />
+                  <div className="h-9 w-48 bg-[#1f1f1f] rounded-lg animate-pulse" />
+                </div>
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="flex gap-4 p-4 bg-[#1f1f1f] rounded-lg mb-3">
+                    <div className="flex-shrink-0 w-[160px] aspect-video bg-[#121212] rounded-lg animate-pulse" />
+                    <div className="flex-1">
+                      <div className="h-5 w-3/4 bg-white/10 rounded mb-2 animate-pulse" />
+                      <div className="h-4 w-full bg-white/10 rounded mb-1 animate-pulse" />
+                      <div className="h-4 w-2/3 bg-white/10 rounded animate-pulse" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Cast skeleton */}
+              <div className="mt-8">
+                <div className="h-8 w-24 bg-white/10 rounded mb-4 animate-pulse" />
+                <div className="flex gap-4">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="flex-shrink-0 w-[120px]">
+                      <div className="aspect-[2/3] bg-[#1f1f1f] rounded-lg animate-pulse" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="bg-[#1f1f1f] rounded-lg p-6">
+              <div className="h-6 w-24 bg-white/10 rounded mb-4 animate-pulse" />
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="h-5 bg-white/10 rounded mb-3 animate-pulse" />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-white mb-4">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-[#1ed760] text-black rounded-full font-semibold"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     )
   }
 
   if (!show) {
     return (
-      <div className="min-h-screen bg-[#121212] flex items-center justify-center">
-        <p className="text-white">TV show not found</p>
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <h1 className="text-white text-2xl">TV show not found</h1>
       </div>
     )
   }
@@ -193,8 +291,8 @@ export function TVDetail() {
   const avgRuntime = show.episode_run_time?.length > 0 
     ? Math.round(show.episode_run_time.reduce((a, b) => a + b, 0) / show.episode_run_time.length)
     : 0
-  const inWatchlist = isInWatchlist('tv_show', show.id)
-  const watchlistItem = watchlist.find(item => item.media_type === 'tv_show' && item.tmdb_id === show.id)
+  const inWatchlist = isInWatchlist('tv_series', show.id)
+  const watchlistItem = watchlist.find(item => item.media_type === 'tv_series' && item.tmdb_id === show.id)
 
   const handleWatchlistToggle = async () => {
     if (isWatchlistLoading) return
@@ -204,7 +302,7 @@ export function TVDetail() {
         await removeFromWatchlist(watchlistItem.id)
       } else {
         await addToWatchlist({
-          media_type: 'tv_show',
+          media_type: 'tv_series',
           tmdb_id: show.id,
           title: show.name,
           poster_url: show.poster_path
@@ -212,31 +310,36 @@ export function TVDetail() {
       }
     } catch (error) {
       console.error('Watchlist error:', error)
+      addToast(error instanceof Error ? error.message : "Watchlist update failed", "error")
     } finally {
       setIsWatchlistLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-[#121212]">
-      {/* Backdrop */}
-      <div className="relative h-[60vh]">
+    <div>
+      {/* Backdrop - use PosterImage (not raw style/img) for skeleton + loading parity + avoid blanks (ux-design-reviewer) */}
+      <div className="relative h-[60vh] -mx-6 -mt-6">
         {show.backdrop_path ? (
-          <div
-            className="absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: `url(https://image.tmdb.org/t/p/original${show.backdrop_path})` }}
+          <PosterImage
+            src={`https://image.tmdb.org/t/p/original${show.backdrop_path}`}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover"
+            showFallbackTitle={false}
           />
         ) : (
           <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e] to-[#121212]" />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#121212] via-[#121212]/50 to-transparent" />
+        {/* stronger gradients for text contrast (ux-design-reviewer) */}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#121212]/95 via-[#121212]/70 to-transparent" />
         
         {/* Back button */}
         <Link
           to="/discover"
-          className="absolute top-4 left-4 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
+          className="absolute top-4 left-4 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 focus-visible:ring-2 focus-visible:ring-[#1ed760] transition-colors"
+          aria-label="Back to discover"
         >
-          <ArrowLeft className="w-6 h-6" />
+          <ArrowLeft className="w-6 h-6" aria-hidden="true" />
         </Link>
 
         {/* Content overlay */}
@@ -254,8 +357,8 @@ export function TVDetail() {
             <div className="flex items-center gap-4 mb-4">
               <div className="flex items-center gap-1 text-yellow-400">
                 <Star className="w-5 h-5 fill-current" />
-                <span className="font-bold">{show.vote_average.toFixed(1)}</span>
-                <span className="text-[#b3b3b3]">({show.vote_count.toLocaleString()} votes)</span>
+                <span className="font-bold">{(show.vote_average || 0).toFixed(1)}</span>
+                <span className="text-[#b3b3b3]">({(show.vote_count || 0).toLocaleString()} votes)</span>
               </div>
               <span className="text-[#b3b3b3]">|</span>
               <span className="text-[#b3b3b3]">{show.first_air_date?.substring(0, 4)}</span>
@@ -279,53 +382,71 @@ export function TVDetail() {
               ))}
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex flex-wrap items-center gap-3" role="group" aria-label="TV show actions">
               {trailer && (
                 <button
                   onClick={() => setShowTrailer(true)}
-                  className="flex items-center gap-2 px-6 py-3 bg-[#1ed760] text-black rounded-full font-semibold hover:bg-[#1ed760]/90 transition-colors"
+                  className="flex items-center gap-2 px-6 py-3 bg-[#1ed760] text-black rounded-full font-semibold hover:bg-[#1ed760]/90 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#121212] focus-visible:ring-black transition-colors"
+                  aria-label="Watch trailer for this show"
                 >
-                  <Play className="w-5 h-5" />
+                  <Play className="w-5 h-5" aria-hidden="true" />
                   Watch Trailer
                 </button>
               )}
               <button 
                 onClick={handleWatchlistToggle}
                 disabled={isWatchlistLoading}
-                className={`flex items-center gap-2 px-6 py-3 rounded-full font-semibold transition-colors ${
+                className={`flex items-center gap-2 px-6 py-3 rounded-full font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#121212] focus-visible:ring-[#1ed760] ${
                   inWatchlist 
                     ? 'bg-[#1ed760] text-black hover:bg-[#1ed760]/90' 
                     : 'bg-[#1f1f1f] text-white hover:bg-[#2a2a2a]'
                 }`}
+                aria-label={inWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}
+                aria-pressed={inWatchlist}
               >
-                <Heart className={`w-5 h-5 ${inWatchlist ? 'fill-current' : ''}`} />
+                <Heart className={`w-5 h-5 ${inWatchlist ? 'fill-current' : ''}`} aria-hidden="true" />
                 {isWatchlistLoading ? 'Loading...' : inWatchlist ? 'In Watchlist' : 'Add to Watchlist'}
               </button>
               {localFile ? (
                 <button
                   onClick={handleStream}
-                  className="flex items-center gap-2 px-6 py-3 bg-[#1ed760] text-black rounded-full font-semibold hover:bg-[#1ed760]/90 transition-colors"
+                  className="flex items-center gap-2 px-6 py-3 bg-[#1ed760] text-black rounded-full font-semibold hover:bg-[#1ed760]/90 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#121212] focus-visible:ring-black transition-colors"
+                  aria-label="Stream this TV show now"
                 >
-                  <Play className="w-5 h-5" />
+                  <Play className="w-5 h-5" aria-hidden="true" />
                   Stream Now
                 </button>
               ) : (
-                <button
-                  onClick={handleDownload}
-                  disabled={downloadStatus === 'searching' || downloadStatus === 'queued'}
-                  className="flex items-center gap-2 px-6 py-3 bg-[#1f1f1f] text-white rounded-full font-semibold hover:bg-[#2a2a2a] transition-colors disabled:opacity-50"
-                >
-                  <Download className="w-5 h-5" />
-                  {downloadStatus === 'searching' ? 'Searching...' : downloadStatus === 'queued' ? 'Queued' : downloadStatus === 'failed' ? 'Failed' : 'Download'}
-                </button>
+                <>
+                  <button
+                    onClick={handleDownload}
+                    disabled={downloadStatus === 'searching' || downloadStatus === 'queued'}
+                    className="flex items-center gap-2 px-6 py-3 bg-[#1f1f1f] text-white rounded-full font-semibold hover:bg-[#2a2a2a] transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#121212] focus-visible:ring-[#1ed760] disabled:opacity-50"
+                    aria-label="Download this TV show"
+                  >
+                    <Download className="w-5 h-5" aria-hidden="true" />
+                    {downloadStatus === 'searching' ? 'Searching...' : downloadStatus === 'queued' ? 'Queued' : downloadStatus === 'failed' ? 'Failed' : 'Download'}
+                  </button>
+                  <select
+                    value={selectedQuality}
+                    onChange={(e) => setSelectedQuality(e.target.value)}
+                    className="px-4 py-3 bg-[#1f1f1f] text-white rounded-full font-semibold focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#121212] focus-visible:ring-[#1ed760]"
+                    aria-label="Download resolution"
+                  >
+                    <option value="2160p">4K</option>
+                    <option value="1080p">1080p</option>
+                    <option value="720p">720p</option>
+                    <option value="480p">480p</option>
+                  </select>
+                </>
               )}
             </div>
           </motion.div>
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="px-8 py-8">
+      {/* Main Content - full page (no Layout clash) with ARIA */}
+      <main className="px-8 py-8" role="main" aria-label="TV show details">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Left column - Overview & Episodes */}
           <div className="lg:col-span-2">
@@ -364,24 +485,37 @@ export function TVDetail() {
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  {episodes.map((episode) => (
+                <div className="space-y-3" role="list" aria-label="Episodes">
+                  {episodesLoading ? (
+                    Array.from({ length: 2 }).map((_, i) => (
+                      <div key={i} className="flex gap-4 p-4 bg-[#1f1f1f] rounded-lg mb-3">
+                        <div className="flex-shrink-0 w-[160px] aspect-video bg-[#121212] rounded-lg animate-pulse" />
+                        <div className="flex-1">
+                          <div className="h-5 w-3/4 bg-white/10 rounded mb-2 animate-pulse" />
+                          <div className="h-4 w-full bg-white/10 rounded mb-1 animate-pulse" />
+                          <div className="h-4 w-2/3 bg-white/10 rounded animate-pulse" />
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <>
+                      {episodes.slice(0, visibleEpisodeCount).map((episode) => (
                     <div
                       key={episode.id}
-                      className="flex gap-4 p-4 bg-[#1f1f1f] rounded-lg hover:bg-[#2a2a2a] transition-colors cursor-pointer group"
+                      className="flex gap-4 p-4 bg-[#1f1f1f] rounded-lg hover:bg-[#2a2a2a] focus:bg-[#2a2a2a] transition-colors cursor-pointer group focus:outline-none focus:ring-2 focus:ring-[#1ed760]"
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`Play S${selectedSeason}E${episode.episode_number} ${episode.name}`}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { /* Enter works: placeholder here - real stream would hook to player like handleStream; keeps D-pad compatible */ } }}
+                      onClick={() => { /* future: episode stream */ }}
                     >
-                      <div className="flex-shrink-0 w-[160px] aspect-video rounded-lg overflow-hidden bg-[#121212]">
-                        {episode.still_path ? (
-                          <img
-                            src={`https://image.tmdb.org/t/p/w300${episode.still_path}`}
-                            alt={episode.name}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <Tv className="w-8 h-8 text-[#4d4d4d]" />
-                          </div>
-                        )}
+                      <div className="flex-shrink-0 w-[160px] aspect-video rounded-lg overflow-hidden bg-[#121212] relative">
+                        <PosterImage
+                          src={episode.still_path ? `https://image.tmdb.org/t/p/w300${episode.still_path}` : undefined}
+                          alt={episode.name}
+                          className="absolute inset-0 w-full h-full object-cover"
+                          showFallbackTitle={false}
+                        />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
@@ -393,21 +527,34 @@ export function TVDetail() {
                           <span>{episode.air_date}</span>
                           {episode.runtime > 0 && <span>{episode.runtime} min</span>}
                           <div className="flex items-center gap-1 text-yellow-400">
-                            <Star className="w-3 h-3 fill-current" />
-                            <span>{episode.vote_average.toFixed(1)}</span>
+                            <Star className="w-3 h-3 fill-current" aria-hidden="true" />
+                            <span>{(episode.vote_average || 0).toFixed(1)}</span>
                           </div>
                         </div>
                       </div>
                       <div className="flex-shrink-0 self-center">
-                        <button className="p-2 rounded-full bg-[#1ed760] text-black opacity-0 group-hover:opacity-100 transition-opacity">
+                        {/* Always visible (not hover-only) for keyboard/TV accessibility; row focusable + Enter ready */}
+                        <button className="p-2 rounded-full bg-[#1ed760] text-black transition-opacity focus-visible:ring-1" tabIndex={-1} aria-hidden="true">
                           <Play className="w-5 h-5" />
                         </button>
                       </div>
                     </div>
                   ))}
-                </div>
-              </motion.div>
-            )}
+                  {episodes.length > visibleEpisodeCount && (
+                    <button
+                      type="button"
+                      onClick={() => setVisibleEpisodeCount(prev => Math.min(prev + 12, episodes.length))}
+                      className="w-full py-3 bg-[#1f1f1f] hover:bg-[#2a2a2a] text-white rounded-lg font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-[#1ed760]"
+                      aria-label={`Show more episodes, ${episodes.length - visibleEpisodeCount} remaining`}
+                    >
+                      Show more episodes ({episodes.length - visibleEpisodeCount} remaining)
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </motion.div>
+        )}
 
             {/* Cast */}
             {show.credits?.cast?.length > 0 && (
@@ -417,22 +564,17 @@ export function TVDetail() {
                 transition={{ delay: 0.4 }}
                 className="mt-8"
               >
-                <h2 className="text-2xl font-bold text-white mb-4">Cast</h2>
-                <div className="flex gap-4 overflow-x-auto pb-4">
+                <h2 className="text-2xl font-bold text-white mb-4" id="cast-heading">Cast</h2>
+                <div className="flex gap-4 overflow-x-auto pb-4" role="list" aria-labelledby="cast-heading">
                   {show.credits.cast.slice(0, 10).map(actor => (
-                    <div key={actor.id} className="flex-shrink-0 w-[120px]">
-                      <div className="aspect-[2/3] rounded-lg overflow-hidden bg-[#1f1f1f]">
-                        {actor.profile_path ? (
-                          <img
-                            src={`https://image.tmdb.org/t/p/w200${actor.profile_path}`}
-                            alt={actor.name}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <Tv className="w-8 h-8 text-[#4d4d4d]" />
-                          </div>
-                        )}
+                    <div key={actor.id} className="flex-shrink-0 w-[120px]" role="listitem">
+                      <div className="aspect-[2/3] rounded-lg overflow-hidden bg-[#1f1f1f] relative">
+                        <PosterImage
+                          src={actor.profile_path ? `https://image.tmdb.org/t/p/w200${actor.profile_path}` : undefined}
+                          alt={actor.name}
+                          className="absolute inset-0 w-full h-full object-cover"
+                          showFallbackTitle={false}
+                        />
                       </div>
                       <p className="mt-2 text-sm font-semibold text-white truncate">{actor.name}</p>
                       <p className="text-xs text-[#b3b3b3] truncate">{actor.character}</p>
@@ -503,45 +645,46 @@ export function TVDetail() {
             className="mt-8"
           >
             <h2 className="text-2xl font-bold text-white mb-4">Similar Shows</h2>
-            <div className="flex gap-4 overflow-x-auto pb-4">
+            <div className="flex gap-4 overflow-x-auto pb-4" role="list" aria-label="Similar shows">
               {show.similar.results.slice(0, 10).map(similar => (
                 <Link
                   key={similar.id}
                   to={`/tv/${similar.id}`}
-                  className="flex-shrink-0 w-[160px] group"
+                  className="flex-shrink-0 w-[160px] group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1ed760] rounded-lg"
+                  aria-label={`${similar.name} - rating ${(similar.vote_average || 0).toFixed(1)}`}
+                  role="listitem"
                 >
-                  <div className="aspect-[2/3] rounded-lg overflow-hidden bg-[#1f1f1f]">
-                    {similar.poster_path ? (
-                      <img
-                        src={`https://image.tmdb.org/t/p/w500${similar.poster_path}`}
-                        alt={similar.name}
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <Tv className="w-8 h-8 text-[#4d4d4d]" />
-                      </div>
-                    )}
+                  <div className="aspect-[2/3] rounded-lg overflow-hidden bg-[#1f1f1f] relative">
+                    <PosterImage
+                      src={similar.poster_path ? `https://image.tmdb.org/t/p/w500${similar.poster_path}` : undefined}
+                      alt={similar.name}
+                      className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-110 group-focus:scale-110"
+                      showFallbackTitle={false}
+                    />
                   </div>
-                  <p className="mt-2 text-sm font-semibold text-white truncate group-hover:text-[#1ed760]">
+                  {/* rating always visible; accent on hover/focus (ux-design-reviewer) */}
+                  <p className="mt-2 text-sm font-semibold text-white truncate group-hover:text-[#1ed760] group-focus:text-[#1ed760]">
                     {similar.name}
                   </p>
                   <div className="flex items-center gap-1 text-yellow-400">
-                    <Star className="w-3 h-3 fill-current" />
-                    <span className="text-xs">{similar.vote_average.toFixed(1)}</span>
+                    <Star className="w-3 h-3 fill-current" aria-hidden="true" />
+                    <span className="text-xs">{(similar.vote_average || 0).toFixed(1)}</span>
                   </div>
                 </Link>
               ))}
             </div>
           </motion.div>
         )}
-      </div>
+      </main>
 
-      {/* Trailer Modal */}
+      {/* Trailer Modal - ARIA modal */}
       {showTrailer && trailer && (
         <div
           className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
           onClick={() => setShowTrailer(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="TV show trailer"
         >
           <div className="w-full max-w-4xl aspect-video">
             <iframe

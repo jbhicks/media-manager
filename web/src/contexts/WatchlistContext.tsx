@@ -1,20 +1,28 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
 
-interface WatchlistItem {
+export interface WatchlistItem {
   id: number
   user_id: number
   media_type: string
   tmdb_id: number
+  season_number?: number
+  episode_number?: number
   title: string
-  poster_url: string
+  poster_url?: string
+  status: string
+  auto_download: boolean
+  quality_preference?: string
+  last_checked_at?: string
   added_at: string
+  missing_count?: number
 }
 
 interface WatchlistContextType {
   watchlist: WatchlistItem[]
   isLoading: boolean
   error: string | null
-  addToWatchlist: (item: { media_type: string; tmdb_id: number; title: string; poster_url?: string }) => Promise<void>
+  addToWatchlist: (item: { media_type: string; tmdb_id: number; title: string; poster_url?: string; season_number?: number; episode_number?: number }) => Promise<void>
+  updateWatchlistItem: (id: number, updates: Partial<WatchlistItem>) => Promise<void>
   removeFromWatchlist: (id: number) => Promise<void>
   isInWatchlist: (mediaType: string, tmdbId: number) => boolean
   refreshWatchlist: () => Promise<void>
@@ -31,7 +39,11 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
 
   const refreshWatchlist = useCallback(async () => {
     const token = getToken()
-    if (!token) return
+    if (!token) {
+      setError('Please login to view your watchlist')
+      setWatchlist([])
+      return
+    }
 
     setIsLoading(true)
     setError(null)
@@ -51,7 +63,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const addToWatchlist = useCallback(async (item: { media_type: string; tmdb_id: number; title: string; poster_url?: string }) => {
+  const addToWatchlist = useCallback(async (item: { media_type: string; tmdb_id: number; title: string; poster_url?: string; season_number?: number; episode_number?: number }) => {
     const token = getToken()
     if (!token) {
       setError('Please login to add to watchlist')
@@ -72,6 +84,27 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
         const data = await response.json()
         throw new Error(data.message || 'Failed to add to watchlist')
       }
+      await refreshWatchlist()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
+    }
+  }, [refreshWatchlist])
+
+  const updateWatchlistItem = useCallback(async (id: number, updates: Partial<WatchlistItem>) => {
+    const token = getToken()
+    if (!token) return
+
+    setError(null)
+    try {
+      const response = await fetch(`/api/watchlist/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(updates)
+      })
+      if (!response.ok) throw new Error('Failed to update watchlist item')
       await refreshWatchlist()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
@@ -107,6 +140,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
       isLoading,
       error,
       addToWatchlist,
+      updateWatchlistItem,
       removeFromWatchlist,
       isInWatchlist,
       refreshWatchlist
