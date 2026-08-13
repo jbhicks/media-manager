@@ -86,6 +86,11 @@ type MainView struct {
 	// Drag-and-drop state
 	draggedFilePathVar string
 	dragMu             sync.Mutex
+	// Move progress bar (shown at bottom during file move)
+	moveProgressBar    *widget.ProgressBar
+	moveProgressLabel  *widget.Label
+	// Tabs reference for rebuilding layout on debug toggle
+	tabsReference      *container.AppTabs
 }
 
 // DownloadManager is the subset of the service DownloadManager used by the UI.
@@ -431,6 +436,40 @@ func (v *MainView) clearDrag() {
 	v.draggedFilePathVar = ""
 }
 
+// showMoveProgress shows an indeterminate progress bar at the bottom of the window.
+func (v *MainView) showMoveProgress(message string) {
+	if v.moveProgressBar == nil {
+		return
+	}
+	v.moveProgressBar.Show()
+	v.moveProgressBar.Refresh()
+
+	if v.moveProgressLabel != nil {
+		v.moveProgressLabel.SetText(message)
+		v.moveProgressLabel.Show()
+		v.moveProgressLabel.Refresh()
+	}
+
+	if v.window.Content() != nil {
+		v.window.Content().Refresh()
+	}
+}
+
+// hideMoveProgress hides the move progress bar.
+func (v *MainView) hideMoveProgress() {
+	if v.moveProgressBar != nil {
+		v.moveProgressBar.Hide()
+		v.moveProgressBar.Refresh()
+	}
+	if v.moveProgressLabel != nil {
+		v.moveProgressLabel.Hide()
+		v.moveProgressLabel.Refresh()
+	}
+	if v.window.Content() != nil {
+		v.window.Content().Refresh()
+	}
+}
+
 // moveFileToFolder moves a media file on disk and updates the database/UI.
 func (v *MainView) moveFileToFolder(filePath, destDir string) {
 	srcPath := normalizeTreePath(filePath)
@@ -454,41 +493,65 @@ func (v *MainView) moveFileToFolder(filePath, destDir string) {
 		return
 	}
 
-	// Move file
-	if err := os.Rename(srcPath, destPath); err != nil {
-		log.Printf("[DRAG] Failed to move %s to %s: %v", srcPath, destPath, err)
-		return
-	}
+	// Show progress bar
+	fileName := filepath.Base(srcPath)
+	v.showMoveProgress(fmt.Sprintf("Moving %s…", fileName))
 
-	// Update database
-	if err := v.database.UpdateMediaFilePath(srcPath, destPath); err != nil {
-		log.Printf("[DRAG] Failed to update database path %s -> %s: %v", srcPath, destPath, err)
-	}
+	// Perform the move on a goroutine so the UI stays responsive
+	go func() {
+		if err := os.Rename(srcPath, destPath); err != nil {
+			fyne.Do(func() {
+				v.hideMoveProgress()
+				log.Printf("[DRAG] Failed to move %s to %s: %v", srcPath, destPath, err)
+				dialog := dialog.NewError(err, v.window)
+				dialog.Show()
+			})
+			return
+		}
 
-	// Remove from current sorted files if visible
-	fyne.Do(func() {
-		found := false
-		for i, sf := range v.sortedFiles {
-			sfPath := sf.Entry.Name()
-			if v.recursiveSearch {
-				sfPath = normalizeTreePath(sfPath)
-			} else {
-				sfPath = normalizeTreePath(filepath.Join(v.mediaDir, sfPath))
+		// Update database
+		if err := v.database.UpdateMediaFilePath(srcPath, destPath); err != nil {
+			log.Printf("[DRAG] Failed to update database path %s -> %s: %v", srcPath, destPath, err)
+		}
+
+		// Update UI on main thread
+		fyne.Do(func() {
+			// Remove from current sorted files if visible
+			found := false
+			for i, sf := range v.sortedFiles {
+				sfPath := sf.Entry.Name()
+				if v.recursiveSearch {
+					sfPath = normalizeTreePath(sfPath)
+				} else {
+					sfPath = normalizeTreePath(filepath.Join(v.mediaDir, sfPath))
+				}
+				if sfPath == srcPath {
+					v.sortedFiles = append(v.sortedFiles[:i], v.sortedFiles[i+1:]...)
+					found = true
+					break
+				}
 			}
-			if sfPath == srcPath {
-				v.sortedFiles = append(v.sortedFiles[:i], v.sortedFiles[i+1:]...)
-				found = true
-				break
+			if found {
+				v.RefreshMediaGrid()
 			}
-		}
-		if found {
-			v.RefreshMediaGrid()
-		}
-		// Ensure destination folder is visible/selected
-		if v.foldersTree != nil {
-			v.foldersTree.OpenBranch(destDir)
-		}
-	})
+
+			// Clear any drag state
+			v.clearDrag()
+
+			// Ensure destination folder is visible/selected
+			if v.foldersTree != nil {
+				v.foldersTree.OpenBranch(destDir)
+			}
+
+			// Hide progress bar and refresh
+			v.hideMoveProgress()
+
+			// Refresh the full window to clear the progress bar from layout
+			if v.window.Content() != nil {
+				v.window.Content().Refresh()
+			}
+		})
+	}()
 }
 
 // treeContextCatcher is a transparent widget over the folders tree that captures
@@ -1393,6 +1456,19 @@ func (v *MainView) Build() fyne.CanvasObject {
 		container.NewTabItem("Media", mainContent),
 		container.NewTabItem("Downloads", v.downloadsView.Build()),
 	)
+	v.tabsReference = tabs
+
+	// Create the move progress bar at the bottom (initially hidden).
+	// Indeterminate: set value to 0 and the bar animates continuously.
+	v.moveProgressBar = &widget.ProgressBar{}
+	v.moveProgressBar.Hide()
+	v.moveProgressLabel = widget.NewLabel("")
+	v.moveProgressLabel.Hide()
+
+	progressRow := container.NewHBox(v.moveProgressLabel, v.moveProgressBar)
+	// Wrap in scroll to allow shrinking below min size of children
+	progressScroll := container.NewScroll(progressRow)
+	progressScroll.SetMinSize(fyne.NewSize(0, 32))
 
 	// Add debug log panel if enabled
 	if v.showDebugLog {
@@ -1403,10 +1479,10 @@ func (v *MainView) Build() fyne.CanvasObject {
 		}
 		debugScroll := container.NewScroll(v.debugLog)
 		debugScroll.SetMinSize(fyne.NewSize(0, 200))
-		return container.NewBorder(nil, debugScroll, nil, nil, tabs)
+		return container.NewBorder(nil, debugScroll, nil, nil, container.NewBorder(nil, progressScroll, nil, nil, tabs))
 	}
 
-	return tabs
+	return container.NewBorder(nil, progressScroll, nil, nil, tabs)
 }
 
 // updateDebugLogVisibility toggles the debug log panel without rebuilding the entire UI
@@ -1427,15 +1503,12 @@ func (v *MainView) updateDebugLogVisibility() {
 		debugScroll.SetMinSize(fyne.NewSize(0, 200))
 		v.window.SetContent(container.NewBorder(nil, debugScroll, nil, nil, mainContent))
 	} else {
-		// If disabling debug log, we need to remove it from the window
-		// The structure when debug is on is: Border{top: nil, bottom: debugScroll, left: nil, right: nil, center: mainContent}
-		// So we extract the center which is the mainContent
-		// Since we can't directly access Border's internal structure, we rebuild but with showDebugLog=false
-		// This is safe because toggling off won't trigger infinite recursion
-		if v.window.Content() != nil {
-			// Just refresh the window content with the current state (showDebugLog is already false)
-			mainContent := v.buildMainContent()
-			v.window.SetContent(mainContent)
+		// When debug is disabled, rewrap the stored tabs reference with the progress bar row.
+		if v.tabsReference != nil {
+			progressRow := container.NewHBox(v.moveProgressLabel, v.moveProgressBar)
+			progressScroll := container.NewScroll(progressRow)
+			progressScroll.SetMinSize(fyne.NewSize(0, 32))
+			v.window.SetContent(container.NewBorder(nil, progressScroll, nil, nil, v.tabsReference))
 		}
 	}
 }
