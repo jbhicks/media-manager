@@ -1,8 +1,7 @@
-# Binaries
-bin/media-manager.exe
-bin/media-manager
-main.exe
-main
+# Root build artifacts (not under bin/)
+/media-manager
+/media-manager-service
+
 # Binaries
 bin/media-manager.exe
 bin/media-manager
