@@ -131,3 +131,33 @@ func TestGetMediaFileByPathNotFound(t *testing.T) {
 		t.Error("Expected error for non-existent path, got nil")
 	}
 }
+
+func TestUpdateMediaFilePath(t *testing.T) {
+	dbPath := "test_update_media_file_path.db"
+	defer os.Remove(dbPath)
+	database, err := NewDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create test database: %v", err)
+	}
+	defer database.Close()
+
+	file := models.MediaFile{Path: "inbox/clip.mp4", Filename: "clip.mp4"}
+	if err := database.GetDB().Create(&file).Error; err != nil {
+		t.Fatalf("Failed to insert test record: %v", err)
+	}
+
+	if err := database.UpdateMediaFilePath("inbox/clip.mp4", "shows/clip.mp4"); err != nil {
+		t.Fatalf("UpdateMediaFilePath failed: %v", err)
+	}
+
+	retrieved, err := database.GetMediaFileByPath("shows/clip.mp4")
+	if err != nil {
+		t.Fatalf("GetMediaFileByPath after move: %v", err)
+	}
+	if retrieved.Filename != "clip.mp4" {
+		t.Errorf("Filename = %q, want clip.mp4", retrieved.Filename)
+	}
+	if _, err := database.GetMediaFileByPath("inbox/clip.mp4"); err == nil {
+		t.Error("old path should no longer resolve")
+	}
+}

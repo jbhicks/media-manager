@@ -380,3 +380,137 @@ func BenchmarkMediaCard_Renderer_Refresh(b *testing.B) {
 		renderer.Refresh()
 	}
 }
+
+func TestMediaCard_DragEnd_ReportsDropPosition(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	card := NewMediaCard(testMediaFile("/fake/path/video.mp4", "video.mp4"), t.TempDir(), nil)
+	var got fyne.Position
+	called := false
+	card.SetOnDragEnd(func(dropPos fyne.Position) {
+		called = true
+		got = dropPos
+	})
+	card.Dragged(&fyne.DragEvent{
+		PointEvent: fyne.PointEvent{AbsolutePosition: fyne.NewPos(42, 99)},
+		Dragged:    fyne.Delta{DX: 10, DY: 0},
+	})
+	card.DragEnd()
+	if !called {
+		t.Fatal("expected OnDragEnd to be called")
+	}
+	if got != fyne.NewPos(42, 99) {
+		t.Fatalf("drop position = %v, want (42, 99)", got)
+	}
+}
+
+func TestMediaCard_Dragged_FiresStartOnceAndDraggedEachMove(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	card := NewMediaCard(testMediaFile("/fake/path/video.mp4", "video.mp4"), t.TempDir(), nil)
+	starts := 0
+	drags := 0
+	var last fyne.Position
+	card.SetOnDragStart(func() { starts++ })
+	card.SetOnDragged(func(abs fyne.Position) {
+		drags++
+		last = abs
+	})
+
+	card.Dragged(&fyne.DragEvent{
+		PointEvent: fyne.PointEvent{AbsolutePosition: fyne.NewPos(1, 0)},
+		Dragged:    fyne.Delta{DX: 1, DY: 0},
+	})
+	if starts != 0 || drags != 0 {
+		t.Fatalf("below threshold: starts=%d drags=%d", starts, drags)
+	}
+
+	card.Dragged(&fyne.DragEvent{
+		PointEvent: fyne.PointEvent{AbsolutePosition: fyne.NewPos(10, 2)},
+		Dragged:    fyne.Delta{DX: 9, DY: 2},
+	})
+	if starts != 1 {
+		t.Fatalf("onDragStart once, got %d", starts)
+	}
+	if drags != 1 {
+		t.Fatalf("onDragged after threshold, got %d", drags)
+	}
+
+	card.Dragged(&fyne.DragEvent{
+		PointEvent: fyne.PointEvent{AbsolutePosition: fyne.NewPos(40, 8)},
+		Dragged:    fyne.Delta{DX: 30, DY: 6},
+	})
+	if starts != 1 {
+		t.Fatalf("onDragStart should stay 1, got %d", starts)
+	}
+	if drags != 2 {
+		t.Fatalf("onDragged every move, got %d", drags)
+	}
+	if last != fyne.NewPos(40, 8) {
+		t.Fatalf("last abs = %v, want (40, 8)", last)
+	}
+}
+
+func TestMediaCard_Tapped_AfterDrag_DoesNotOpen(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	card := NewMediaCard(testMediaFile("/fake/path/video.mp4", "video.mp4"), t.TempDir(), nil)
+	opened := false
+	card.onOpen = func() { opened = true }
+
+	card.Dragged(&fyne.DragEvent{
+		PointEvent: fyne.PointEvent{AbsolutePosition: fyne.NewPos(0, 0)},
+		Dragged:    fyne.Delta{DX: 8, DY: 0},
+	})
+	card.DragEnd()
+	card.Tapped(nil)
+	if opened {
+		t.Fatal("Tapped after drag should not open the file")
+	}
+	if card.didDrag {
+		t.Fatal("didDrag should be consumed by Tapped")
+	}
+}
+
+func TestMediaCard_Tapped_WithoutDrag_Opens(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	card := NewMediaCard(testMediaFile("/fake/path/video.mp4", "video.mp4"), t.TempDir(), nil)
+	opened := false
+	card.onOpen = func() { opened = true }
+	card.Tapped(nil)
+	if !opened {
+		t.Fatal("Tapped without drag should open the file")
+	}
+}
+
+func TestMediaCard_TestDragOrDirectDriverCalls(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	card := NewMediaCard(testMediaFile("/fake/path/video.mp4", "video.mp4"), t.TempDir(), nil)
+	ended := false
+	card.SetOnDragEnd(func(p fyne.Position) {
+		ended = true
+	})
+
+	w := test.NewWindow(card)
+	defer w.Close()
+	w.Resize(card.MinSize())
+
+	test.Drag(w.Canvas(), fyne.NewPos(10, 10), 20, 20)
+	if !ended {
+		card.Dragged(&fyne.DragEvent{
+			PointEvent: fyne.PointEvent{AbsolutePosition: fyne.NewPos(30, 30)},
+			Dragged:    fyne.Delta{DX: 20, DY: 20},
+		})
+		card.DragEnd()
+	}
+	if !ended {
+		t.Fatal("expected DragEnd via test.Drag or direct Dragged/DragEnd")
+	}
+}

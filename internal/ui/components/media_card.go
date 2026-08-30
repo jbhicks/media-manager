@@ -87,8 +87,15 @@ type MediaCard struct {
 	onDelete           func()
 	onPreviewGenerated func(filePath, previewPath string) // Callback to update database
 	onDragStart        func()
-	onDragEnd          func()
+	onDragged          func(abs fyne.Position)
+	onDragEnd          func(dropPos fyne.Position)
+	onOpen             func()
 	isDragging         bool
+	didDrag            bool
+	lastDragAbs        fyne.Position
+	dragStartAbs       fyne.Position
+	dragAccumX         float32
+	dragAccumY         float32
 	thumbDir           string
 	duration           int
 	extension          string
@@ -280,24 +287,60 @@ func (mc *MediaCard) updateAnimatedContent(framePaths []string) {
 	})
 }
 
+const dragMoveThreshold = float32(4)
+
+func abs32(v float32) float32 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
 var _ desktop.Hoverable = (*MediaCard)(nil)
 var _ fyne.Draggable = (*MediaCard)(nil)
 
-// Dragged is called while the card is being dragged.
-func (mc *MediaCard) Dragged(*fyne.DragEvent) {
-	if !mc.isDragging {
-		mc.isDragging = true
-		if mc.onDragStart != nil {
-			mc.onDragStart()
+// Dragged records the pointer position, treats movement past 4px as a real
+// drag, and notifies listeners. Tiny jitter stays a click.
+func (mc *MediaCard) Dragged(ev *fyne.DragEvent) {
+	if ev != nil {
+		if !mc.isDragging {
+			mc.dragStartAbs = ev.AbsolutePosition
+		}
+		mc.lastDragAbs = ev.AbsolutePosition
+		mc.dragAccumX += ev.Dragged.DX
+		mc.dragAccumY += ev.Dragged.DY
+	}
+
+	moved := abs32(mc.dragAccumX) >= dragMoveThreshold || abs32(mc.dragAccumY) >= dragMoveThreshold
+	if !moved && ev != nil {
+		dx := ev.AbsolutePosition.X - mc.dragStartAbs.X
+		dy := ev.AbsolutePosition.Y - mc.dragStartAbs.Y
+		moved = abs32(dx) >= dragMoveThreshold || abs32(dy) >= dragMoveThreshold
+	}
+
+	if moved {
+		if !mc.didDrag {
+			mc.didDrag = true
+			if mc.onDragStart != nil {
+				mc.onDragStart()
+			}
+		}
+		if mc.onDragged != nil && ev != nil {
+			mc.onDragged(ev.AbsolutePosition)
 		}
 	}
+
+	mc.isDragging = true
 }
 
 // DragEnd is called when the drag operation ends.
 func (mc *MediaCard) DragEnd() {
+	wasDrag := mc.didDrag
 	mc.isDragging = false
-	if mc.onDragEnd != nil {
-		mc.onDragEnd()
+	mc.dragAccumX = 0
+	mc.dragAccumY = 0
+	if wasDrag && mc.onDragEnd != nil {
+		mc.onDragEnd(mc.lastDragAbs)
 	}
 }
 
@@ -306,12 +349,21 @@ func (mc *MediaCard) SetOnDragStart(callback func()) {
 	mc.onDragStart = callback
 }
 
+// SetOnDragged sets the callback invoked on each move after the drag threshold.
+func (mc *MediaCard) SetOnDragged(callback func(abs fyne.Position)) {
+	mc.onDragged = callback
+}
+
 // SetOnDragEnd sets the callback invoked when the card stops being dragged.
-func (mc *MediaCard) SetOnDragEnd(callback func()) {
+// dropPos is the last absolute pointer position from Dragged.
+func (mc *MediaCard) SetOnDragEnd(callback func(dropPos fyne.Position)) {
 	mc.onDragEnd = callback
 }
 
 func (mc *MediaCard) MouseIn(*desktop.MouseEvent) {
+	if !mc.isDragging && mc.didDrag {
+		mc.didDrag = false
+	}
 	mc.isHovered = true
 
 	// Show hover overlay effect
@@ -357,6 +409,14 @@ func (mc *MediaCard) MouseMoved(*desktop.MouseEvent) {
 }
 
 func (mc *MediaCard) Tapped(*fyne.PointEvent) {
+	if mc.didDrag {
+		mc.didDrag = false
+		return
+	}
+	if mc.onOpen != nil {
+		mc.onOpen()
+		return
+	}
 	fmt.Printf("[DEBUG] MediaCard Tapped: %s\n", mc.filePath)
 	err := mc.openFile()
 	if err != nil {

@@ -450,6 +450,9 @@ func (v *DownloadsView) runSearch() {
 }
 
 func (v *DownloadsView) sortResults(by string) {
+	if v.resultsList == nil {
+		return
+	}
 	switch by {
 	case "Seeders":
 		sort.Slice(v.searchResults, func(i, j int) bool {

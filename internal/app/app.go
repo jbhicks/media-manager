@@ -329,7 +329,11 @@ func (app *MediaManagerApp) RescanMediaDirectory() {
 	if err != nil {
 		fmt.Printf("Error during rescan: %v\n", err)
 	}
-	app.mainView.RefreshMediaGrid()
+	fyne.Do(func() {
+		if app.mainView != nil {
+			app.mainView.RefreshMediaGrid()
+		}
+	})
 	fmt.Println("[DEBUG] app.go: RescanMediaDirectory finished.")
 }
 

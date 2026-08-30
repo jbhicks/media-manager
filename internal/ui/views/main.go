@@ -16,7 +16,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -67,6 +67,7 @@ type MainView struct {
 	sortBy        string
 	sortAscending bool
 	sortedFiles   []SortableMediaFile
+	mediaCards    map[string]*components.MediaCard
 	isSorting     bool
 	// UI components for state persistence
 	mainSplit    *container.Split  // Reference to the main HSplit container
@@ -83,14 +84,17 @@ type MainView struct {
 	// Downloads tab
 	downloadsView   *DownloadsView
 	downloadManager DownloadManager
-	// Drag-and-drop state
-	draggedFilePathVar string
-	dragMu             sync.Mutex
-	// Move progress bar (shown at bottom during file move)
-	moveProgressBar    *widget.ProgressBar
-	moveProgressLabel  *widget.Label
-	// Tabs reference for rebuilding layout on debug toggle
-	tabsReference      *container.AppTabs
+	// Drag-and-drop state: visible folder-tree nodes for drop hit-testing
+	folderNodes       []*folderNode
+	dragMu            sync.Mutex
+	dragGhostBg       *canvas.Rectangle
+	dragGhostLabel    *canvas.Text
+	highlightedFolder string
+	lastScrollDir     string
+	mediaScrollOffset fyne.Position
+	statusBar         *fyne.Container
+	moveProgressBar   *widget.ProgressBar
+	moveStatusLabel   *widget.Label
 }
 
 // DownloadManager is the subset of the service DownloadManager used by the UI.
@@ -322,33 +326,14 @@ type folderNode struct {
 func newFolderNode(view *MainView) *folderNode {
 	n := &folderNode{view: view}
 	n.ExtendBaseWidget(n)
+	if view != nil {
+		view.trackFolderNode(n)
+	}
 	return n
 }
 
-var _ desktop.Hoverable = (*folderNode)(nil)
-
-// MouseIn handles the cursor entering the folder node. If a media card is
-// currently being dragged, treat this as a drop onto the folder.
-func (n *folderNode) MouseIn(e *desktop.MouseEvent) {
-	v := n.view
-	if v == nil || n.id == "" {
-		return
-	}
-
-	filePath := v.draggedFilePath()
-	if filePath == "" || n.id == filePath {
-		return
-	}
-
-	log.Printf("[DRAG] Dropped %s onto folder %s", filePath, n.id)
-	go v.moveFileToFolder(filePath, n.id)
-	v.clearDrag()
-}
-
-func (n *folderNode) MouseOut()                      {}
-func (n *folderNode) MouseMoved(*desktop.MouseEvent) {}
-
 func (v *MainView) createFoldersTree() *widget.Tree {
+	v.resetFolderNodes()
 	folders, err := v.database.GetFolders()
 	if err != nil || len(folders) == 0 {
 		fmt.Printf("[ERROR] Failed to load folders from DB: %v\n", err)
@@ -387,6 +372,10 @@ func (v *MainView) createFoldersTree() *widget.Tree {
 			} else {
 				folder.SetText(filepath.Base(id))
 			}
+			v.dragMu.Lock()
+			hl := v.highlightedFolder
+			v.dragMu.Unlock()
+			folder.setDropHighlight(hl != "" && id == hl)
 		},
 	)
 	tree.OnSelected = func(id string) {
@@ -418,140 +407,129 @@ func (v *MainView) createFoldersTree() *widget.Tree {
 	return tree
 }
 
-func (v *MainView) setDraggedFilePath(path string) {
+func (v *MainView) resetFolderNodes() {
 	v.dragMu.Lock()
 	defer v.dragMu.Unlock()
-	v.draggedFilePathVar = path
+	v.folderNodes = nil
 }
 
-func (v *MainView) draggedFilePath() string {
-	v.dragMu.Lock()
-	defer v.dragMu.Unlock()
-	return v.draggedFilePathVar
-}
-
-func (v *MainView) clearDrag() {
-	v.dragMu.Lock()
-	defer v.dragMu.Unlock()
-	v.draggedFilePathVar = ""
-}
-
-// showMoveProgress shows an indeterminate progress bar at the bottom of the window.
-func (v *MainView) showMoveProgress(message string) {
-	if v.moveProgressBar == nil {
+func (v *MainView) trackFolderNode(n *folderNode) {
+	if n == nil {
 		return
 	}
-	v.moveProgressBar.Show()
-	v.moveProgressBar.Refresh()
-
-	if v.moveProgressLabel != nil {
-		v.moveProgressLabel.SetText(message)
-		v.moveProgressLabel.Show()
-		v.moveProgressLabel.Refresh()
-	}
-
-	if v.window.Content() != nil {
-		v.window.Content().Refresh()
-	}
+	v.dragMu.Lock()
+	defer v.dragMu.Unlock()
+	v.folderNodes = append(v.folderNodes, n)
 }
 
-// hideMoveProgress hides the move progress bar.
-func (v *MainView) hideMoveProgress() {
-	if v.moveProgressBar != nil {
-		v.moveProgressBar.Hide()
-		v.moveProgressBar.Refresh()
+// folderIDAt returns the real folder path under absPos, or "" if the pointer
+// is not over a droppable folder (virtual root id "" is ignored).
+func (v *MainView) folderIDAt(absPos fyne.Position) string {
+	app := fyne.CurrentApp()
+	if app == nil {
+		return ""
 	}
-	if v.moveProgressLabel != nil {
-		v.moveProgressLabel.Hide()
-		v.moveProgressLabel.Refresh()
+	drv := app.Driver()
+	if drv == nil {
+		return ""
 	}
-	if v.window.Content() != nil {
-		v.window.Content().Refresh()
+
+	v.dragMu.Lock()
+	nodes := make([]*folderNode, len(v.folderNodes))
+	copy(nodes, v.folderNodes)
+	v.dragMu.Unlock()
+
+	for _, n := range nodes {
+		if n == nil || n.id == "" {
+			continue
+		}
+		if drv.CanvasForObject(n) == nil {
+			continue
+		}
+		size := n.Size()
+		if size.Width <= 0 || size.Height <= 0 {
+			continue
+		}
+		pos := drv.AbsolutePositionForObject(n)
+		hitW := size.Width
+		if v.foldersTree != nil {
+			treePos := drv.AbsolutePositionForObject(v.foldersTree)
+			treeW := v.foldersTree.Size().Width
+			if treeW > hitW && absPos.X >= treePos.X && absPos.X < treePos.X+treeW {
+				hitW = treePos.X + treeW - pos.X
+			}
+		}
+		if absPos.X >= pos.X && absPos.X < pos.X+hitW &&
+			absPos.Y >= pos.Y && absPos.Y < pos.Y+size.Height {
+			return n.id
+		}
 	}
+	return ""
+}
+
+func (v *MainView) handleCardDrop(filePath string, dropPos fyne.Position) {
+	destDir := v.folderIDAt(dropPos)
+	if destDir == "" || filePath == "" {
+		return
+	}
+	log.Printf("[DRAG] Dropped %s onto folder %s", filePath, destDir)
+	v.beginMoveProgress(filepath.Base(filePath) + " → " + filepath.Base(destDir))
+	go v.moveFileToFolder(filePath, destDir)
 }
 
 // moveFileToFolder moves a media file on disk and updates the database/UI.
 func (v *MainView) moveFileToFolder(filePath, destDir string) {
 	srcPath := normalizeTreePath(filePath)
-	destPath := normalizeTreePath(filepath.Join(destDir, filepath.Base(srcPath)))
-
-	if srcPath == destPath {
-		return
-	}
-
-	// Verify source is a file
-	info, err := os.Stat(srcPath)
-	if err != nil || info.IsDir() {
-		log.Printf("[DRAG] Source file not found or is a directory: %s", srcPath)
-		return
-	}
-
-	// Verify destination is a directory
-	destInfo, err := os.Stat(destDir)
-	if err != nil || !destInfo.IsDir() {
-		log.Printf("[DRAG] Destination is not a directory: %s", destDir)
-		return
-	}
-
-	// Show progress bar
-	fileName := filepath.Base(srcPath)
-	v.showMoveProgress(fmt.Sprintf("Moving %s…", fileName))
-
-	// Perform the move on a goroutine so the UI stays responsive
-	go func() {
-		if err := os.Rename(srcPath, destPath); err != nil {
+	destPath, err := moveMediaOnDiskProgress(srcPath, destDir, v.updateMoveProgress)
+	if err != nil {
+		log.Printf("[DRAG] %v", err)
+		v.endMoveProgress()
+		if v.window != nil {
 			fyne.Do(func() {
-				v.hideMoveProgress()
-				log.Printf("[DRAG] Failed to move %s to %s: %v", srcPath, destPath, err)
-				dialog := dialog.NewError(err, v.window)
-				dialog.Show()
+				dialog.ShowError(err, v.window)
 			})
-			return
 		}
+		return
+	}
+	if destPath == "" {
+		v.endMoveProgress()
+		return
+	}
+	v.endMoveProgress()
 
-		// Update database
+	if v.database != nil {
 		if err := v.database.UpdateMediaFilePath(srcPath, destPath); err != nil {
 			log.Printf("[DRAG] Failed to update database path %s -> %s: %v", srcPath, destPath, err)
 		}
+	}
 
-		// Update UI on main thread
-		fyne.Do(func() {
-			// Remove from current sorted files if visible
-			found := false
-			for i, sf := range v.sortedFiles {
-				sfPath := sf.Entry.Name()
-				if v.recursiveSearch {
-					sfPath = normalizeTreePath(sfPath)
-				} else {
-					sfPath = normalizeTreePath(filepath.Join(v.mediaDir, sfPath))
-				}
-				if sfPath == srcPath {
-					v.sortedFiles = append(v.sortedFiles[:i], v.sortedFiles[i+1:]...)
-					found = true
-					break
-				}
+	srcDir := filepath.Dir(srcPath)
+	fyne.Do(func() {
+		if v.folderCache != nil {
+			delete(v.folderCache, srcDir)
+			delete(v.folderCache, normalizeTreePath(destDir))
+		}
+		if v.foldersTree != nil {
+			v.foldersTree.OpenBranch(destDir)
+		}
+		if belongsInCurrentView(v.mediaDir, destPath, v.recursiveSearch) {
+			v.setMediaDirectoryInternal(v.mediaDir, true)
+			return
+		}
+		for i, sf := range v.sortedFiles {
+			sfPath := sf.Entry.Name()
+			if v.recursiveSearch {
+				sfPath = normalizeTreePath(sfPath)
+			} else {
+				sfPath = normalizeTreePath(filepath.Join(v.mediaDir, sfPath))
 			}
-			if found {
-				v.RefreshMediaGrid()
+			if treePathKey(sfPath) == treePathKey(srcPath) {
+				v.sortedFiles = append(v.sortedFiles[:i], v.sortedFiles[i+1:]...)
+				break
 			}
-
-			// Clear any drag state
-			v.clearDrag()
-
-			// Ensure destination folder is visible/selected
-			if v.foldersTree != nil {
-				v.foldersTree.OpenBranch(destDir)
-			}
-
-			// Hide progress bar and refresh
-			v.hideMoveProgress()
-
-			// Refresh the full window to clear the progress bar from layout
-			if v.window.Content() != nil {
-				v.window.Content().Refresh()
-			}
-		})
-	}()
+		}
+		v.RefreshMediaGrid()
+	})
 }
 
 // treeContextCatcher is a transparent widget over the folders tree that captures
@@ -797,6 +775,12 @@ func (v *MainView) RefreshMediaGridWithForce(forceRegenerate bool) {
 		return
 	}
 
+	if v.mediaDir != "" && v.lastScrollDir != "" && v.lastScrollDir != v.mediaDir {
+		v.forgetMediaScroll()
+	} else {
+		v.snapshotMediaScroll()
+	}
+
 	// Get current card dimensions (these scale with zoom level)
 	cardWidth := components.CardWidth()
 	cardHeight := components.CardHeight()
@@ -853,43 +837,7 @@ func (v *MainView) RefreshMediaGridWithForce(forceRegenerate bool) {
 				}
 			}
 
-			var card *components.MediaCard
-			if forceRegenerate {
-				card = components.NewMediaCardWithForce(mediaFile, v.config.ThumbnailDir, true, func(path, previewPath string) {
-					// Store preview path and the source file's modtime used to generate it
-					if info, err := os.Stat(path); err == nil {
-						v.database.UpdateMediaFilePreviewPath(path, previewPath, info.ModTime())
-					} else {
-						v.database.UpdateMediaFilePreviewPath(path, previewPath, time.Now())
-					}
-				})
-			} else {
-				card = components.NewMediaCard(mediaFile, v.config.ThumbnailDir, func(path, previewPath string) {
-					if info, err := os.Stat(path); err == nil {
-						v.database.UpdateMediaFilePreviewPath(path, previewPath, info.ModTime())
-					} else {
-						v.database.UpdateMediaFilePreviewPath(path, previewPath, time.Now())
-					}
-				})
-			}
-			// Capture index for closure
-			idx := len(cards)
-			card.SetOnDelete(func() {
-				// Remove the deleted file from v.sortedFiles
-				if idx < len(v.sortedFiles) {
-					v.sortedFiles = append(v.sortedFiles[:idx], v.sortedFiles[idx+1:]...)
-				}
-				v.RefreshMediaGrid()
-			})
-
-			// Wire drag-and-drop for moving files into folders
-			dragPath := filePath
-			card.SetOnDragStart(func() {
-				v.setDraggedFilePath(dragPath)
-			})
-			card.SetOnDragEnd(func() {
-				v.clearDrag()
-			})
+			card := v.getOrCreateMediaCard(filePath, mediaFile, forceRegenerate)
 
 			if v.launchFocusActive && focusedCard == nil {
 				focusedCard = card
@@ -900,18 +848,34 @@ func (v *MainView) RefreshMediaGridWithForce(forceRegenerate bool) {
 		}
 	}
 
-	// Recreate the GridWrap container with new dimensions (for zoom support)
-	v.mediaGridContainer = container.NewGridWrap(fyne.NewSize(cardWidth, cardHeight), cards...)
+	// Keep cards for every current file, including ones hidden by the filter,
+	// so clearing the filter does not rebuild and flash those cards.
+	v.pruneMediaCards(v.mediaCardKeepKeys())
 
-	// Update the scroll wrapper's content if it exists
-	if v.mediaGridWrapper != nil {
-		v.mediaGridWrapper.Content = v.mediaGridContainer
-		v.mediaGridWrapper.Refresh()
+	size := fyne.NewSize(cardWidth, cardHeight)
+	if v.mediaGridContainer == nil {
+		v.mediaGridContainer = container.NewGridWrap(size, cards...)
+		if v.mediaGridWrapper != nil {
+			v.mediaGridWrapper.Content = v.mediaGridContainer
+		}
+	} else {
+		v.mediaGridContainer.Layout = layout.NewGridWrapLayout(size)
+		v.mediaGridContainer.Objects = cards
+		v.mediaGridContainer.Refresh()
+		if v.mediaGridWrapper != nil && v.mediaGridWrapper.Content != v.mediaGridContainer {
+			v.mediaGridWrapper.Content = v.mediaGridContainer
+		}
 	}
 
-	if focusedCard != nil {
+	v.lastScrollDir = v.mediaDir
+	if focusedCard == nil {
+		v.restoreMediaScroll()
+	} else {
 		focusedCard.SetHighlighted(true)
 		v.scrollToCardIndex(focusedCardIndex, cardHeight)
+	}
+	if v.mediaGridWrapper != nil {
+		v.mediaGridWrapper.Refresh()
 	}
 
 	fmt.Printf("Media grid refreshed with card size: %.0fx%.0f, %d files\n", cardWidth, cardHeight, len(cards))
@@ -1021,25 +985,7 @@ func (v *MainView) createMediaGrid() fyne.CanvasObject {
 				}
 			}
 
-			card := components.NewMediaCard(mediaFile, v.config.ThumbnailDir, func(path, previewPath string) {
-				if info, err := os.Stat(path); err == nil {
-					v.database.UpdateMediaFilePreviewPath(path, previewPath, info.ModTime())
-				} else {
-					v.database.UpdateMediaFilePreviewPath(path, previewPath, time.Now())
-				}
-			})
-			card.SetOnDelete(func() {
-				v.RefreshMediaGrid()
-			})
-
-			// Wire drag-and-drop for moving files into folders
-			dragPath := filePath
-			card.SetOnDragStart(func() {
-				v.setDraggedFilePath(dragPath)
-			})
-			card.SetOnDragEnd(func() {
-				v.clearDrag()
-			})
+			card := v.getOrCreateMediaCard(filePath, mediaFile, false)
 
 			if v.launchFocusActive && focusedCard == nil {
 				focusedCard = card
@@ -1049,11 +995,13 @@ func (v *MainView) createMediaGrid() fyne.CanvasObject {
 			cards = append(cards, card)
 		}
 	}
+	v.pruneMediaCards(v.mediaCardKeepKeys())
 	v.mediaGridContainer = container.NewGridWrap(fyne.NewSize(cardWidth, cardHeight), cards...)
 
 	// Create a scroll container wrapper so the grid can scroll when content exceeds viewport
 	// This prevents the window from expanding past screen bounds with many files
 	v.mediaGridWrapper = container.NewVScroll(v.mediaGridContainer)
+	v.lastScrollDir = v.mediaDir
 	if focusedCard != nil {
 		focusedCard.SetHighlighted(true)
 		fyne.Do(func() {
@@ -1408,6 +1356,11 @@ func (v *MainView) setMediaDirectoryInternal(dir string, forceReload bool) {
 		return
 	}
 
+	if dir != v.mediaDir {
+		v.forgetMediaScroll()
+		v.forgetMediaCards()
+	}
+
 	fmt.Printf("[DEBUG] Switching to folder: %s\n", dir)
 
 	// Check if we have valid cached data for this folder
@@ -1456,20 +1409,6 @@ func (v *MainView) Build() fyne.CanvasObject {
 		container.NewTabItem("Media", mainContent),
 		container.NewTabItem("Downloads", v.downloadsView.Build()),
 	)
-	v.tabsReference = tabs
-
-	// Create the move progress bar at the bottom (initially hidden).
-	// Indeterminate: set value to 0 and the bar animates continuously.
-	v.moveProgressBar = &widget.ProgressBar{}
-	v.moveProgressBar.Hide()
-	v.moveProgressLabel = widget.NewLabel("")
-	v.moveProgressLabel.Hide()
-
-	progressRow := container.NewHBox(v.moveProgressLabel, v.moveProgressBar)
-	// Wrap in scroll to allow shrinking below min size of children
-	progressScroll := container.NewScroll(progressRow)
-	progressScroll.SetMinSize(fyne.NewSize(0, 32))
-
 	// Add debug log panel if enabled
 	if v.showDebugLog {
 		if v.debugLog == nil {
@@ -1479,10 +1418,10 @@ func (v *MainView) Build() fyne.CanvasObject {
 		}
 		debugScroll := container.NewScroll(v.debugLog)
 		debugScroll.SetMinSize(fyne.NewSize(0, 200))
-		return container.NewBorder(nil, debugScroll, nil, nil, container.NewBorder(nil, progressScroll, nil, nil, tabs))
+		return v.wrapRoot(container.NewBorder(nil, debugScroll, nil, nil, tabs))
 	}
 
-	return container.NewBorder(nil, progressScroll, nil, nil, tabs)
+	return v.wrapRoot(tabs)
 }
 
 // updateDebugLogVisibility toggles the debug log panel without rebuilding the entire UI
@@ -1501,14 +1440,17 @@ func (v *MainView) updateDebugLogVisibility() {
 		}
 		debugScroll := container.NewScroll(v.debugLog)
 		debugScroll.SetMinSize(fyne.NewSize(0, 200))
-		v.window.SetContent(container.NewBorder(nil, debugScroll, nil, nil, mainContent))
+		v.window.SetContent(v.wrapRoot(container.NewBorder(nil, debugScroll, nil, nil, mainContent)))
 	} else {
-		// When debug is disabled, rewrap the stored tabs reference with the progress bar row.
-		if v.tabsReference != nil {
-			progressRow := container.NewHBox(v.moveProgressLabel, v.moveProgressBar)
-			progressScroll := container.NewScroll(progressRow)
-			progressScroll.SetMinSize(fyne.NewSize(0, 32))
-			v.window.SetContent(container.NewBorder(nil, progressScroll, nil, nil, v.tabsReference))
+		// If disabling debug log, we need to remove it from the window
+		// The structure when debug is on is: Border{top: nil, bottom: debugScroll, left: nil, right: nil, center: mainContent}
+		// So we extract the center which is the mainContent
+		// Since we can't directly access Border's internal structure, we rebuild but with showDebugLog=false
+		// This is safe because toggling off won't trigger infinite recursion
+		if v.window.Content() != nil {
+			// Just refresh the window content with the current state (showDebugLog is already false)
+			mainContent := v.buildMainContent()
+			v.window.SetContent(v.wrapRoot(mainContent))
 		}
 	}
 }
@@ -1790,6 +1732,7 @@ func NewMainView(cfg *config.Config, db *db.Database, window fyne.Window, mediaD
 		showDebugLog:      cfg.ShowDebugLog,    // Load from config
 		tagger:            tagger.NewFilenameTagger(db),
 		folderCache:       make(map[string]*FolderCache), // Initialize folder cache
+		mediaCards:        make(map[string]*components.MediaCard),
 		loadingMessage:    "Scanning folders and loading media...",
 		downloadManager:   downloadManager,
 	}
